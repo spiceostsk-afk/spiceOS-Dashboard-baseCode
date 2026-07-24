@@ -1,0 +1,93 @@
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap');
+
+:root {
+  /* Color Palette — Spice OS (White / Red Theme) */
+  --color-bg: #FFFFFF;
+  --color-sidebar: #FFF5F5;
+  --color-primary: #D62828; /* Spice OS red */
+  --color-accent: #E23744;  /* red accent */
+  --color-accent-soft: #FDECEC;
+
+  --color-text: #1F2328;
+  --color-text-muted: #8A8A8A;
+  --color-border: #F0DADA;
+
+  /* Status Colors */
+  --color-status-available: #FFFFFF;
+  --color-status-occupied: #D62828;
+  --color-status-billing: #FDECEC;
+  --color-status-cleaning: #F2F2F2;
+  
+  /* Typography */
+  --font-family: 'Gotham', 'Montserrat', sans-serif; /* Gotham Fallback */
+  
+  /* Spacing & Borders */
+  --radius-sm: 12px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --shadow-soft: 0 4px 20px rgba(78, 62, 47, 0.04);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-family);
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+  transition: var(--transition-smooth);
+}
+
+input {
+  font-family: inherit;
+}
+
+/* Layout Classes */
+.app-container {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.scrollable-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 2rem;
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-accent);
+}
