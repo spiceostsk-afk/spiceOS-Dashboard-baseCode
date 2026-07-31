@@ -20,6 +20,7 @@ import Customers from './views/Customers';
 import QRManagement from './views/QRManagement';
 import Staff from './views/Staff';
 import Orders from './views/Orders';
+import Inventory from './views/Inventory';
 
 function SuspendedScreen() {
   const { signOut } = useAuth();
@@ -59,6 +60,7 @@ function AppShell() {
               <Route path="/" element={<Navigate to="/dashboard" />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/menu" element={<MenuCatalog />} />
+              <Route path="/inventory" element={<Inventory />} />
               <Route path="/billing" element={<Billing />} />
               <Route path="/payments" element={<Payments />} />
               <Route path="/reports" element={<Reports />} />

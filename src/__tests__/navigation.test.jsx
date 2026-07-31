@@ -18,10 +18,11 @@ describe('Sidebar', () => {
     expect(screen.getByText('Menu Catalog')).toBeInTheDocument();
     expect(screen.getByText('Reports')).toBeInTheDocument();
     expect(screen.getByText('Customers')).toBeInTheDocument();
-    expect(screen.getByText('QR Management')).toBeInTheDocument();
+    expect(screen.getByText('QR Codes')).toBeInTheDocument();
     expect(screen.getByText('Staff')).toBeInTheDocument();
     expect(screen.getByText('Settings')).toBeInTheDocument();
     expect(screen.getByText('Order History')).toBeInTheDocument();
+    expect(screen.getByText('Branding')).toBeInTheDocument();
   });
 
   it('renders brand logo', () => {
@@ -34,16 +35,17 @@ describe('Sidebar', () => {
     expect(screen.getByText('POINT OF SALE')).toBeInTheDocument();
   });
 
-  it('renders Daily Operations group', () => {
+  // The rail is flat now: Live Orders owns /billing, and Online Orders and
+  // Store Actions are tabs inside that screen rather than nested nav rows.
+  it('renders Live Orders and Inventory as top-level destinations', () => {
     render(
       <MemoryRouter>
         <Sidebar />
       </MemoryRouter>
     );
-    expect(screen.getByText('Daily Operations')).toBeInTheDocument();
     expect(screen.getByText('Live Orders')).toBeInTheDocument();
-    expect(screen.getByText('Online Orders')).toBeInTheDocument();
-    expect(screen.getByText('Store Actions')).toBeInTheDocument();
+    expect(screen.getByText('Inventory')).toBeInTheDocument();
+    expect(screen.queryByText('Daily Operations')).not.toBeInTheDocument();
   });
 });
 
@@ -54,7 +56,7 @@ describe('Header', () => {
         <Header />
       </MemoryRouter>
     );
-    expect(screen.getByText('POS Dashboard')).toBeInTheDocument();
+    expect(screen.getByText('Dashboard')).toBeInTheDocument();
   });
 
   it('renders correct title for orders page', () => {
@@ -72,6 +74,6 @@ describe('Header', () => {
         <Header />
       </MemoryRouter>
     );
-    expect(screen.getByText('Shift Active')).toBeInTheDocument();
+    expect(screen.getByText('Shift active')).toBeInTheDocument();
   });
 });

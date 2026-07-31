@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Palette, Upload, Check, Loader, Image as ImageIcon } from 'lucide-react';
+import { Upload, Check, Loader, Image as ImageIcon } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { applyDashboardTheme } from '../lib/theme';
 
@@ -15,7 +15,7 @@ export default function Branding() {
 
   useEffect(() => { setPrimary(tokens.primary); setAccent(tokens.accent); }, [tokens]);
 
-  // Live preview as the owner drags the color pickers.
+  // Live preview as the owner drags the colour pickers.
   useEffect(() => { applyDashboardTheme({ primary, accent }); }, [primary, accent]);
 
   const handleSave = async () => {
@@ -39,8 +39,8 @@ export default function Branding() {
     setUploading(true); setError('');
     try {
       await uploadLogo(file);
-    } catch (e) {
-      setError(e.message || 'Upload failed.');
+    } catch (e2) {
+      setError(e2.message || 'Upload failed.');
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = '';
@@ -48,79 +48,289 @@ export default function Branding() {
   };
 
   return (
-    <div className="branding-view">
-      <div className="branding-head">
-        <h2><Palette size={22} /> Branding</h2>
-        <p>Make the POS and your customer menu match your restaurant.</p>
+    <div className="page brand">
+      <div className="card__subtitle">
+        Make the POS and your customer menu match your restaurant.
       </div>
 
-      {error && <div className="branding-error">{error}</div>}
+      {error && <div className="brand-error">{error}</div>}
 
-      <div className="branding-grid">
-        <section className="branding-card">
-          <h3>Logo</h3>
-          <div className="logo-preview">
-            {logoUrl ? <img src={logoUrl} alt="Restaurant logo" /> : <div className="logo-empty"><ImageIcon size={28} /><span>No logo yet</span></div>}
+      <div className="brand-grid">
+        {/* ---- Logo ---- */}
+        <div className="card">
+          <div className="card__title" style={{ marginBottom: 14 }}>Logo</div>
+
+          <div className="brand-drop" onClick={() => fileRef.current?.click()}>
+            {logoUrl ? (
+              <img src={logoUrl} alt="Restaurant logo" />
+            ) : (
+              <>
+                <span className="brand-drop__mark"><ImageIcon size={18} /></span>
+                <span>Drop a logo here or <span className="brand-browse">browse files</span></span>
+              </>
+            )}
           </div>
+
           <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} hidden />
-          <button className="branding-btn ghost" onClick={() => fileRef.current?.click()} disabled={uploading}>
-            {uploading ? <><Loader size={16} className="spin" /> Uploading…</> : <><Upload size={16} /> Upload logo</>}
-          </button>
-          <small>PNG or JPG, up to 2 MB.</small>
-        </section>
 
-        <section className="branding-card">
-          <h3>Theme colors</h3>
-          <label className="color-row">
-            <span>Primary</span>
-            <div className="color-input">
-              <input type="color" value={primary} onChange={(e) => setPrimary(e.target.value)} />
-              <input type="text" value={primary} onChange={(e) => setPrimary(e.target.value)} />
-            </div>
-          </label>
-          <label className="color-row">
-            <span>Accent</span>
-            <div className="color-input">
-              <input type="color" value={accent} onChange={(e) => setAccent(e.target.value)} />
-              <input type="text" value={accent} onChange={(e) => setAccent(e.target.value)} />
-            </div>
-          </label>
+          <div className="brand-row">
+            <button className="btn btn--ghost" onClick={() => fileRef.current?.click()} disabled={uploading}>
+              {uploading
+                ? <><Loader size={14} className="spin" /> Uploading…</>
+                : <><Upload size={14} /> {logoUrl ? 'Replace logo' : 'Upload logo'}</>}
+            </button>
+            <span className="brand-note">PNG or JPG, up to 2 MB.</span>
+          </div>
+        </div>
 
-          <div className="swatch-preview">
-            <div className="swatch" style={{ background: primary }}>Primary</div>
-            <div className="swatch" style={{ background: accent }}>Accent</div>
+        {/* ---- Theme ---- */}
+        <div className="card">
+          <div className="card__title" style={{ marginBottom: 14 }}>Theme</div>
+
+          <div className="brand-color">
+            <div className="brand-color__label">Primary colour</div>
+            <input
+              type="color"
+              className="brand-swatch"
+              value={primary}
+              onChange={(e) => setPrimary(e.target.value)}
+              aria-label="Primary colour"
+            />
+            <input
+              type="text"
+              className="brand-hex tnum"
+              value={primary}
+              onChange={(e) => setPrimary(e.target.value)}
+            />
           </div>
 
-          <button className="branding-btn" onClick={handleSave} disabled={saving}>
-            {saving ? <><Loader size={16} className="spin" /> Saving…</> : saved ? <><Check size={16} /> Saved</> : 'Save theme'}
+          <div className="brand-color">
+            <div className="brand-color__label">Accent colour</div>
+            <input
+              type="color"
+              className="brand-swatch"
+              value={accent}
+              onChange={(e) => setAccent(e.target.value)}
+              aria-label="Accent colour"
+            />
+            <input
+              type="text"
+              className="brand-hex tnum"
+              value={accent}
+              onChange={(e) => setAccent(e.target.value)}
+            />
+          </div>
+
+          <div className="brand-preview">
+            <div className="brand-preview__card">
+              <div className="brand-preview__id">D3</div>
+              <div className="brand-preview__meta">₹2,160 · 68 min</div>
+            </div>
+            <button className="brand-preview__btn" style={{ background: primary }}>New order</button>
+            <button className="brand-preview__btn" style={{ background: accent }}>Accent</button>
+            <span className="brand-note">Live preview</span>
+          </div>
+
+          <div className="brand-note" style={{ marginTop: 12 }}>
+            Status colours (green / blue / amber / red) are reserved by the system and cannot be overridden.
+          </div>
+
+          <button className="btn btn--primary" style={{ marginTop: 16 }} onClick={handleSave} disabled={saving}>
+            {saving
+              ? <><Loader size={14} className="spin" /> Saving…</>
+              : saved
+                ? <><Check size={14} /> Saved</>
+                : 'Save theme'}
           </button>
-        </section>
+        </div>
+      </div>
+
+      {/* ---- Customer menu preview ---- */}
+      <div className="card brand-phone-card">
+        <div className="brand-phone">
+          <div className="brand-phone__head">
+            <span className="brand-phone__mark" style={{ background: primary }}>
+              {logoUrl ? <img src={logoUrl} alt="" /> : 'S'}
+            </span>
+            <span className="brand-phone__name">Spice OS</span>
+          </div>
+          <div className="brand-phone__body">
+            <div className="brand-phone__row"><span>Butter Chicken</span><b>₹360</b></div>
+            <div className="brand-phone__row"><span>Garlic Naan</span><b>₹60</b></div>
+            <div className="brand-phone__row"><span>Masala Chai</span><b>₹40</b></div>
+            <div className="brand-phone__cta" style={{ background: primary }}>Add to order</div>
+          </div>
+        </div>
+
+        <div>
+          <div className="card__title">Customer menu preview</div>
+          <div className="card__subtitle" style={{ marginTop: 6, maxWidth: 420 }}>
+            This is what customers see when they scan a table QR code — your logo and primary
+            colour are applied to the digital menu automatically.
+          </div>
+        </div>
       </div>
 
       <style>{`
-        .branding-view { padding: 1.5rem 2rem; }
-        .branding-head h2 { display: flex; align-items: center; gap: 0.5rem; font-size: 1.5rem; font-weight: 800; color: var(--color-primary); margin: 0; }
-        .branding-head p { color: var(--color-text-muted); font-weight: 600; font-size: 0.85rem; margin: 0.25rem 0 1.5rem; }
-        .branding-error { background: rgba(214,40,40,0.06); color: var(--color-primary); font-weight: 600; font-size: 0.85rem; padding: 0.7rem 1rem; border-radius: 10px; margin-bottom: 1rem; }
-        .branding-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.25rem; max-width: 760px; }
-        .branding-card { background: white; border: 1px solid var(--color-border); border-radius: 16px; padding: 1.5rem; }
-        .branding-card h3 { font-size: 1rem; font-weight: 700; color: var(--color-primary); margin: 0 0 1rem; }
-        .logo-preview { display: flex; align-items: center; justify-content: center; height: 120px; border: 1px dashed var(--color-border); border-radius: 12px; margin-bottom: 1rem; overflow: hidden; background: var(--color-bg); }
-        .logo-preview img { max-height: 100px; max-width: 90%; object-fit: contain; }
-        .logo-empty { display: flex; flex-direction: column; align-items: center; gap: 0.35rem; color: var(--color-text-muted); font-size: 0.8rem; font-weight: 600; }
-        .color-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
-        .color-row span { font-size: 0.82rem; font-weight: 700; color: var(--color-text-muted); }
-        .color-input { display: flex; align-items: center; gap: 0.5rem; }
-        .color-input input[type=color] { width: 40px; height: 34px; border: 1px solid var(--color-border); border-radius: 8px; padding: 2px; background: white; cursor: pointer; }
-        .color-input input[type=text] { width: 96px; padding: 0.5rem; border: 1px solid var(--color-border); border-radius: 8px; font-size: 0.85rem; font-weight: 600; color: var(--color-primary); text-transform: uppercase; }
-        .swatch-preview { display: flex; gap: 0.5rem; margin: 0.5rem 0 1.25rem; }
-        .swatch { flex: 1; text-align: center; padding: 1rem 0; border-radius: 10px; color: white; font-size: 0.75rem; font-weight: 700; }
-        .branding-btn { display: flex; align-items: center; justify-content: center; gap: 0.4rem; width: 100%; padding: 0.75rem; background: var(--color-primary); color: white; border: none; border-radius: 10px; font-weight: 700; font-size: 0.88rem; cursor: pointer; }
-        .branding-btn.ghost { background: white; color: var(--color-primary); border: 1px solid var(--color-border); }
-        .branding-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-        .branding-card small { display: block; text-align: center; color: var(--color-text-muted); font-size: 0.72rem; margin-top: 0.5rem; }
-        .spin { animation: spin 1s linear infinite; }
-        @keyframes spin { 100% { transform: rotate(360deg); } }
+        .brand { max-width: 1080px; }
+
+        .brand-error {
+          background: var(--color-danger-soft);
+          color: var(--color-danger);
+          font-weight: 600;
+          font-size: 13px;
+          padding: 12px 16px;
+          border-radius: var(--radius-md);
+        }
+
+        .brand-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+
+        /* logo */
+        .brand-drop {
+          border: 1.5px dashed var(--color-border-strong);
+          border-radius: var(--radius-md);
+          height: 150px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          color: var(--color-text-muted);
+          font-size: 13px;
+          cursor: pointer;
+          overflow: hidden;
+        }
+        .brand-drop:hover { border-color: var(--color-text-faint); }
+        .brand-drop img { max-height: 120px; max-width: 90%; object-fit: contain; }
+
+        .brand-drop__mark {
+          width: 40px;
+          height: 40px;
+          border-radius: var(--radius-sm);
+          background: var(--color-well);
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .brand-browse { color: var(--color-info); font-weight: 600; }
+
+        .brand-row { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+        .brand-note { font-size: 12px; color: var(--color-text-faint); }
+
+        /* theme */
+        .brand-color { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+        .brand-color__label { font-size: 13px; font-weight: 600; width: 110px; flex-shrink: 0; }
+
+        .brand-swatch {
+          width: 36px;
+          height: 36px;
+          border-radius: 9px;
+          border: 1px solid var(--color-border);
+          padding: 2px;
+          background: var(--color-surface);
+          cursor: pointer;
+        }
+
+        .brand-hex {
+          height: 36px;
+          width: 110px;
+          border: 1px solid var(--color-border);
+          border-radius: 9px;
+          padding: 0 12px;
+          font-family: inherit;
+          font-size: 13px;
+          font-weight: 600;
+          color: var(--color-text);
+          text-transform: uppercase;
+          outline: none;
+        }
+
+        .brand-preview {
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-md);
+          padding: 14px;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          background: var(--color-canvas);
+          flex-wrap: wrap;
+        }
+
+        .brand-preview__card {
+          background: var(--color-surface);
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-sm);
+          padding: 10px 14px;
+        }
+        .brand-preview__id { font-size: 13px; font-weight: 800; }
+        .brand-preview__meta { font-size: 11px; color: var(--color-text-muted); }
+
+        .brand-preview__btn {
+          height: 34px;
+          padding: 0 14px;
+          border-radius: 9px;
+          border: none;
+          color: #fff;
+          font-family: inherit;
+          font-size: 12px;
+          font-weight: 700;
+        }
+
+        /* customer preview */
+        .brand-phone-card { display: flex; gap: 28px; align-items: center; flex-wrap: wrap; }
+
+        .brand-phone {
+          width: 190px;
+          flex-shrink: 0;
+          border: 1px solid var(--color-border);
+          border-radius: 24px;
+          padding: 14px 12px;
+          background: var(--color-surface);
+          box-shadow: 0 8px 24px rgba(22, 24, 29, 0.08);
+        }
+
+        .brand-phone__head {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding-bottom: 10px;
+          border-bottom: 1px solid var(--color-border-soft);
+        }
+
+        .brand-phone__mark {
+          width: 22px;
+          height: 22px;
+          border-radius: 6px;
+          color: #fff;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 11px;
+          font-weight: 800;
+          overflow: hidden;
+        }
+        .brand-phone__mark img { width: 100%; height: 100%; object-fit: cover; }
+
+        .brand-phone__name { font-size: 12px; font-weight: 800; }
+        .brand-phone__body { padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+        .brand-phone__row { display: flex; justify-content: space-between; font-size: 11px; font-weight: 600; }
+        .brand-phone__row b { font-weight: 700; }
+
+        .brand-phone__cta {
+          height: 26px;
+          border-radius: 8px;
+          color: #fff;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 11px;
+          font-weight: 700;
+        }
+
+        @media (max-width: 900px) {
+          .brand-grid { grid-template-columns: 1fr; }
+        }
       `}</style>
     </div>
   );

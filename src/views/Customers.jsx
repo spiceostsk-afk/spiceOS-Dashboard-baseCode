@@ -1,202 +1,256 @@
 import React, { useState } from 'react';
-import { Users, Phone, Calendar, DollarSign, X, RefreshCw, Search, User } from 'lucide-react';
+import { Users, RefreshCw, Search, X } from 'lucide-react';
 import { useCustomersData } from '../hooks/useCustomersData';
 
-function CustomerDetailModal({ customer, formatCurrency, onClose }) {
+const REGULAR_VISITS = 5;
+
+const initialsOf = (name) =>
+  (name || '?')
+    .split(' ')
+    .filter(Boolean)
+    .map((w) => w[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+
+const shortDate = (iso) =>
+  iso ? new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—';
+
+function CustomerDrawer({ customer, formatCurrency, onClose }) {
   if (!customer) return null;
+
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2>{customer.name}</h2>
-          <button className="close-btn" onClick={onClose}><X size={20} /></button>
+    <>
+      <div className="drawer-scrim" onClick={onClose} />
+      <div className="drawer">
+        <div className="cust-drawer__head">
+          <span className="cust-avatar cust-avatar--lg">{initialsOf(customer.name)}</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="cust-drawer__name">{customer.name}</div>
+            <div className="card__subtitle">
+              {customer.phone || 'No phone'} · {customer.visitCount} visit{customer.visitCount === 1 ? '' : 's'}
+            </div>
+          </div>
+          <button className="modal__close" onClick={onClose}><X size={17} /></button>
         </div>
-        <div className="modal-body">
-          <div className="detail-grid">
-            <div className="detail-item">
-              <span className="detail-label">Phone</span>
-              <span className="detail-value">{customer.phone || '—'}</span>
+
+        <div className="drawer__section">
+          <div className="drawer__label">Summary</div>
+          <div className="cust-summary">
+            <div>
+              <div className="card__subtitle">Lifetime spend</div>
+              <div className="cust-summary__value tnum">{formatCurrency(customer.totalSpent)}</div>
             </div>
-            <div className="detail-item">
-              <span className="detail-label">Visits</span>
-              <span className="detail-value">{customer.visitCount}</span>
+            <div>
+              <div className="card__subtitle">Last visit</div>
+              <div className="cust-summary__value">{shortDate(customer.lastVisit)}</div>
             </div>
-            <div className="detail-item">
-              <span className="detail-label">Total Spent</span>
-              <span className="detail-value">{formatCurrency(customer.totalSpent)}</span>
-            </div>
-            <div className="detail-item">
-              <span className="detail-label">Last Visit</span>
-              <span className="detail-value">
-                {customer.lastVisit ? new Date(customer.lastVisit).toLocaleDateString('en-IN') : '—'}
+          </div>
+        </div>
+
+        <div className="drawer__section">
+          <div className="drawer__label">Visit history ({customer.sessions.length})</div>
+          {customer.sessions.slice(0, 20).map((s) => (
+            <div key={s.id} className="cust-visit">
+              <span className="muted">{shortDate(s.ended_at)}</span>
+              <span className="cust-visit__what">
+                {s.guest_count || '—'} guests · {s.session_status}
               </span>
+              <span className="cust-visit__amt tnum">{formatCurrency(s.total_amount)}</span>
             </div>
-          </div>
-          <div className="session-history">
-            <h4>Visit History ({customer.sessions.length})</h4>
-            {customer.sessions.slice(0, 20).map((s) => (
-              <div key={s.id} className="history-row">
-                <div className="history-left">
-                  <span className="history-date">{s.ended_at ? new Date(s.ended_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—'}</span>
-                  <span className="history-guest">{s.guest_count || '—'} guests</span>
-                </div>
-                <div className="history-right">
-                  <span className="history-status">{s.session_status}</span>
-                  <span className="history-amount">{formatCurrency(s.total_amount)}</span>
-                </div>
-              </div>
-            ))}
-          </div>
+          ))}
         </div>
+
         <style>{`
-          .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-          .modal-content { background: white; width: 520px; max-height: 80vh; overflow-y: auto; border-radius: 20px; box-shadow: var(--shadow-soft); border: 1px solid var(--color-border); }
-          .modal-header { padding: 1.25rem 1.5rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-border); }
-          .modal-header h2 { font-size: 1.1rem; font-weight: 700; color: var(--color-primary); margin: 0; }
-          .close-btn { color: var(--color-text-muted); background: none; border: none; cursor: pointer; }
-          .modal-body { padding: 1.5rem; }
-          .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
-          .detail-item { display: flex; flex-direction: column; gap: 0.15rem; }
-          .detail-label { font-size: 0.7rem; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase; }
-          .detail-value { font-size: 0.95rem; font-weight: 700; color: var(--color-primary); }
-          .session-history { margin-top: 1.5rem; border-top: 1px solid var(--color-border); padding-top: 1rem; }
-          .session-history h4 { font-size: 0.9rem; font-weight: 700; color: var(--color-primary); margin: 0 0 0.75rem 0; }
-          .history-row { display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 0; border-bottom: 1px solid var(--color-bg); }
-          .history-row:last-child { border-bottom: none; }
-          .history-left { display: flex; flex-direction: column; }
-          .history-date { font-size: 0.85rem; font-weight: 700; color: var(--color-primary); }
-          .history-guest { font-size: 0.75rem; color: var(--color-text-muted); }
-          .history-right { display: flex; align-items: center; gap: 0.75rem; }
-          .history-status { font-size: 0.7rem; padding: 0.2rem 0.5rem; border-radius: 4px; background: var(--color-bg); color: var(--color-text-muted); font-weight: 700; text-transform: capitalize; }
-          .history-amount { font-size: 0.9rem; font-weight: 800; color: var(--color-primary); }
+          .cust-drawer__head {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding-bottom: 18px;
+            border-bottom: 1px solid var(--color-border);
+          }
+          .cust-drawer__name { font-size: 17px; font-weight: 800; }
+          .cust-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+          .cust-summary__value { font-size: 17px; font-weight: 800; margin-top: 2px; }
+          .cust-visit {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 9px 0;
+            border-bottom: 1px solid var(--color-border-soft);
+            font-size: 13px;
+          }
+          .cust-visit:last-child { border-bottom: none; }
+          .cust-visit .muted { color: var(--color-text-muted); width: 60px; flex-shrink: 0; }
+          .cust-visit__what { flex: 1; min-width: 0; }
+          .cust-visit__amt { font-weight: 700; }
         `}</style>
       </div>
-    </div>
+    </>
   );
 }
 
 export default function Customers() {
-  const { customers, loading, error, selectedCustomer, setSelectedCustomer, refetch, formatCurrency } = useCustomersData();
+  const {
+    customers, loading, error, selectedCustomer, setSelectedCustomer, refetch, formatCurrency,
+  } = useCustomersData();
   const [search, setSearch] = useState('');
+  const [tag, setTag] = useState('all');
+
+  const byTag = customers.filter((c) => {
+    if (tag === 'regular') return c.visitCount >= REGULAR_VISITS;
+    if (tag === 'new') return c.visitCount < REGULAR_VISITS;
+    return true;
+  });
 
   const filtered = search
-    ? customers.filter((c) => c.name.toLowerCase().includes(search.toLowerCase()) || (c.phone && c.phone.includes(search)))
-    : customers;
-
-  if (loading && customers.length === 0) {
-    return (
-      <div className="loading-state">
-        <RefreshCw className="spinner" size={24} /> Loading customers...
-        <style>{`
-          .loading-state { display: flex; align-items: center; justify-content: center; gap: 0.75rem; height: 100%; font-weight: 700; color: var(--color-text-muted); }
-          .spinner { animation: spin 1s linear infinite; }
-          @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        `}</style>
-      </div>
-    );
-  }
+    ? byTag.filter(
+        (c) =>
+          c.name.toLowerCase().includes(search.toLowerCase()) ||
+          (c.phone && c.phone.includes(search)),
+      )
+    : byTag;
 
   if (error && customers.length === 0) {
     return (
-      <div className="error-state">
-        <p>Failed to load customers: {error}</p>
-        <button className="retry-btn" onClick={refetch}>Retry</button>
-        <style>{`
-          .error-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; height: 100%; color: var(--color-text-muted); font-weight: 600; }
-          .retry-btn { padding: 0.5rem 1rem; background: var(--color-primary); color: white; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; }
-        `}</style>
+      <div className="page">
+        <div className="card">
+          <div className="empty-state">
+            <div className="empty-state__title">Couldn’t load customers</div>
+            <div className="empty-state__sub">{error}</div>
+            <button className="btn btn--primary" style={{ marginTop: 12 }} onClick={refetch}>Retry</button>
+          </div>
+        </div>
       </div>
     );
   }
 
+  const regulars = customers.filter((c) => c.visitCount >= REGULAR_VISITS).length;
+  const totalSpend = customers.reduce((sum, c) => sum + (c.totalSpent || 0), 0);
+
+  const metrics = [
+    { label: 'Total customers', value: customers.length },
+    { label: 'Regulars', value: regulars },
+    { label: 'Lifetime spend', value: formatCurrency(totalSpend) },
+  ];
+
   return (
-    <div className="customers-view">
-      <div className="page-header">
-        <div>
-          <h2>Customers</h2>
-          <p className="page-subtitle">{filtered.length} customer{filtered.length !== 1 ? 's' : ''}</p>
+    <div className="page">
+      <div className="metric-grid metric-grid--3">
+        {metrics.map((m) => (
+          <div key={m.label} className="metric-card">
+            <div className="metric-card__label">{m.label}</div>
+            <div className="metric-card__value">{loading && customers.length === 0 ? '—' : m.value}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="cust-filters">
+        <div className="search-input" style={{ width: 300 }}>
+          <Search size={15} />
+          <input
+            type="text"
+            placeholder="Search by name or phone…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
         </div>
-        <button className="refresh-btn" onClick={refetch} disabled={loading}>
-          <RefreshCw size={16} className={loading ? 'spin' : ''} /> Refresh
+        <div className="chip-row">
+          <button className={`chip ${tag === 'all' ? 'on' : ''}`} onClick={() => setTag('all')}>All</button>
+          <button className={`chip ${tag === 'regular' ? 'on' : ''}`} onClick={() => setTag('regular')}>
+            Regulars ({REGULAR_VISITS}+ visits)
+          </button>
+          <button className={`chip ${tag === 'new' ? 'on' : ''}`} onClick={() => setTag('new')}>New</button>
+        </div>
+        <div className="spacer" />
+        <button className="btn btn--ghost" onClick={refetch} disabled={loading}>
+          <RefreshCw size={14} className={loading ? 'spin' : ''} /> Refresh
         </button>
       </div>
 
-      <div className="search-bar">
-        <Search size={16} />
-        <input type="text" placeholder="Search by name or phone..." value={search} onChange={(e) => setSearch(e.target.value)} />
+      <div className="table-card">
+        <div className="table-head">
+          <div className="cu-name">Customer</div>
+          <div className="cu-phone">Phone</div>
+          <div className="cu-visits">Visits</div>
+          <div className="cu-last">Last visit</div>
+          <div className="cu-spend">Lifetime spend</div>
+          <div className="cu-tag">Tag</div>
+        </div>
+
+        {loading && customers.length === 0 && (
+          <div className="empty-state">
+            <RefreshCw size={20} className="spin" />
+            <div className="empty-state__sub">Loading customers…</div>
+          </div>
+        )}
+
+        {!loading && filtered.length === 0 && (
+          <div className="empty-state">
+            <span className="empty-state__mark"><Users size={22} /></span>
+            <div className="empty-state__title">No customers found</div>
+            <div className="empty-state__sub">Customers appear here after their first visit.</div>
+          </div>
+        )}
+
+        {filtered.map((c, i) => {
+          const regular = c.visitCount >= REGULAR_VISITS;
+          return (
+            <div
+              key={c.phone || i}
+              className="table-row table-row--clickable"
+              onClick={() => setSelectedCustomer(c)}
+            >
+              <div className="cu-name">
+                <span className="cust-avatar">{initialsOf(c.name)}</span>
+                <span className="strong">{c.name}</span>
+              </div>
+              <div className="cu-phone muted tnum">{c.phone || '—'}</div>
+              <div className="cu-visits strong tnum">{c.visitCount}</div>
+              <div className="cu-last muted">{shortDate(c.lastVisit)}</div>
+              <div className="cu-spend amount">{formatCurrency(c.totalSpent)}</div>
+              <div className="cu-tag">
+                <span className={`pill ${regular ? 'tone-green' : 'tone-blue'}`}>
+                  {regular ? 'Regular' : 'New'}
+                </span>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
-      {filtered.length === 0 ? (
-        <div className="empty-state">
-          <Users size={40} strokeWidth={1} />
-          <h4>No customers found</h4>
-          <p>Customers appear here after their first visit.</p>
-        </div>
-      ) : (
-        <div className="table-container">
-          <table className="customer-table">
-            <thead>
-              <tr>
-                <th>Customer</th>
-                <th>Phone</th>
-                <th>Visits</th>
-                <th>Total Spent</th>
-                <th>Last Visit</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((c, i) => (
-                <tr key={c.phone || i} className="customer-row">
-                  <td>
-                    <div className="customer-name-cell">
-                      <div className="avatar-small">{c.name.charAt(0).toUpperCase()}</div>
-                      <span>{c.name}</span>
-                    </div>
-                  </td>
-                  <td>{c.phone || '—'}</td>
-                  <td><span className="visit-badge">{c.visitCount}</span></td>
-                  <td className="cell-amount">{formatCurrency(c.totalSpent)}</td>
-                  <td className="cell-date">{c.lastVisit ? new Date(c.lastVisit).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—'}</td>
-                  <td><button className="view-btn" onClick={() => setSelectedCustomer(c)}>View</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
       {selectedCustomer && (
-        <CustomerDetailModal customer={selectedCustomer} formatCurrency={formatCurrency} onClose={() => setSelectedCustomer(null)} />
+        <CustomerDrawer
+          customer={selectedCustomer}
+          formatCurrency={formatCurrency}
+          onClose={() => setSelectedCustomer(null)}
+        />
       )}
 
       <style>{`
-        .customers-view { padding: 1.5rem 2rem; }
-        .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
-        .page-header h2 { font-size: 1.5rem; font-weight: 800; color: var(--color-primary); margin: 0; }
-        .page-subtitle { font-size: 0.85rem; color: var(--color-text-muted); margin: 0.15rem 0 0 0; font-weight: 600; }
-        .refresh-btn { display: flex; align-items: center; gap: 0.35rem; padding: 0.4rem 0.85rem; border: 1px solid var(--color-border); border-radius: 8px; font-size: 0.8rem; font-weight: 700; color: var(--color-primary); background: white; cursor: pointer; }
-        .refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        .spin { animation: spin 1s linear infinite; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .search-bar { display: flex; align-items: center; gap: 0.5rem; background: white; border: 1px solid var(--color-border); padding: 0.6rem 1rem; border-radius: 10px; margin-bottom: 1.25rem; max-width: 360px; }
-        .search-bar input { border: none; background: transparent; outline: none; width: 100%; font-size: 0.85rem; color: var(--color-primary); }
-        .search-bar svg { color: var(--color-text-muted); }
-        .table-container { background: white; border: 1px solid var(--color-border); border-radius: 14px; overflow: hidden; }
-        .customer-table { width: 100%; border-collapse: collapse; }
-        .customer-table th { text-align: left; padding: 1rem 1.25rem; font-size: 0.75rem; font-weight: 800; color: var(--color-text-muted); text-transform: uppercase; border-bottom: 1px solid var(--color-border); background: var(--color-bg); }
-        .customer-table td { padding: 1rem 1.25rem; font-size: 0.9rem; font-weight: 600; color: var(--color-primary); border-bottom: 1px solid var(--color-border); }
-        .customer-row { cursor: pointer; transition: var(--transition-smooth); }
-        .customer-row:hover { background: var(--color-sidebar); }
-        .customer-name-cell { display: flex; align-items: center; gap: 0.65rem; }
-        .avatar-small { width: 34px; height: 34px; border-radius: 50%; background: var(--color-accent-soft); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.85rem; color: var(--color-primary); }
-        .visit-badge { background: var(--color-accent-soft); padding: 0.2rem 0.6rem; border-radius: 6px; font-weight: 800; font-size: 0.85rem; }
-        .cell-amount { font-weight: 800; }
-        .cell-date { font-size: 0.85rem; color: var(--color-text-muted); }
-        .view-btn { padding: 0.3rem 0.75rem; background: var(--color-sidebar); border: 1px solid var(--color-border); border-radius: 6px; font-size: 0.75rem; font-weight: 700; color: var(--color-primary); cursor: pointer; }
-        .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4rem; color: var(--color-text-muted); gap: 0.5rem; }
-        .empty-state h4 { font-weight: 700; color: var(--color-primary); margin: 0; }
-        .empty-state p { font-size: 0.85rem; margin: 0; }
+        .cust-filters { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+        .cu-name { flex: 1.4; min-width: 0; display: flex; align-items: center; gap: 10px; }
+        .cu-phone { width: 130px; }
+        .cu-visits { width: 60px; text-align: right; }
+        .cu-last { width: 100px; }
+        .cu-spend { width: 120px; text-align: right; }
+        .cu-tag { width: 90px; padding-left: 20px; }
+
+        .cust-avatar {
+          width: 30px;
+          height: 30px;
+          flex-shrink: 0;
+          border-radius: 50%;
+          background: var(--color-well);
+          color: var(--color-text-soft);
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 11px;
+          font-weight: 700;
+        }
+        .cust-avatar--lg { width: 46px; height: 46px; font-size: 15px; }
       `}</style>
     </div>
   );

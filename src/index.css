@@ -1,32 +1,68 @@
-@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
 :root {
-  /* Color Palette — Spice OS (White / Red Theme) */
-  --color-bg: #FFFFFF;
-  --color-sidebar: #FFF5F5;
-  --color-primary: #D62828; /* Spice OS red */
-  --color-accent: #E23744;  /* red accent */
+  /* ---- Surfaces ---------------------------------------------------- */
+  --color-canvas: #F6F7F9;          /* page background */
+  --color-surface: #FFFFFF;         /* cards, sidebar, header */
+  --color-well: #F0F1F4;            /* segmented-control tracks, inset chips */
+  --color-sidebar: #FFFFFF;
+
+  /* ---- Ink --------------------------------------------------------- */
+  --color-text: #16181D;
+  --color-text-soft: #4B4F58;
+  --color-text-muted: #71767F;
+  --color-text-faint: #A0A4AC;
+
+  /* ---- Lines ------------------------------------------------------- */
+  --color-border: #E6E8EC;
+  --color-border-soft: #F0F1F4;     /* table row rules */
+  --color-border-strong: #C9CDD5;   /* dashed dropzones, hover borders */
+
+  /* ---- Brand (overridable per tenant via ThemeContext) -------------- */
+  --color-primary: #D62828;
+  --color-primary-hover: #B91F1F;
+  --color-primary-soft: #FDECEC;
+  --color-accent: #E23744;
   --color-accent-soft: #FDECEC;
 
-  --color-text: #1F2328;
-  --color-text-muted: #8A8A8A;
-  --color-border: #F0DADA;
+  /* ---- Semantic status (reserved — never overridden by branding) ---- */
+  --color-success: #15A34A;
+  --color-success-soft: #E7F6ED;
+  --color-info: #2563EB;
+  --color-info-soft: #EAF1FE;
+  --color-warning: #E8890C;
+  --color-warning-soft: #FDF3E4;
+  --color-danger: #DC2626;
+  --color-danger-soft: #FDECEC;
+  --color-danger-border: #F3D4D4;
 
-  /* Status Colors */
+  /* Legacy table-status aliases kept so older screens keep resolving */
+  --color-bg: #F6F7F9;
   --color-status-available: #FFFFFF;
   --color-status-occupied: #D62828;
   --color-status-billing: #FDECEC;
   --color-status-cleaning: #F2F2F2;
-  
-  /* Typography */
-  --font-family: 'Gotham', 'Montserrat', sans-serif; /* Gotham Fallback */
-  
-  /* Spacing & Borders */
-  --radius-sm: 12px;
-  --radius-md: 16px;
-  --radius-lg: 24px;
-  --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  --shadow-soft: 0 4px 20px rgba(78, 62, 47, 0.04);
+
+  /* ---- Data viz ---------------------------------------------------- */
+  --color-chart-fill: #AFC5EE;
+  --color-chart-hot: #2563EB;
+
+  /* ---- Typography -------------------------------------------------- */
+  --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  /* ---- Shape ------------------------------------------------------- */
+  --radius-sm: 10px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+
+  --shadow-card: 0 1px 2px rgba(22, 24, 29, 0.04);
+  --shadow-raised: 0 1px 2px rgba(22, 24, 29, 0.08);
+  --shadow-modal: 0 20px 50px rgba(22, 24, 29, 0.2);
+  --shadow-drawer: -8px 0 30px rgba(22, 24, 29, 0.12);
+
+  --transition-smooth: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  --shadow-soft: var(--shadow-card);
 }
 
 * {
@@ -37,7 +73,7 @@
 
 body {
   font-family: var(--font-family);
-  background-color: var(--color-bg);
+  background-color: var(--color-canvas);
   color: var(--color-text);
   -webkit-font-smoothing: antialiased;
 }
@@ -50,7 +86,9 @@ button {
   transition: var(--transition-smooth);
 }
 
-input {
+input,
+select,
+textarea {
   font-family: inherit;
 }
 
@@ -59,10 +97,12 @@ input {
   display: flex;
   height: 100vh;
   overflow: hidden;
+  background: var(--color-canvas);
 }
 
 .main-content {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -71,12 +111,37 @@ input {
 .scrollable-area {
   flex: 1;
   overflow-y: auto;
-  padding: 2rem;
+  background: var(--color-canvas);
+}
+
+/*
+ * Standard page gutter from the design. Views own their own padding so a
+ * screen can go full-bleed (Live Orders) without fighting the shell.
+ */
+.page {
+  padding: 28px 32px 40px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+.page--wide {
+  max-width: none;
+}
+
+/* Numeric columns line up when digits are tabular */
+.tnum {
+  font-variant-numeric: tabular-nums;
 }
 
 /* Scrollbar Styling */
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
@@ -89,5 +154,5 @@ input {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-accent);
+  background: var(--color-border-strong);
 }

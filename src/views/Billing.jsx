@@ -77,61 +77,76 @@ function EndShiftModal({ onClose }) {
   }, []);
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content end-shift-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2>Shift Summary — {new Date().toLocaleDateString('en-IN')}</h2>
-          <button className="close-btn" onClick={onClose}><X size={20} /></button>
+    <div className="overlay" onClick={onClose}>
+      <div className="modal shift-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal__head">
+          <div className="modal__title">Shift summary · {new Date().toLocaleDateString('en-IN')}</div>
+          <button className="modal__close" onClick={onClose}><X size={17} /></button>
         </div>
+
         {loading ? (
-          <div className="modal-loading"><RefreshCw className="spinner" /> Loading...</div>
+          <div className="empty-state">
+            <RefreshCw size={20} className="spin" />
+            <div className="empty-state__sub">Loading shift report…</div>
+          </div>
         ) : data ? (
-          <div className="shift-body">
-            <div className="shift-stats">
-              <div className="shift-stat"><span className="shift-stat-value">{data.count}</span><span>Completed Orders</span></div>
-              <div className="shift-stat"><span className="shift-stat-value">{data.totalOrders}</span><span>Total Items</span></div>
-              <div className="shift-stat"><span className="shift-stat-value">{FORMAT_CURRENCY.format(data.totalRevenue)}</span><span>Total Revenue</span></div>
+          <div className="modal__body">
+            <div className="metric-grid metric-grid--3">
+              <div className="metric-card">
+                <div className="metric-card__label">Sessions closed</div>
+                <div className="metric-card__value">{data.count}</div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-card__label">Orders</div>
+                <div className="metric-card__value">{data.totalOrders}</div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-card__label">Revenue</div>
+                <div className="metric-card__value">{FORMAT_CURRENCY.format(data.totalRevenue)}</div>
+              </div>
             </div>
-            <div className="shift-sessions">
-              <h4>Completed Sessions Today</h4>
-              {data.sessions.length === 0 ? <p className="no-data">No completed sessions yet.</p> : (
-                <table className="shift-table">
-                  <thead><tr><th>Table</th><th>Customer</th><th>Amount</th><th>Time</th></tr></thead>
-                  <tbody>
-                    {data.sessions.map((s) => (
-                      <tr key={s.id}>
-                        <td>{(s.restaurant_tables?.table_number || '—')}</td>
-                        <td>{s.customer_name || 'Walk-in'}</td>
-                        <td>{FORMAT_CURRENCY.format(s.total_amount || 0)}</td>
-                        <td>{s.ended_at ? new Date(s.ended_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+
+            <div>
+              <div className="drawer__label">Completed sessions today</div>
+              {data.sessions.length === 0 ? (
+                <div className="empty-state">
+                  <div className="empty-state__sub">No completed sessions yet.</div>
+                </div>
+              ) : (
+                <div className="shift-list">
+                  <div className="table-head">
+                    <div style={{ width: 70 }}>Table</div>
+                    <div style={{ flex: 1 }}>Customer</div>
+                    <div style={{ width: 90, textAlign: 'right' }}>Amount</div>
+                    <div style={{ width: 70, textAlign: 'right' }}>Time</div>
+                  </div>
+                  {data.sessions.map((s) => (
+                    <div key={s.id} className="table-row">
+                      <div style={{ width: 70 }} className="strong">
+                        {s.restaurant_tables?.table_number || '—'}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }} className="muted">
+                        {s.customer_name || 'Walk-in'}
+                      </div>
+                      <div style={{ width: 90, textAlign: 'right' }} className="amount">
+                        {FORMAT_CURRENCY.format(s.total_amount || 0)}
+                      </div>
+                      <div style={{ width: 70, textAlign: 'right' }} className="muted tnum">
+                        {s.ended_at
+                          ? new Date(s.ended_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+                          : '—'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           </div>
         ) : null}
+
         <style>{`
-          .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-          .modal-content { background: white; border-radius: 20px; overflow: hidden; box-shadow: var(--shadow-soft); border: 1px solid var(--color-border); }
-          .end-shift-modal { width: 560px; max-height: 80vh; display: flex; flex-direction: column; }
-          .modal-header { padding: 1.25rem 1.5rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-border); }
-          .modal-header h2 { font-size: 1rem; font-weight: 700; color: var(--color-primary); margin: 0; }
-          .close-btn { color: var(--color-text-muted); background: none; border: none; cursor: pointer; }
-          .modal-loading { display: flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 3rem; color: var(--color-text-muted); font-weight: 600; }
-          .spinner { animation: spin 1s linear infinite; }
-          @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-          .shift-body { padding: 1.5rem; overflow-y: auto; display: flex; flex-direction: column; gap: 1.5rem; }
-          .shift-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; }
-          .shift-stat { background: var(--color-sidebar); border-radius: 12px; padding: 1rem; text-align: center; }
-          .shift-stat-value { display: block; font-size: 1.25rem; font-weight: 800; color: var(--color-primary); }
-          .shift-stat span:last-child { font-size: 0.72rem; color: var(--color-text-muted); font-weight: 600; margin-top: 0.15rem; }
-          .shift-sessions h4 { font-size: 0.9rem; font-weight: 700; color: var(--color-primary); margin: 0 0 0.75rem; }
-          .no-data { text-align: center; padding: 2rem; color: var(--color-text-muted); font-weight: 600; }
-          .shift-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
-          .shift-table th { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--color-border); font-size: 0.72rem; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase; }
-          .shift-table td { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--color-border); font-weight: 600; color: var(--color-primary); }
+          .shift-modal { width: 620px; }
+          .shift-list .table-row:last-child { border-bottom: none; }
         `}</style>
       </div>
     </div>
@@ -310,26 +325,32 @@ export default function Billing() {
         lastSyncResult={lastSyncResult}
         syncNow={syncNow}
       />
-      <div className="billing-toolbar">
-        <button className="shift-report-btn" onClick={() => setShowShiftModal(true)}>
+    <div className="billing">
+      <div className="billing__bar">
+        <div className="spacer" />
+        <button className="btn btn--ghost" onClick={() => setShowShiftModal(true)}>
           End Shift Report
         </button>
       </div>
+
     <div className="pos-billing-layout">
       <div className="pos-workspace-pane">
         <div className="pos-subtabs">
-          {TABS.map((tab) => (
-            <button
-              key={tab.key}
-              className={`subtab-btn ${state.activeTab === tab.key ? 'active' : ''}`}
-              onClick={() => updateTab(tab.key)}
-            >
-              <tab.icon size={16} />
-              {tab.label}
-              {tab.key === 'tables' && <span className="tab-badge">{workspaceNonAvailCount}</span>}
-              {tab.key === 'online' && <span className="tab-badge">2</span>}
-            </button>
-          ))}
+          {TABS.map((tab) => {
+            const active = state.activeTab === tab.key;
+            const count = tab.key === 'tables' ? workspaceNonAvailCount : tab.key === 'online' ? 2 : 0;
+            return (
+              <button
+                key={tab.key}
+                className={`subtab-btn ${active ? 'active' : ''}`}
+                onClick={() => updateTab(tab.key)}
+              >
+                <tab.icon size={15} />
+                {tab.label}
+                {count > 0 && <span className="tab-badge">{count}</span>}
+              </button>
+            );
+          })}
         </div>
 
         {state.activeTab === 'tables' && (
@@ -397,6 +418,7 @@ export default function Billing() {
           onSettle={handleMarkAsPaid}
           onPrint={() => handlePrint('bill')}
           onMoveTable={handleOpenMoveTable}
+          onMergeBill={handleOpenMergeOrder}
           onSplit={onSplitBill}
           onHold={handleHoldBill}
           onVoid={onOpenVoid}
@@ -507,23 +529,93 @@ export default function Billing() {
       {showShiftModal && <EndShiftModal onClose={() => setShowShiftModal(false)} />}
 
       <style>{`
-        .billing-toolbar { display: flex; justify-content: flex-end; padding: 0.5rem 1.5rem; background: var(--color-sidebar); border-bottom: 1px solid var(--color-border); gap: 0.5rem; }
-        .shift-report-btn { padding: 0.4rem 0.85rem; border-radius: 8px; border: 1px solid var(--color-primary); font-size: 0.75rem; font-weight: 700; color: var(--color-primary); background: white; cursor: pointer; }
-        .shift-report-btn:hover { background: var(--color-primary); color: white; }
-        .pos-billing-layout { display: flex; height: calc(100vh - 70px); overflow: hidden; background: var(--color-bg); }
-        .pos-workspace-pane { flex: 1.4; display: flex; flex-direction: column; border-right: 1px solid var(--color-border); overflow: hidden; }
-        .pos-billing-pane { flex: 1; background: white; overflow-y: auto; display: flex; flex-direction: column; }
-        .pos-subtabs { display: flex; background: var(--color-sidebar); border-bottom: 1px solid var(--color-border); padding: 0.5rem 1rem 0; gap: 0.5rem; }
-        .subtab-btn { padding: 0.75rem 1.25rem; font-weight: 700; font-size: 0.85rem; color: var(--color-text-muted); border-radius: 8px 8px 0 0; border: 1px solid transparent; border-bottom: none; background: transparent; cursor: pointer; display: flex; align-items: center; gap: 0.35rem; transition: var(--transition-smooth); }
-        .subtab-btn:hover { color: var(--color-primary); background: rgba(197, 168, 128, 0.05); }
-        .subtab-btn.active { color: var(--color-primary); background: var(--color-bg); border-color: var(--color-border); box-shadow: 0 -2px 8px rgba(0,0,0,0.02); }
-        .tab-badge { background: var(--color-primary); color: white; font-size: 0.65rem; padding: 0.1rem 0.35rem; border-radius: 6px; font-weight: 800; }
+        .billing {
+          padding: 24px 32px 40px 32px;
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+          box-sizing: border-box;
+        }
+
+        .billing__bar { display: flex; align-items: center; }
+
+        .pos-billing-layout {
+          display: grid;
+          grid-template-columns: 55fr 45fr;
+          gap: 16px;
+          align-items: start;
+        }
+
+        .pos-workspace-pane { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+        .pos-billing-pane { position: sticky; top: 16px; min-width: 0; }
+
+        .pos-subtabs {
+          display: flex;
+          gap: 4px;
+          background: var(--color-surface);
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-md);
+          padding: 4px;
+        }
+
+        .subtab-btn {
+          flex: 1;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          padding: 9px 8px;
+          border-radius: 9px;
+          border: none;
+          background: transparent;
+          font-size: 13px;
+          font-weight: 600;
+          color: var(--color-text-soft);
+          white-space: nowrap;
+        }
+
+        .subtab-btn:hover { background: var(--color-canvas); }
+
+        .subtab-btn.active { background: var(--color-text); color: #fff; }
+        .subtab-btn.active:hover { background: var(--color-text); }
+
+        .tab-badge {
+          min-width: 18px;
+          height: 18px;
+          padding: 0 5px;
+          border-radius: var(--radius-pill);
+          background: var(--color-well);
+          color: var(--color-text-soft);
+          font-size: 11px;
+          font-weight: 700;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          box-sizing: border-box;
+        }
+
+        .subtab-btn.active .tab-badge { background: rgba(255, 255, 255, 0.2); color: #fff; }
+
+        @media (max-width: 1180px) {
+          .pos-billing-layout { grid-template-columns: 1fr; }
+          .pos-billing-pane { position: static; }
+        }
 
         @media print {
-          .pos-workspace-pane { display: none !important; }
-          .pos-billing-layout, .pos-billing-pane { display: block !important; margin: 0 !important; padding: 0 !important; width: 100% !important; height: auto !important; background: white !important; }
+          .pos-workspace-pane, .billing__bar { display: none !important; }
+          .billing, .pos-billing-layout, .pos-billing-pane {
+            display: block !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            width: 100% !important;
+            height: auto !important;
+            background: white !important;
+            position: static !important;
+          }
         }
       `}      </style>
+    </div>
     </div>
     </>
   );

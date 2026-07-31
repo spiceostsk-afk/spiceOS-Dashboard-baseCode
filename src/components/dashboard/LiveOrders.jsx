@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShoppingBag, RefreshCw } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 const FORMAT_CURRENCY = new Intl.NumberFormat('en-IN', {
   style: 'currency',
@@ -7,75 +7,69 @@ const FORMAT_CURRENCY = new Intl.NumberFormat('en-IN', {
   maximumFractionDigits: 0,
 });
 
-export default function LiveOrders({ orders, loading }) {
-  if (loading) {
-    return (
-      <div className="panel">
-        <div className="panel-title">
-          <ShoppingBag size={16} /> Live Orders
-        </div>
-        <div className="loading-state">
-          <RefreshCw size={18} className="spinner" />
-          <span>Loading live orders...</span>
-        </div>
-        <style>{`
-          .panel { background: white; border: 1px solid var(--color-border); border-radius: 20px; padding: 1.5rem; box-shadow: var(--shadow-soft); }
-          .panel-title { display: flex; align-items: center; gap: 0.5rem; font-size: 1.1rem; font-weight: 700; color: var(--color-primary); margin-bottom: 1rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--color-border); }
-          .loading-state { display: flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 2rem 0; color: var(--color-text-muted); font-size: 0.9rem; font-weight: 600; }
-          .spinner { animation: spin 1s linear infinite; }
-          @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        `}</style>
-      </div>
-    );
-  }
+const STATUS_TONES = {
+  pending: { label: 'Pending', tone: 'tone-neutral' },
+  accepted: { label: 'Accepted', tone: 'tone-blue' },
+  preparing: { label: 'Cooking', tone: 'tone-amber' },
+  ready: { label: 'Ready', tone: 'tone-green' },
+  out_for_delivery: { label: 'On the way', tone: 'tone-blue' },
+};
 
-  if (!orders || orders.length === 0) {
-    return (
-      <div className="panel">
-        <div className="panel-title">
-          <ShoppingBag size={16} /> Live Orders
-        </div>
-        <p className="empty-state">No active orders right now.</p>
-        <style>{`
-          .panel { background: white; border: 1px solid var(--color-border); border-radius: 20px; padding: 1.5rem; box-shadow: var(--shadow-soft); }
-          .panel-title { display: flex; align-items: center; gap: 0.5rem; font-size: 1.1rem; font-weight: 700; color: var(--color-primary); margin-bottom: 1rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--color-border); }
-          .empty-state { text-align: center; padding: 2rem 0; color: var(--color-text-muted); font-weight: 600; font-size: 0.9rem; }
-        `}</style>
-      </div>
-    );
-  }
+const STALE_MINUTES = 45;
+
+function minutesSince(dateStr) {
+  if (!dateStr) return null;
+  const diff = (Date.now() - new Date(dateStr).getTime()) / 60000;
+  return Number.isFinite(diff) ? Math.max(0, Math.round(diff)) : null;
+}
+
+export default function LiveOrders({ orders, loading }) {
+  const navigate = useNavigate();
 
   return (
-    <div className="panel">
-      <div className="panel-title">
-        <ShoppingBag size={16} /> Live Orders
-        <span className="live-badge">{orders.length}</span>
+    <div className="card">
+      <div className="card__head">
+        <div style={{ flex: 1 }} className="card__title">Live orders</div>
+        <button className="link-action" onClick={() => navigate('/billing')}>View all →</button>
       </div>
-      <div className="live-grid">
-        {orders.map((order) => (
-          <div key={order.id} className="live-card">
-            <div className="live-card-header">
-              <span className="live-table">
-                T-{order.restaurant_tables?.table_number || '?'}
-              </span>
-              <span className="live-status">{order.order_status || 'pending'}</span>
+
+      {loading && <div className="empty-state">Loading live orders…</div>}
+
+      {!loading && (!orders || orders.length === 0) && (
+        <div className="empty-state">
+          <div className="empty-state__title">No active orders</div>
+          <div className="empty-state__sub">Running tables appear here while service is on.</div>
+        </div>
+      )}
+
+      {!loading && orders && orders.map((order, i) => {
+        const s = STATUS_TONES[order.order_status]
+          || { label: order.order_status || 'Pending', tone: 'tone-neutral' };
+        const min = minutesSince(order.created_at);
+        const late = min !== null && min > STALE_MINUTES;
+        return (
+          <div key={order.id || i} className="table-row live-row">
+            <div className="lo-table">
+              Table {order.restaurant_tables?.table_number || '—'}
             </div>
-            <div className="live-card-total">
-              {FORMAT_CURRENCY.format(order.total || 0)}
+            <div className="lo-amount muted tnum">{FORMAT_CURRENCY.format(order.total || 0)}</div>
+            <div className="lo-status"><span className={`pill ${s.tone}`}>{s.label}</span></div>
+            <div
+              className="lo-min tnum"
+              style={{ color: late ? 'var(--color-danger)' : 'var(--color-text)' }}
+            >
+              {min === null ? '—' : `${min} min`}
             </div>
           </div>
-        ))}
-      </div>
+        );
+      })}
+
       <style>{`
-        .panel { background: white; border: 1px solid var(--color-border); border-radius: 20px; padding: 1.5rem; box-shadow: var(--shadow-soft); }
-        .panel-title { display: flex; align-items: center; gap: 0.5rem; font-size: 1.1rem; font-weight: 700; color: var(--color-primary); margin-bottom: 1rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--color-border); }
-        .live-badge { background: #ef4444; color: white; font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 999px; margin-left: auto; }
-        .live-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.75rem; }
-        .live-card { background: var(--color-accent-soft); border-radius: 12px; padding: 1rem; border: 1px solid var(--color-border); }
-        .live-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
-        .live-table { font-weight: 800; font-size: 0.9rem; color: var(--color-primary); }
-        .live-status { font-size: 0.6rem; font-weight: 700; text-transform: uppercase; background: var(--color-primary); color: white; padding: 0.15rem 0.4rem; border-radius: 4px; }
-        .live-card-total { font-size: 1.2rem; font-weight: 800; color: var(--color-primary); }
+        .live-row:last-child { border-bottom: none; }
+        .lo-table { width: 110px; font-weight: 700; }
+        .lo-amount { flex: 1; }
+        .lo-status { width: 110px; }
+        .lo-min { width: 70px; text-align: right; font-weight: 600; }
       `}</style>
     </div>
   );

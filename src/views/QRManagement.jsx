@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { QrCode, RefreshCw, Printer, Download, Plus, Edit3, Trash2, X } from 'lucide-react';
+import { QrCode, RefreshCw, Printer, Download, Edit3, Trash2, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 const QR_SIZE = 180;
@@ -14,10 +14,21 @@ function getQrUrl(publicToken) {
   return `https://api.qrserver.com/v1/create-qr-code/?size=${QR_SIZE}x${QR_SIZE}&data=${encodeURIComponent(data)}`;
 }
 
+const STATUS_DOT = {
+  available: 'var(--color-success)',
+  occupied: 'var(--color-info)',
+  billing: 'var(--color-warning)',
+  cleaning: 'var(--color-text-faint)',
+};
+
 const EMPTY_FORM = { table_number: '', capacity: 2, section_id: '' };
 
 function TableFormModal({ editingTable, sections, onSave, onClose }) {
-  const [form, setForm] = useState(editingTable ? { table_number: editingTable.table_number, capacity: editingTable.capacity, section_id: editingTable.section_id || '' } : EMPTY_FORM);
+  const [form, setForm] = useState(
+    editingTable
+      ? { table_number: editingTable.table_number, capacity: editingTable.capacity, section_id: editingTable.section_id || '' }
+      : EMPTY_FORM,
+  );
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (e) => {
@@ -38,49 +49,58 @@ function TableFormModal({ editingTable, sections, onSave, onClose }) {
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2>{editingTable ? 'Edit Table' : 'Add New Table'}</h2>
-          <button className="close-btn" onClick={onClose}><X size={20} /></button>
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal__head">
+          <div className="modal__title">{editingTable ? 'Edit table' : 'Add table'}</div>
+          <button className="modal__close" onClick={onClose}><X size={17} /></button>
         </div>
-        <form onSubmit={handleSubmit} className="modal-form">
-          <div className="form-group">
-            <label>Table Number</label>
-            <input type="number" min={1} value={form.table_number} onChange={(e) => setForm({ ...form, table_number: e.target.value })} required placeholder="e.g. 5" />
+
+        <form onSubmit={handleSubmit} className="modal__body">
+          <div className="field-grid">
+            <div className="field">
+              <label>Table number</label>
+              <input
+                type="number"
+                min={1}
+                value={form.table_number}
+                onChange={(e) => setForm({ ...form, table_number: e.target.value })}
+                required
+                placeholder="e.g. 5"
+              />
+            </div>
+            <div className="field">
+              <label>Capacity (seats)</label>
+              <input
+                type="number"
+                min={1}
+                max={20}
+                value={form.capacity}
+                onChange={(e) => setForm({ ...form, capacity: e.target.value })}
+                required
+              />
+            </div>
           </div>
-          <div className="form-group">
-            <label>Capacity (Seats)</label>
-            <input type="number" min={1} max={20} value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} required />
-          </div>
-          <div className="form-group">
+
+          <div className="field">
             <label>Section</label>
-            <select value={form.section_id} onChange={(e) => setForm({ ...form, section_id: e.target.value })} required>
-              <option value="">Select section...</option>
+            <select
+              value={form.section_id}
+              onChange={(e) => setForm({ ...form, section_id: e.target.value })}
+              required
+            >
+              <option value="">Select section…</option>
               {sections.map((s) => <option key={s.id} value={s.id}>{s.section_name}</option>)}
             </select>
           </div>
-          <div className="modal-footer">
-            <button type="submit" className="save-btn" disabled={saving}>
-              {saving ? 'Saving...' : editingTable ? 'Update Table' : 'Add Table'}
+
+          <div className="modal__actions">
+            <button type="button" className="btn btn--ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn--primary" disabled={saving}>
+              {saving ? 'Saving…' : editingTable ? 'Update table' : 'Add table'}
             </button>
           </div>
         </form>
-        <style>{`
-          .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-          .modal-content { background: white; width: 400px; border-radius: 20px; overflow: hidden; box-shadow: var(--shadow-soft); border: 1px solid var(--color-border); }
-          .modal-header { padding: 1.25rem 1.5rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-border); }
-          .modal-header h2 { font-size: 1.1rem; font-weight: 700; color: var(--color-primary); margin: 0; }
-          .close-btn { color: var(--color-text-muted); background: none; border: none; cursor: pointer; }
-          .modal-form { padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem; }
-          .form-group { display: flex; flex-direction: column; gap: 0.3rem; }
-          .form-group label { font-size: 0.78rem; font-weight: 700; color: var(--color-text-muted); }
-          .form-group input, .form-group select { padding: 0.65rem 0.85rem; border: 1px solid var(--color-border); border-radius: 8px; font-size: 0.9rem; color: var(--color-primary); font-weight: 600; background: white; outline: none; }
-          .form-group input:focus, .form-group select:focus { border-color: var(--color-accent); }
-          .modal-footer { margin-top: 0.5rem; }
-          .save-btn { width: 100%; padding: 0.75rem; background: var(--color-primary); color: white; border: none; border-radius: 10px; font-weight: 700; font-size: 0.9rem; cursor: pointer; }
-          .save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        `}</style>
       </div>
     </div>
   );
@@ -119,16 +139,16 @@ export default function QRManagement() {
 
   const handleSave = async (formData, existingId) => {
     if (existingId) {
-      const { error } = await supabase
+      const { error: e } = await supabase
         .from('restaurant_tables')
         .update({ table_number: formData.table_number, capacity: formData.capacity, section_id: formData.section_id })
         .eq('id', existingId);
-      if (error) throw error;
+      if (e) throw e;
     } else {
-      const { error } = await supabase
+      const { error: e } = await supabase
         .from('restaurant_tables')
         .insert([{ table_number: formData.table_number, capacity: formData.capacity, section_id: formData.section_id, status: 'available' }]);
-      if (error) throw error;
+      if (e) throw e;
     }
     await fetchData();
   };
@@ -136,8 +156,8 @@ export default function QRManagement() {
   const handleDelete = async (tableId, tableNumber) => {
     if (!confirm(`Delete Table ${tableNumber}? This cannot be undone.`)) return;
     try {
-      const { error } = await supabase.from('restaurant_tables').delete().eq('id', tableId);
-      if (error) throw error;
+      const { error: e } = await supabase.from('restaurant_tables').delete().eq('id', tableId);
+      if (e) throw e;
       await fetchData();
     } catch (err) {
       alert('Delete failed: ' + err.message);
@@ -152,11 +172,11 @@ export default function QRManagement() {
     printWin.document.write(`
       <html><head><title>Table ${tableNumber} QR</title>
       <style>body{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;margin:0;font-family:sans-serif;}
-      img{width:300px;height:300px;margin-bottom:1rem;}h2{color:#333;}p{color:#666;}</style></head>
+      img{width:300px;height:300px;margin-bottom:1rem;}h2{color:#16181D;}p{color:#71767F;}</style></head>
       <body>
         <img src="${qrUrl}" alt="QR for Table ${tableNumber}" />
         <h2>Table ${tableNumber}</h2>
-        <p>Scan to view menu & place order</p>
+        <p>Scan to view menu &amp; place order</p>
         <script>window.onload=function(){window.print();};</script>
       </body></html>
     `);
@@ -167,10 +187,10 @@ export default function QRManagement() {
     const printWin = window.open('', '_blank');
     if (!printWin) { alert('Please allow pop-ups to print QR codes.'); return; }
     const cards = tables.map((t) => `
-      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;border:1px dashed #ccc;padding:1.5rem;page-break-inside:avoid;break-inside:avoid;">
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;border:1px dashed #C9CDD5;padding:1.5rem;page-break-inside:avoid;break-inside:avoid;">
         <img src="${getQrUrl(t.public_token)}" style="width:200px;height:200px;" alt="Table ${t.table_number}" />
-        <h3 style="margin:0.5rem 0 0.25rem;color:#333;">Table ${t.table_number}</h3>
-        <p style="margin:0;color:#666;font-size:0.85rem;">${t.capacity} Seats</p>
+        <h3 style="margin:0.5rem 0 0.25rem;color:#16181D;">Table ${t.table_number}</h3>
+        <p style="margin:0;color:#71767F;font-size:0.85rem;">${t.capacity} seats</p>
       </div>
     `).join('');
     printWin.document.write(`
@@ -183,68 +203,119 @@ export default function QRManagement() {
     printWin.document.close();
   };
 
-  if (loading) {
-    return (
-      <div className="loading-state">
-        <RefreshCw className="spinner" size={24} /> Loading tables...
-        <style>{`
-          .loading-state { display: flex; align-items: center; justify-content: center; gap: 0.75rem; height: 100%; font-weight: 700; color: var(--color-text-muted); }
-          .spinner { animation: spin 1s linear infinite; }
-          @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        `}</style>
-      </div>
-    );
-  }
-
   if (error) {
     return (
-      <div className="error-state">
-        <p>Failed to load: {error}</p>
-        <button className="retry-btn" onClick={fetchData}>Retry</button>
-        <style>{`
-          .error-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; height: 100%; color: var(--color-text-muted); font-weight: 600; }
-          .retry-btn { padding: 0.5rem 1rem; background: var(--color-primary); color: white; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; }
-        `}</style>
+      <div className="page">
+        <div className="card">
+          <div className="empty-state">
+            <div className="empty-state__title">Couldn’t load tables</div>
+            <div className="empty-state__sub">{error}</div>
+            <button className="btn btn--primary" style={{ marginTop: 12 }} onClick={fetchData}>Retry</button>
+          </div>
+        </div>
       </div>
     );
   }
 
+  // Group tables by section, with anything unassigned collected at the end.
+  const groups = sections
+    .map((s) => ({
+      id: s.id,
+      area: s.section_name,
+      cards: tables.filter((t) => t.section_id === s.id),
+    }))
+    .filter((g) => g.cards.length > 0);
+
+  const orphans = tables.filter((t) => !sections.some((s) => s.id === t.section_id));
+  if (orphans.length > 0) groups.push({ id: 'none', area: 'Unassigned', cards: orphans });
+
   return (
-    <div className="qr-view">
-      <div className="page-header">
-        <div>
-          <h2>QR Code Management</h2>
-          <p className="page-subtitle">{tables.length} tables — QR codes link customers to the menu</p>
+    <div className="page">
+      <div className="qr-bar">
+        <div className="card__subtitle" style={{ flex: 1 }}>
+          {tables.length} table{tables.length === 1 ? '' : 's'} — QR codes link customers to the digital menu.
         </div>
-        <div className="header-actions">
-          <button className="action-btn" onClick={fetchData}><RefreshCw size={16} /> Refresh</button>
-          <button className="action-btn primary" onClick={() => { setEditingTable(null); setShowModal(true); }}><Plus size={16} /> Add Table</button>
-          <button className="action-btn primary" onClick={handlePrintAll}><Printer size={16} /> Print All</button>
-        </div>
+        <button className="btn btn--ghost" onClick={fetchData} disabled={loading}>
+          <RefreshCw size={14} className={loading ? 'spin' : ''} /> Refresh
+        </button>
+        <button className="btn btn--ghost" onClick={handlePrintAll}>
+          <Printer size={14} /> Print all
+        </button>
+        <button
+          className="btn btn--primary"
+          onClick={() => { setEditingTable(null); setShowModal(true); }}
+        >
+          + Add table
+        </button>
       </div>
 
-      <div className="qr-grid">
-        {tables.map((t) => (
-          <div key={t.id} className="qr-card">
-            <div className="qr-card-actions-top">
-              <button className="icon-action" onClick={() => { setEditingTable(t); setShowModal(true); }} title="Edit Table"><Edit3 size={14} /></button>
-              <button className="icon-action danger" onClick={() => handleDelete(t.id, t.table_number)} title="Delete Table"><Trash2 size={14} /></button>
-            </div>
-            <div className="qr-image-wrapper">
-              <img src={getQrUrl(t.public_token)} alt={`QR for Table ${t.table_number}`} className="qr-image" />
-            </div>
-            <div className="qr-card-info">
-              <h3>Table {t.table_number}</h3>
-              <span className="qr-capacity">{t.capacity} Seats</span>
-              <span className={`qr-status status-${t.status}`}>{t.status}</span>
-            </div>
-            <div className="qr-card-actions">
-              <button className="qr-action-btn" onClick={() => handlePrint(t)} title="Print QR"><Printer size={14} /> Print</button>
-              <a href={getQrUrl(t.public_token)} download={`table-${t.table_number}-qr.png`} className="qr-action-btn" title="Download QR"><Download size={14} /> Download</a>
-            </div>
+      {loading && tables.length === 0 && (
+        <div className="card">
+          <div className="empty-state">
+            <RefreshCw size={20} className="spin" />
+            <div className="empty-state__sub">Loading tables…</div>
           </div>
-        ))}
-      </div>
+        </div>
+      )}
+
+      {!loading && tables.length === 0 && (
+        <div className="card">
+          <div className="empty-state">
+            <span className="empty-state__mark"><QrCode size={22} /></span>
+            <div className="empty-state__title">No tables yet</div>
+            <div className="empty-state__sub">Add your first table to generate its QR code.</div>
+          </div>
+        </div>
+      )}
+
+      {groups.map((g) => (
+        <div key={g.id} className="qr-group">
+          <div className="qr-group__label">{g.area}</div>
+          <div className="qr-grid">
+            {g.cards.map((t) => (
+              <div key={t.id} className="qr-card">
+                <div className="qr-card__tools">
+                  <button onClick={() => { setEditingTable(t); setShowModal(true); }} title="Edit table">
+                    <Edit3 size={13} />
+                  </button>
+                  <button
+                    className="is-danger"
+                    onClick={() => handleDelete(t.id, t.table_number)}
+                    title="Delete table"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+
+                <img
+                  src={getQrUrl(t.public_token)}
+                  alt={`QR for Table ${t.table_number}`}
+                  className="qr-card__img"
+                />
+
+                <div className="qr-card__id">
+                  <span
+                    className="qr-card__dot"
+                    style={{ background: STATUS_DOT[t.status] || STATUS_DOT.cleaning }}
+                    title={t.status}
+                  />
+                  T{t.table_number}
+                  <span className="qr-card__seats">· {t.capacity} seats</span>
+                </div>
+
+                <div className="qr-card__links">
+                  <a href={getQrUrl(t.public_token)} download={`table-${t.table_number}-qr.png`}>
+                    <Download size={12} /> Download
+                  </a>
+                  <button onClick={() => handlePrint(t)}>
+                    <Printer size={12} /> Print
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
 
       {showModal && (
         <TableFormModal
@@ -256,33 +327,96 @@ export default function QRManagement() {
       )}
 
       <style>{`
-        .qr-view { padding: 1.5rem 2rem; }
-        .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem; }
-        .page-header h2 { font-size: 1.5rem; font-weight: 800; color: var(--color-primary); margin: 0; }
-        .page-subtitle { font-size: 0.85rem; color: var(--color-text-muted); margin: 0.15rem 0 0 0; font-weight: 600; }
-        .header-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-        .action-btn { display: flex; align-items: center; gap: 0.35rem; padding: 0.5rem 0.85rem; border: 1px solid var(--color-border); border-radius: 8px; font-size: 0.8rem; font-weight: 700; color: var(--color-primary); background: white; cursor: pointer; }
-        .action-btn.primary { background: var(--color-primary); color: white; border-color: var(--color-primary); }
-        .action-btn.primary:hover { background: #B71C1C; }
-        .qr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1.25rem; }
-        .qr-card { background: white; border: 1px solid var(--color-border); border-radius: 14px; overflow: hidden; text-align: center; position: relative; }
-        .qr-card-actions-top { position: absolute; top: 0.5rem; right: 0.5rem; display: flex; gap: 0.25rem; }
-        .icon-action { width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--color-border); background: white; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--color-text-muted); }
-        .icon-action:hover { background: var(--color-sidebar); color: var(--color-primary); }
-        .icon-action.danger:hover { color: #d32f2f; border-color: #d32f2f; }
-        .qr-image-wrapper { padding: 1.5rem 1.5rem 0; display: flex; justify-content: center; }
-        .qr-image { width: ${QR_SIZE}px; height: ${QR_SIZE}px; border-radius: 8px; }
-        .qr-card-info { padding: 0.75rem 1rem; }
-        .qr-card-info h3 { font-size: 1rem; font-weight: 700; color: var(--color-primary); margin: 0; }
-        .qr-capacity { font-size: 0.8rem; color: var(--color-text-muted); font-weight: 600; display: block; margin: 0.15rem 0; }
-        .qr-status { display: inline-block; font-size: 0.7rem; padding: 0.2rem 0.5rem; border-radius: 4px; font-weight: 700; text-transform: capitalize; background: var(--color-bg); color: var(--color-text-muted); }
-        .status-occupied { background: #E8F5E9; color: #2E7D32; }
-        .status-available { background: #E3F2FD; color: #1565C0; }
-        .status-cleaning { background: #FFF3E0; color: #E65100; }
-        .status-billing { background: #F3E5F5; color: #6A1B9A; }
-        .qr-card-actions { display: flex; gap: 0.5rem; padding: 0.75rem 1rem 1.25rem; justify-content: center; }
-        .qr-action-btn { display: flex; align-items: center; gap: 0.3rem; padding: 0.4rem 0.7rem; border: 1px solid var(--color-border); border-radius: 6px; font-size: 0.75rem; font-weight: 700; color: var(--color-primary); background: white; cursor: pointer; text-decoration: none; }
-        .qr-action-btn:hover { background: var(--color-sidebar); }
+        .qr-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+        .qr-group { display: flex; flex-direction: column; gap: 12px; }
+
+        .qr-group__label {
+          font-size: 13px;
+          font-weight: 700;
+          color: var(--color-text-muted);
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+        }
+
+        .qr-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+          gap: 12px;
+        }
+
+        .qr-card {
+          position: relative;
+          background: var(--color-surface);
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-lg);
+          padding: 16px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .qr-card__tools {
+          position: absolute;
+          top: 8px;
+          right: 8px;
+          display: flex;
+          gap: 4px;
+          opacity: 0;
+          transition: var(--transition-smooth);
+        }
+        .qr-card:hover .qr-card__tools { opacity: 1; }
+
+        .qr-card__tools button {
+          width: 24px;
+          height: 24px;
+          border: 1px solid var(--color-border);
+          border-radius: 7px;
+          background: var(--color-surface);
+          color: var(--color-text-muted);
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .qr-card__tools button:hover { color: var(--color-text); background: var(--color-canvas); }
+        .qr-card__tools .is-danger:hover { color: var(--color-danger); border-color: var(--color-danger-border); }
+
+        .qr-card__img {
+          width: 84px;
+          height: 84px;
+          border: 1px solid var(--color-border);
+          border-radius: 8px;
+          padding: 6px;
+          box-sizing: border-box;
+        }
+
+        .qr-card__id {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 14px;
+          font-weight: 700;
+        }
+
+        .qr-card__dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+        .qr-card__seats { font-size: 12px; font-weight: 500; color: var(--color-text-muted); }
+
+        .qr-card__links { display: flex; gap: 10px; font-size: 12px; font-weight: 600; }
+        .qr-card__links a,
+        .qr-card__links button {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          color: var(--color-info);
+          background: none;
+          border: none;
+          text-decoration: none;
+          font-size: inherit;
+          font-weight: inherit;
+        }
+        .qr-card__links a:hover,
+        .qr-card__links button:hover { text-decoration: underline; }
       `}</style>
     </div>
   );

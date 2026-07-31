@@ -1,85 +1,104 @@
 import React from 'react';
-import { RefreshCw, Clock, XCircle } from 'lucide-react';
+import { RefreshCw, LayoutGrid } from 'lucide-react';
+
+/**
+ * Table status → the strip colour and pill tone used across the POS.
+ * Kept in one place so the floor, the header counts and the badges agree.
+ */
+const STATUS = {
+  available: { strip: '#C9CDD5', tone: 'tone-neutral', label: 'Available' },
+  occupied: { strip: 'var(--color-info)', tone: 'tone-blue', label: 'Dining' },
+  billing: { strip: 'var(--color-warning)', tone: 'tone-amber', label: 'Bill ready' },
+  cleaning: { strip: 'var(--color-success)', tone: 'tone-green', label: 'Cleaning' },
+};
+
+const STALE_MINUTES = 45;
+
+const minutesSince = (iso) => {
+  if (!iso) return null;
+  const diff = (Date.now() - new Date(iso).getTime()) / 60000;
+  return Number.isFinite(diff) ? Math.max(0, Math.floor(diff)) : null;
+};
 
 function TableCard({ table, isSelected, onClick, onFreeTable }) {
   const session = table.active_session;
+  const s = STATUS[table.status] || STATUS.available;
+  const min = session ? minutesSince(session.started_at) : null;
+  const late = min !== null && min > STALE_MINUTES;
 
   return (
     <div
-      className={`table-pos-card status-${table.status} ${isSelected ? 'selected-table' : ''}`}
+      className={`tw-card ${isSelected ? 'is-selected' : ''}`}
       onClick={() => onClick(table)}
     >
-      <div className="table-header">
-        <span className="table-num">T - {table.table_number}</span>
-        <span className="table-capacity">{table.capacity} Pax</span>
-      </div>
-
-      <div className="table-body">
-        {session ? (
-          <>
-            <p className="guest-name">{session.customer_name || 'Guest'}</p>
-            <div className="time-elapsed">
-              <Clock size={12} />
-              <span>{Math.floor((Date.now() - new Date(session.started_at).getTime()) / 60000)} mins</span>
-            </div>
-          </>
-        ) : (
-          <p className="vacant-text">Vacant</p>
-        )}
-      </div>
-
-      <div className="status-label">
-        {table.status === 'cleaning' && onFreeTable && (
-          <button
-            className="free-btn"
-            onClick={(e) => { e.stopPropagation(); onFreeTable(table.id); }}
-            title="Free table"
+      <div className="tw-strip" style={{ background: s.strip }} />
+      <div className="tw-body">
+        <div className="tw-top">
+          <div className="tw-id">T{table.table_number}</div>
+          <div
+            className="tw-min tnum"
+            style={{ color: late ? 'var(--color-danger)' : 'var(--color-text-muted)' }}
           >
-            <XCircle size={12} /> Free
-          </button>
-        )}
-        <span>{table.status.toUpperCase()}</span>
+            {min === null ? `${table.capacity} pax` : `${min} min`}
+          </div>
+        </div>
+
+        <div className="tw-guest">
+          {session ? (session.customer_name || 'Walk-in guest') : 'Vacant'}
+        </div>
+
+        <div className="tw-foot">
+          <span className={`pill pill--sm ${s.tone}`}>{s.label}</span>
+          {table.status === 'cleaning' && onFreeTable && (
+            <button
+              className="tw-free"
+              onClick={(e) => { e.stopPropagation(); onFreeTable(table.id); }}
+              title="Free table"
+            >
+              Free
+            </button>
+          )}
+        </div>
       </div>
+
       <style>{`
-        .table-pos-card {
-          background: white;
+        .tw-card {
+          background: var(--color-surface);
           border: 1px solid var(--color-border);
           border-radius: 14px;
-          padding: 1rem;
+          overflow: hidden;
           cursor: pointer;
-          display: flex;
-          flex-direction: column;
-          justify-content: space-between;
-          height: 120px;
-          position: relative;
-          box-shadow: var(--shadow-soft);
           transition: var(--transition-smooth);
         }
-        .table-pos-card:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 6px 16px rgba(0,0,0,0.06);
+        .tw-card:hover { border-color: var(--color-border-strong); }
+        .tw-card.is-selected {
+          border-color: var(--color-text);
+          box-shadow: 0 0 0 1px var(--color-text);
         }
-        .selected-table {
-          outline: 2.5px solid var(--color-primary);
-          outline-offset: -1px;
+        .tw-strip { height: 4px; }
+        .tw-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+        .tw-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+        .tw-id { font-size: 18px; font-weight: 800; }
+        .tw-min { font-size: 12px; font-weight: 600; white-space: nowrap; }
+        .tw-guest {
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--color-text);
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
         }
-        .table-header { display: flex; justify-content: space-between; align-items: center; }
-        .table-num { font-size: 1rem; font-weight: 800; color: var(--color-primary); }
-        .table-capacity { font-size: 0.7rem; font-weight: 700; color: var(--color-text-muted); }
-        .table-body { margin-top: 0.5rem; flex: 1; }
-        .guest-name { font-size: 0.8rem; font-weight: 700; color: var(--color-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100px; }
-        .time-elapsed { display: flex; align-items: center; gap: 0.25rem; font-size: 0.7rem; color: var(--color-text-muted); margin-top: 0.15rem; font-weight: 600; }
-        .vacant-text { color: #bdbdbd; font-size: 0.8rem; font-weight: 700; }
-        .status-label { font-size: 0.6rem; font-weight: 800; letter-spacing: 0.5px; text-align: right; margin-top: auto; display: flex; align-items: center; justify-content: flex-end; gap: 0.4rem; }
-        .free-btn { display: inline-flex; align-items: center; gap: 0.2rem; background: #00796B; color: white; border: none; border-radius: 4px; padding: 0.15rem 0.4rem; font-size: 0.6rem; font-weight: 700; cursor: pointer; }
-        .free-btn:hover { background: #004D40; }
-        .status-available .status-label { color: #888; }
-        .status-occupied { background: rgba(197, 168, 128, 0.08); border-color: var(--color-accent); }
-        .status-occupied .status-label { color: var(--color-accent); }
-        .status-billing { background: #FFF9C4; border-color: #FBC02D; }
-        .status-billing .status-label { color: #F57F17; }
-        .status-cleaning { background: #E0F2F1; border-color: #4DB6AC; }
-        .status-cleaning .status-label { color: #00796B; }
+        .tw-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+        .tw-free {
+          border: 1px solid var(--color-border);
+          background: var(--color-surface);
+          border-radius: 8px;
+          padding: 3px 10px;
+          font-size: 11px;
+          font-weight: 700;
+          color: var(--color-text-soft);
+        }
+        .tw-free:hover { background: var(--color-canvas); }
       `}</style>
     </div>
   );
@@ -99,29 +118,28 @@ export default function TablesWorkspace({
 }) {
   if (error) {
     return (
-      <div className="tab-content">
-        <p className="error-text">Failed to load tables: {error}</p>
-        <style>{`
-          .tab-content { padding: 1.5rem; overflow-y: auto; flex: 1; }
-          .error-text { color: var(--color-text-muted); font-weight: 600; text-align: center; padding: 2rem; }
-        `}</style>
+      <div className="card">
+        <div className="empty-state">
+          <div className="empty-state__title">Couldn’t load tables</div>
+          <div className="empty-state__sub">{error}</div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="tab-content">
-      <div className="area-selector">
+    <div className="tw">
+      <div className="chip-row">
         <button
-          className={`area-btn ${activeArea === 'all' ? 'active' : ''}`}
+          className={`chip ${activeArea === 'all' ? 'on' : ''}`}
           onClick={() => onSelectArea('all')}
         >
-          All Areas
+          All areas
         </button>
         {sections.map((s) => (
           <button
             key={s.id}
-            className={`area-btn ${activeArea === s.id ? 'active' : ''}`}
+            className={`chip ${activeArea === s.id ? 'on' : ''}`}
             onClick={() => onSelectArea(s.id)}
           >
             {s.section_name}
@@ -130,13 +148,22 @@ export default function TablesWorkspace({
       </div>
 
       {loading ? (
-        <div className="tab-loading">
-          <RefreshCw className="spinner" /> Loading tables layout...
+        <div className="card">
+          <div className="empty-state">
+            <RefreshCw size={20} className="spin" />
+            <div className="empty-state__sub">Loading floor layout…</div>
+          </div>
         </div>
       ) : tables.length === 0 ? (
-        <p className="no-tables">No tables found in this area.</p>
+        <div className="card">
+          <div className="empty-state">
+            <span className="empty-state__mark"><LayoutGrid size={22} /></span>
+            <div className="empty-state__title">No tables in this area</div>
+            <div className="empty-state__sub">Pick another area, or add tables in QR Codes.</div>
+          </div>
+        </div>
       ) : (
-        <div className="tables-grid">
+        <div className="tw-grid">
           {tables.map((t) => (
             <TableCard
               key={t.id}
@@ -150,16 +177,12 @@ export default function TablesWorkspace({
       )}
 
       <style>{`
-        .tab-content { padding: 1.5rem; display: flex; flex-direction: column; gap: 1.25rem; overflow-y: auto; flex: 1; }
-        .area-selector { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-        .area-btn { padding: 0.45rem 1rem; border-radius: 20px; border: 1px solid var(--color-border); font-size: 0.8rem; font-weight: 700; color: var(--color-text-muted); background: white; cursor: pointer; transition: var(--transition-smooth); }
-        .area-btn:hover { background: var(--color-accent-soft); color: var(--color-primary); }
-        .area-btn.active { background: var(--color-primary); color: white; border-color: var(--color-primary); }
-        .tables-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 1rem; }
-        .tab-loading { display: flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 4rem; font-weight: 700; color: var(--color-text-muted); }
-        .spinner { animation: spin 1s linear infinite; }
-        .no-tables { text-align: center; padding: 3rem; color: var(--color-text-muted); font-weight: 600; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .tw { display: flex; flex-direction: column; gap: 14px; }
+        .tw-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+          gap: 12px;
+        }
       `}</style>
     </div>
   );

@@ -4,10 +4,10 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 
 const STATUS_STYLES = {
-  trial: { bg: '#E3F2FD', color: '#1565C0' },
-  active: { bg: '#E8F5E9', color: '#2E7D32' },
-  suspended: { bg: '#FFEBEE', color: '#C62828' },
-  cancelled: { bg: '#F5F5F5', color: '#757575' },
+  trial: { bg: 'var(--color-info-soft)', color: 'var(--color-info)' },
+  active: { bg: 'var(--color-success-soft)', color: 'var(--color-success)' },
+  suspended: { bg: 'var(--color-danger-soft)', color: 'var(--color-danger)' },
+  cancelled: { bg: 'var(--color-well)', color: 'var(--color-text-soft)' },
 };
 
 export default function SuperAdmin() {
@@ -124,7 +124,7 @@ export default function SuperAdmin() {
       )}
 
       <style>{`
-        .sa-view { padding: 1.5rem 2rem; }
+        .sa-view { padding: 28px 32px 40px 32px; }
         .sa-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
         .sa-head h2 { display: flex; align-items: center; gap: 0.5rem; font-size: 1.5rem; font-weight: 800; color: var(--color-primary); margin: 0; }
         .sa-head p { color: var(--color-text-muted); font-weight: 600; font-size: 0.82rem; margin: 0.25rem 0 0; }
@@ -134,7 +134,7 @@ export default function SuperAdmin() {
         .sa-table { background: white; border: 1px solid var(--color-border); border-radius: 14px; overflow: hidden; }
         .sa-row { display: grid; grid-template-columns: 2fr 1.4fr 0.8fr 1fr 1fr 1.2fr; align-items: center; padding: 0.85rem 1.1rem; border-bottom: 1px solid var(--color-border); font-size: 0.85rem; }
         .sa-row:last-child { border-bottom: none; }
-        .sa-row--head { background: var(--color-sidebar); font-weight: 700; color: var(--color-text-muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; }
+        .sa-row--head { background: var(--color-canvas); font-weight: 700; color: var(--color-text-muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; }
         .sa-name { display: flex; align-items: center; gap: 0.4rem; font-weight: 700; color: var(--color-primary); }
         .sa-mono { font-family: monospace; color: var(--color-text-muted); }
         .sa-date { color: var(--color-text-muted); }

@@ -1,77 +1,97 @@
 import React from 'react';
 import { Printer } from 'lucide-react';
 
+const ORDERS = [
+  {
+    id: '#SW-9082',
+    source: 'Swiggy',
+    sourceTone: 'tone-amber',
+    customer: 'Ritesh K.',
+    phone: '+91 908** **982',
+    items: '2× Butter Chicken, 4× Butter Naan',
+    amount: '₹680.00',
+    status: 'Preparing',
+    statusTone: 'tone-amber',
+    actions: 'live',
+  },
+  {
+    id: '#ZO-4521',
+    source: 'Zomato',
+    sourceTone: 'tone-red',
+    customer: 'Ananya S.',
+    phone: '+91 887** **341',
+    items: '1× Veg Biryani, 1× Paneer Tikka',
+    amount: '₹410.00',
+    status: 'Out for delivery',
+    statusTone: 'tone-blue',
+    actions: 'print',
+  },
+];
+
 export default function OnlineOrdersTab() {
   return (
-    <div className="tab-content">
-      <div className="online-header-row">
-        <h4>Aggregator Delivery Feed</h4>
-        <div className="aggregator-pills">
-          <span className="pill swiggy">Swiggy</span>
-          <span className="pill zomato">Zomato</span>
-        </div>
+    <div className="oo">
+      <div className="oo-head">
+        <div className="card__title" style={{ flex: 1 }}>Aggregator delivery feed</div>
+        <span className="pill pill--sm tone-amber">Swiggy</span>
+        <span className="pill pill--sm tone-red">Zomato</span>
       </div>
 
-      <table className="online-orders-table">
-        <thead>
-          <tr>
-            <th>Order ID</th>
-            <th>Source</th>
-            <th>Customer</th>
-            <th>Order Items</th>
-            <th>Amount</th>
-            <th>Status</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>#SW-9082</td>
-            <td><span className="source-tag swiggy-bg">Swiggy</span></td>
-            <td><strong>Ritesh K.</strong><br />+91 908** **982</td>
-            <td>2x Butter Chicken, 4x Butter Naan</td>
-            <td>₹ 680.00</td>
-            <td><span className="status-indicator preparing">Preparing</span></td>
-            <td>
-              <button className="pos-table-btn reject">Reject</button>
-              <button className="pos-table-btn accept">Ready</button>
-            </td>
-          </tr>
-          <tr>
-            <td>#ZO-4521</td>
-            <td><span className="source-tag zomato-bg">Zomato</span></td>
-            <td><strong>Ananya S.</strong><br />+91 887** **341</td>
-            <td>1x Veg Biryani, 1x Paneer Tikka</td>
-            <td>₹ 410.00</td>
-            <td><span className="status-indicator ready">Out for Delivery</span></td>
-            <td>
-              <button className="pos-table-btn print"><Printer size={12} /> Print</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <div className="table-card table-card--padded">
+        <div className="table-head">
+          <div className="oo-c-id">Order</div>
+          <div className="oo-c-source">Source</div>
+          <div className="oo-c-cust">Customer</div>
+          <div className="oo-c-items">Items</div>
+          <div className="oo-c-amt">Amount</div>
+          <div className="oo-c-status">Status</div>
+          <div className="oo-c-actions">Actions</div>
+        </div>
+
+        {ORDERS.map((o) => (
+          <div key={o.id} className="table-row oo-row">
+            <div className="oo-c-id strong">{o.id}</div>
+            <div className="oo-c-source">
+              <span className={`pill pill--sm ${o.sourceTone}`}>{o.source}</span>
+            </div>
+            <div className="oo-c-cust">
+              <div className="strong">{o.customer}</div>
+              <div className="muted oo-phone tnum">{o.phone}</div>
+            </div>
+            <div className="oo-c-items muted">{o.items}</div>
+            <div className="oo-c-amt amount">{o.amount}</div>
+            <div className="oo-c-status">
+              <span className={`pill pill--sm ${o.statusTone}`}>{o.status}</span>
+            </div>
+            <div className="oo-c-actions">
+              {o.actions === 'live' ? (
+                <>
+                  <button className="btn btn--danger btn--sm">Reject</button>
+                  <button className="btn btn--primary btn--sm">Ready</button>
+                </>
+              ) : (
+                <button className="btn btn--ghost btn--sm"><Printer size={13} /> Print</button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
 
       <style>{`
-        .tab-content { padding: 1.5rem; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 1.25rem; }
-        .online-header-row { display: flex; justify-content: space-between; align-items: center; }
-        .online-header-row h4 { font-size: 1.05rem; font-weight: 700; color: var(--color-primary); }
-        .aggregator-pills { display: flex; gap: 0.5rem; }
-        .pill { font-size: 0.7rem; font-weight: 800; padding: 0.25rem 0.6rem; border-radius: 6px; text-transform: uppercase; }
-        .pill.swiggy { background: #FF6F00; color: white; }
-        .pill.zomato { background: #CB202D; color: white; }
-        .online-orders-table { width: 100%; border-collapse: collapse; background: white; border-radius: 12px; overflow: hidden; border: 1px solid var(--color-border); }
-        .online-orders-table th { background: var(--color-sidebar); padding: 0.85rem 1rem; font-size: 0.75rem; font-weight: 700; color: var(--color-text-muted); text-align: left; text-transform: uppercase; }
-        .online-orders-table td { padding: 1rem; font-size: 0.85rem; border-bottom: 1px solid var(--color-border); color: var(--color-text); vertical-align: middle; }
-        .source-tag { font-size: 0.7rem; font-weight: 800; padding: 0.15rem 0.4rem; border-radius: 4px; }
-        .swiggy-bg { background: #FFE0B2; color: #E65100; }
-        .zomato-bg { background: #FFCDD2; color: #B71C1C; }
-        .status-indicator { font-size: 0.7rem; font-weight: 800; padding: 0.15rem 0.4rem; border-radius: 4px; }
-        .status-indicator.preparing { background: #E8F5E9; color: #2E7D32; }
-        .status-indicator.ready { background: #E1F5FE; color: #0288D1; }
-        .pos-table-btn { border: none; padding: 0.4rem 0.75rem; border-radius: 6px; font-weight: 700; font-size: 0.75rem; cursor: pointer; margin-right: 0.35rem; transition: var(--transition-smooth); }
-        .pos-table-btn.reject { background: #FFEBEE; color: #C62828; }
-        .pos-table-btn.accept { background: var(--color-primary); color: white; }
-        .pos-table-btn.print { background: var(--color-accent-soft); color: var(--color-primary); }
+        .oo { display: flex; flex-direction: column; gap: 14px; }
+        .oo-head { display: flex; align-items: center; gap: 8px; }
+
+        .oo-row { height: auto; padding: 12px 0; }
+
+        .oo-c-id { width: 90px; }
+        .oo-c-source { width: 90px; }
+        .oo-c-cust { width: 140px; min-width: 0; }
+        .oo-c-items { flex: 1; min-width: 0; }
+        .oo-c-amt { width: 90px; text-align: right; }
+        .oo-c-status { width: 130px; }
+        .oo-c-actions { width: 150px; display: flex; gap: 8px; justify-content: flex-end; }
+
+        .oo-phone { font-size: 12px; }
       `}</style>
     </div>
   );

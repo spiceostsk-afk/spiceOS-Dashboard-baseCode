@@ -296,7 +296,7 @@ describe('Components — Rendering & States', () => {
 
     it('shows offline message when !isOnline', () => {
       render(<ConnectivityBanner isOnline={false} syncing={false} lastSyncResult={null} {...baseProps} />);
-      expect(screen.getByText(/Offline Mode/)).toBeInTheDocument();
+      expect(screen.getByText(/Offline mode/)).toBeInTheDocument();
     });
     it('shows syncing state with progress', () => {
       render(<ConnectivityBanner isOnline={true} syncing={true} lastSyncResult={null} {...baseProps} syncProgress={{ current: 3, total: 5 }} />);
@@ -337,25 +337,25 @@ describe('Components — Rendering & States', () => {
     });
     it('renders loading state', () => {
       render(<TablesWorkspace tables={[]} sections={[]} activeArea="all" loading={true} error={null} selectedSessionId={null} sessionTableId={null} onSelectArea={() => {}} onTableClick={() => {}} />);
-      expect(screen.getByText(/Loading tables layout/)).toBeInTheDocument();
+      expect(screen.getByText(/Loading floor layout/)).toBeInTheDocument();
     });
     it('renders empty state when no tables', () => {
       render(<TablesWorkspace tables={[]} sections={sections} activeArea="all" loading={false} error={null} selectedSessionId={null} sessionTableId={null} onSelectArea={() => {}} onTableClick={() => {}} />);
-      expect(screen.getByText(/No tables found/)).toBeInTheDocument();
+      expect(screen.getByText(/No tables in this area/)).toBeInTheDocument();
     });
     it('renders all table cards with statuses', () => {
       render(<TablesWorkspace tables={mockTables} sections={sections} activeArea="all" loading={false} error={null} selectedSessionId={null} sessionTableId={null} onSelectArea={() => {}} onTableClick={() => {}} onFreeTable={() => {}} />);
-      expect(screen.getByText('T - 1')).toBeInTheDocument();
-      expect(screen.getByText('T - 2')).toBeInTheDocument();
+      expect(screen.getByText('T1')).toBeInTheDocument();
+      expect(screen.getByText('T2')).toBeInTheDocument();
       expect(screen.getByText('John')).toBeInTheDocument();
-      expect(screen.getByText('AVAILABLE')).toBeInTheDocument();
-      expect(screen.getByText('OCCUPIED')).toBeInTheDocument();
-      expect(screen.getByText('BILLING')).toBeInTheDocument();
-      expect(screen.getByText('CLEANING')).toBeInTheDocument();
+      expect(screen.getByText('Available')).toBeInTheDocument();
+      expect(screen.getByText('Dining')).toBeInTheDocument();
+      expect(screen.getByText('Bill ready')).toBeInTheDocument();
+      expect(screen.getByText('Cleaning')).toBeInTheDocument();
     });
     it('renders area filter buttons', () => {
       render(<TablesWorkspace tables={mockTables} sections={sections} activeArea="all" loading={false} error={null} selectedSessionId={null} sessionTableId={null} onSelectArea={() => {}} onTableClick={() => {}} />);
-      expect(screen.getByText('All Areas')).toBeInTheDocument();
+      expect(screen.getByText('All areas')).toBeInTheDocument();
       expect(screen.getByText('Main Hall')).toBeInTheDocument();
     });
     it('calls onFreeTable when Free button clicked on cleaning table', () => {
@@ -394,7 +394,7 @@ describe('Components — Rendering & States', () => {
     });
     it('shows loading state', () => {
       render(<BillingDetails {...baseProps} sessionId="s1" loading={true} />);
-      expect(screen.getByText(/Loading session bill details/)).toBeInTheDocument();
+      expect(screen.getByText(/Loading bill details/)).toBeInTheDocument();
     });
     it('shows error state', () => {
       render(<BillingDetails {...baseProps} sessionId="s1" error="Session not found" />);
@@ -402,7 +402,7 @@ describe('Components — Rendering & States', () => {
     });
     it('shows null session message', () => {
       render(<BillingDetails {...baseProps} sessionId="s1" session={null} />);
-      expect(screen.getByText(/Active Session could not be loaded/)).toBeInTheDocument();
+      expect(screen.getByText(/active session could not be loaded/)).toBeInTheDocument();
     });
     it('renders session header with table and customer', () => {
       const session = {
@@ -414,7 +414,7 @@ describe('Components — Rendering & States', () => {
       render(<BillingDetails {...baseProps} sessionId="s1" session={session} />);
       expect(screen.getByText(/Table 5/)).toBeInTheDocument();
       expect(screen.getByText(/Alice/)).toBeInTheDocument();
-      expect(screen.getByText(/3 Guests/)).toBeInTheDocument();
+      expect(screen.getByText(/3 guests/)).toBeInTheDocument();
     });
     it('renders items list', () => {
       const session = { id: 's1', restaurant_tables: { table_number: 1 } };
@@ -446,34 +446,34 @@ describe('Components — Rendering & States', () => {
       expect(screen.getByText('POINT OF SALE')).toBeInTheDocument();
       expect(screen.getByText('Dashboard')).toBeInTheDocument();
       expect(screen.getByText('Payments')).toBeInTheDocument();
-      expect(screen.getByText('Daily Operations')).toBeInTheDocument();
       expect(screen.getByText('Live Orders')).toBeInTheDocument();
-      expect(screen.getByText('Online Orders')).toBeInTheDocument();
-      expect(screen.getByText('Store Actions')).toBeInTheDocument();
       expect(screen.getByText('Menu Catalog')).toBeInTheDocument();
+      expect(screen.getByText('Inventory')).toBeInTheDocument();
       expect(screen.getByText('Reports')).toBeInTheDocument();
       expect(screen.getByText('Order History')).toBeInTheDocument();
       expect(screen.getByText('Customers')).toBeInTheDocument();
-      expect(screen.getByText('QR Management')).toBeInTheDocument();
+      expect(screen.getByText('QR Codes')).toBeInTheDocument();
       expect(screen.getByText('Staff')).toBeInTheDocument();
+      expect(screen.getByText('Branding')).toBeInTheDocument();
       expect(screen.getByText('Settings')).toBeInTheDocument();
     });
     it('shows user card', () => {
       render(<MemoryRouter><Sidebar /></MemoryRouter>);
       expect(screen.getByText('Alex Rivera')).toBeInTheDocument();
     });
-    it('has Inventory placeholder with New badge', () => {
+    // Online Orders and Store Actions moved from nested nav rows to tabs on the
+    // Live Orders screen, so the rail is flat.
+    it('renders a flat rail with no Daily Operations group', () => {
       render(<MemoryRouter><Sidebar /></MemoryRouter>);
-      expect(screen.getByText('Inventory')).toBeInTheDocument();
-      expect(screen.getByText('New')).toBeInTheDocument();
+      expect(screen.queryByText('Daily Operations')).not.toBeInTheDocument();
     });
   });
 
   /* ---- Header ---- */
   describe('Header titles', () => {
-    it('shows POS Dashboard on /dashboard', () => {
+    it('shows Dashboard on /dashboard', () => {
       render(<MemoryRouter initialEntries={['/dashboard']}><Header /></MemoryRouter>);
-      expect(screen.getByText('POS Dashboard')).toBeInTheDocument();
+      expect(screen.getByText('Dashboard')).toBeInTheDocument();
     });
     it('shows Order History on /orders', () => {
       render(<MemoryRouter initialEntries={['/orders']}><Header /></MemoryRouter>);
@@ -481,7 +481,7 @@ describe('Components — Rendering & States', () => {
     });
     it('shows shift badge', () => {
       render(<MemoryRouter initialEntries={['/dashboard']}><Header /></MemoryRouter>);
-      expect(screen.getByText('Shift Active')).toBeInTheDocument();
+      expect(screen.getByText('Shift active')).toBeInTheDocument();
     });
     it('shows New Order button when shift is active', () => {
       render(<MemoryRouter initialEntries={['/dashboard']}><Header /></MemoryRouter>);

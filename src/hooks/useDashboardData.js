@@ -105,6 +105,64 @@ function buildLiveOrders(orders) {
   });
 }
 
+const STALE_ORDER_MINUTES = 45;
+
+const FORMAT_INR = new Intl.NumberFormat('en-IN', {
+  style: 'currency',
+  currency: 'INR',
+  maximumFractionDigits: 0,
+});
+
+function minutesOpen(createdAt) {
+  if (!createdAt) return null;
+  const diff = (Date.now() - new Date(createdAt).getTime()) / 60000;
+  return Number.isFinite(diff) ? Math.max(0, Math.round(diff)) : null;
+}
+
+/**
+ * Things a manager should look at right now, newest problem first. Derived from
+ * the orders already in hand — no extra round trip.
+ */
+function buildAlerts(orders, todayStr) {
+  if (!orders || orders.length === 0) return [];
+  const alerts = [];
+
+  const stale = buildLiveOrders(orders)
+    .map((o) => ({ order: o, min: minutesOpen(o.created_at) }))
+    .filter((x) => x.min !== null && x.min > STALE_ORDER_MINUTES)
+    .sort((a, b) => b.min - a.min);
+
+  stale.slice(0, 2).forEach(({ order, min }) => {
+    const table = order.restaurant_tables?.table_number;
+    alerts.push({
+      id: `stale-${table || 'x'}-${min}`,
+      severity: 'warning',
+      glyph: '⏱',
+      title: table ? `Table ${table} open for ${min} minutes` : `An order has been open for ${min} minutes`,
+      detail: `${FORMAT_INR.format(order.total || 0)} unbilled`,
+      to: '/billing',
+    });
+  });
+
+  const voided = orders.filter(
+    (o) => o.order_status === STATUS_FILTERS.cancelled && (o.created_at || '').startsWith(todayStr),
+  );
+
+  if (voided.length > 0) {
+    const amount = voided.reduce((sum, o) => sum + Number(o.total || 0), 0);
+    alerts.push({
+      id: 'voided',
+      severity: 'danger',
+      glyph: '✕',
+      title: `${voided.length} voided order${voided.length === 1 ? '' : 's'} today · ${FORMAT_INR.format(amount)}`,
+      detail: 'Review them in order history',
+      to: '/orders',
+    });
+  }
+
+  return alerts;
+}
+
 export function useDashboardData() {
   const [state, setState] = useState({
     stats: {
@@ -121,6 +179,7 @@ export function useDashboardData() {
     dailyTrend: [],
     recentOrders: [],
     liveOrders: [],
+    alerts: [],
     loading: true,
     error: null,
   });
@@ -180,6 +239,7 @@ export function useDashboardData() {
         dailyTrend: buildDailyTrend(orders),
         recentOrders: buildRecentOrders(orders),
         liveOrders: buildLiveOrders(orders),
+        alerts: buildAlerts(orders, todayStr),
         loading: false,
         error: null,
       });

@@ -1,46 +1,48 @@
 import React from 'react';
-import { X, User, Phone, Users, ArrowRight, ArrowLeftRight, FileText } from 'lucide-react';
+import { X, ArrowRight } from 'lucide-react';
 
-function ModalOverlay({ onClose, children, width }) {
+function Modal({ onClose, title, width, children }) {
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-container" style={width ? { width } : {}} onClick={(e) => e.stopPropagation()}>
-        {children}
+    <div className="overlay" onClick={onClose}>
+      <div
+        className="modal"
+        style={width ? { width } : undefined}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="modal__head">
+          <div className="modal__title">{title}</div>
+          <button className="modal__close" onClick={onClose}><X size={17} /></button>
+        </div>
+        <div className="modal__body">{children}</div>
       </div>
-      <style>{`
-        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-        .modal-container { background: white; width: 420px; border-radius: 20px; box-shadow: var(--shadow-soft); overflow: hidden; border: 1px solid var(--color-border); }
-      `}</style>
-    </div>
-  );
-}
-
-function ModalHeader({ title, onClose }) {
-  return (
-    <div className="modal-header">
-      <h2>{title}</h2>
-      <button className="close-modal" onClick={onClose}><X size={20} /></button>
-      <style>{`
-        .modal-header { padding: 1.25rem 1.5rem; background: var(--color-sidebar); display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-border); }
-        .modal-header h2 { font-size: 1.1rem; font-weight: 700; color: var(--color-primary); margin: 0; }
-        .close-modal { color: var(--color-text-muted); background: none; border: none; cursor: pointer; }
-      `}</style>
     </div>
   );
 }
 
 function GuestSelector({ guests, onChange }) {
   return (
-    <div className="guest-selector">
+    <div className="guest-grid">
       {[1, 2, 3, 4, 5, 6, 8].map((n) => (
-        <button key={n} type="button" className={guests === n ? 'active' : ''} onClick={() => onChange(n)}>
+        <button key={n} type="button" className={guests === n ? 'on' : ''} onClick={() => onChange(n)}>
           {n}
         </button>
       ))}
       <style>{`
-        .guest-selector { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.35rem; }
-        .guest-selector button { padding: 0.6rem; border: 1px solid var(--color-border); border-radius: 8px; font-weight: 700; color: var(--color-text-muted); background: white; cursor: pointer; }
-        .guest-selector button.active { background: var(--color-primary); color: white; border-color: var(--color-primary); }
+        .guest-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+        .guest-grid button {
+          height: 40px;
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-sm);
+          background: var(--color-surface);
+          font-size: 13.5px;
+          font-weight: 600;
+          color: var(--color-text-soft);
+        }
+        .guest-grid button.on {
+          background: var(--color-text);
+          border-color: var(--color-text);
+          color: #fff;
+        }
       `}</style>
     </div>
   );
@@ -48,278 +50,355 @@ function GuestSelector({ guests, onChange }) {
 
 export function AssignTableModal({ table, customerData, loadingAction, onClose, onUpdateField, onUpdateGuests, onSubmit }) {
   return (
-    <ModalOverlay onClose={onClose}>
-      <ModalHeader title={`Open Table ${table.table_number}`} onClose={onClose} />
-      <form onSubmit={onSubmit} className="modal-form">
-        <div className="form-group">
-          <label><User size={14} /> Guest Name</label>
-          <input type="text" placeholder="Enter guest name..." value={customerData.name} onChange={(e) => onUpdateField('name', e.target.value)} required />
+    <Modal onClose={onClose} title={`Open table ${table.table_number}`}>
+      <form onSubmit={onSubmit} className="modal__body">
+        <div className="field">
+          <label>Guest name</label>
+          <input
+            type="text"
+            placeholder="e.g. Rajesh Kumar"
+            value={customerData.name}
+            onChange={(e) => onUpdateField('name', e.target.value)}
+            required
+          />
         </div>
-        <div className="form-group">
-          <label><Phone size={14} /> Phone Number</label>
-          <input type="tel" placeholder="Enter phone number..." value={customerData.phone} onChange={(e) => onUpdateField('phone', e.target.value)} />
+        <div className="field">
+          <label>Phone</label>
+          <input
+            type="tel"
+            placeholder="+91"
+            value={customerData.phone}
+            onChange={(e) => onUpdateField('phone', e.target.value)}
+          />
         </div>
-        <div className="form-group">
-          <label><Users size={14} /> Guest Count</label>
+        <div className="field">
+          <label>Guests</label>
           <GuestSelector guests={customerData.guests} onChange={onUpdateGuests} />
         </div>
-        <div className="modal-footer">
-          <button type="submit" className="start-btn" disabled={loadingAction}>
-            Open Table & Order <ArrowRight size={16} />
+        <div className="modal__actions">
+          <button type="button" className="btn btn--ghost" onClick={onClose}>Cancel</button>
+          <button type="submit" className="btn btn--primary" disabled={loadingAction}>
+            Open table <ArrowRight size={15} />
           </button>
         </div>
       </form>
-      <style>{`
-        .modal-form { padding: 1.5rem; display: flex; flex-direction: column; gap: 1.25rem; }
-        .form-group { display: flex; flex-direction: column; gap: 0.35rem; }
-        .form-group label { display: flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; font-weight: 700; color: var(--color-text-muted); }
-        .form-group input, .form-group select { padding: 0.75rem 0.85rem; border-radius: 10px; border: 1px solid var(--color-border); font-size: 0.9rem; color: var(--color-primary); font-weight: 600; background: white; outline: none; }
-        .modal-footer { margin-top: 0.75rem; }
-        .start-btn { width: 100%; background: var(--color-primary); color: white; padding: 0.95rem; border-radius: 12px; font-weight: 700; font-size: 0.95rem; display: flex; align-items: center; justify-content: center; gap: 0.5rem; border: none; cursor: pointer; }
-        .start-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-      `}</style>
-    </ModalOverlay>
+    </Modal>
   );
 }
 
 export function MoveTableModal({ availableTables, selectedMoveTableId, loadingAction, onClose, onSelectTable, onConfirm }) {
   return (
-    <ModalOverlay onClose={onClose}>
-      <ModalHeader title="Move Table" onClose={onClose} />
-      <div className="modal-form">
-        <div className="form-group">
-          <label>Select Target Table</label>
-          {loadingAction ? (
-            <p style={{ fontSize: '0.9rem', color: '#888' }}>Loading available tables...</p>
-          ) : availableTables.length === 0 ? (
-            <p style={{ color: '#d9534f', fontWeight: 700 }}>No available tables to move to.</p>
-          ) : (
-            <select value={selectedMoveTableId} onChange={(e) => onSelectTable(e.target.value)}>
-              {availableTables.map((t) => (
-                <option key={t.id} value={t.id}>Table {t.table_number} ({t.capacity} Seats)</option>
-              ))}
-            </select>
-          )}
-        </div>
-        <button className="start-btn" onClick={onConfirm} disabled={availableTables.length === 0 || loadingAction}>
-          Confirm Move
+    <Modal onClose={onClose} title="Move table">
+      <div className="field">
+        <label>Target table</label>
+        {loadingAction ? (
+          <div className="card__subtitle">Loading available tables…</div>
+        ) : availableTables.length === 0 ? (
+          <div className="card__subtitle" style={{ color: 'var(--color-danger)', fontWeight: 600 }}>
+            No available tables to move to.
+          </div>
+        ) : (
+          <select value={selectedMoveTableId} onChange={(e) => onSelectTable(e.target.value)}>
+            {availableTables.map((t) => (
+              <option key={t.id} value={t.id}>Table {t.table_number} ({t.capacity} seats)</option>
+            ))}
+          </select>
+        )}
+      </div>
+      <div className="modal__actions">
+        <button className="btn btn--ghost" onClick={onClose}>Cancel</button>
+        <button
+          className="btn btn--primary"
+          onClick={onConfirm}
+          disabled={availableTables.length === 0 || loadingAction}
+        >
+          Confirm move
         </button>
       </div>
-      <style>{`
-        .modal-form { padding: 1.5rem; display: flex; flex-direction: column; gap: 1.25rem; }
-        .form-group { display: flex; flex-direction: column; gap: 0.35rem; }
-        .form-group label { font-size: 0.8rem; font-weight: 700; color: var(--color-text-muted); }
-        .form-group select { padding: 0.75rem 0.85rem; border-radius: 10px; border: 1px solid var(--color-border); font-size: 0.9rem; color: var(--color-primary); font-weight: 600; background: white; outline: none; }
-        .start-btn { width: 100%; background: var(--color-primary); color: white; padding: 0.95rem; border-radius: 12px; font-weight: 700; font-size: 0.95rem; display: flex; align-items: center; justify-content: center; gap: 0.5rem; border: none; cursor: pointer; }
-        .start-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-      `}</style>
-    </ModalOverlay>
+    </Modal>
   );
 }
 
 export function MergeOrderModal({ occupiedSessions, selectedMergeSessionId, loadingAction, onClose, onSelectSession, onConfirm }) {
   return (
-    <ModalOverlay onClose={onClose}>
-      <ModalHeader title="Merge Order" onClose={onClose} />
-      <div className="modal-form">
-        <div className="form-group">
-          <label>Select Table Session to Merge Into This Bill</label>
-          {loadingAction ? (
-            <p style={{ fontSize: '0.9rem', color: '#888' }}>Loading sessions...</p>
-          ) : occupiedSessions.length === 0 ? (
-            <p style={{ color: '#888', fontWeight: 600 }}>No other occupied tables to merge.</p>
-          ) : (
-            <select value={selectedMergeSessionId} onChange={(e) => onSelectSession(e.target.value)}>
-              {occupiedSessions.map((s) => (
-                <option key={s.id} value={s.id}>Table {s.restaurant_tables?.table_number} ({s.customer_name || 'Guest'})</option>
-              ))}
-            </select>
-          )}
-        </div>
-        <button className="start-btn" onClick={onConfirm} disabled={occupiedSessions.length === 0 || loadingAction}>
-          Confirm Merge
+    <Modal onClose={onClose} title="Merge order">
+      <div className="field">
+        <label>Session to merge into this bill</label>
+        {loadingAction ? (
+          <div className="card__subtitle">Loading sessions…</div>
+        ) : occupiedSessions.length === 0 ? (
+          <div className="card__subtitle">No other occupied tables to merge.</div>
+        ) : (
+          <select value={selectedMergeSessionId} onChange={(e) => onSelectSession(e.target.value)}>
+            {occupiedSessions.map((s) => (
+              <option key={s.id} value={s.id}>
+                Table {s.restaurant_tables?.table_number} ({s.customer_name || 'Walk-in'})
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+      <div className="modal__actions">
+        <button className="btn btn--ghost" onClick={onClose}>Cancel</button>
+        <button
+          className="btn btn--primary"
+          onClick={onConfirm}
+          disabled={occupiedSessions.length === 0 || loadingAction}
+        >
+          Confirm merge
         </button>
       </div>
-      <style>{`
-        .modal-form { padding: 1.5rem; display: flex; flex-direction: column; gap: 1.25rem; }
-        .form-group { display: flex; flex-direction: column; gap: 0.35rem; }
-        .form-group label { font-size: 0.8rem; font-weight: 700; color: var(--color-text-muted); }
-        .form-group select { padding: 0.75rem 0.85rem; border-radius: 10px; border: 1px solid var(--color-border); font-size: 0.9rem; color: var(--color-primary); font-weight: 600; background: white; outline: none; }
-        .start-btn { width: 100%; background: var(--color-primary); color: white; padding: 0.95rem; border-radius: 12px; font-weight: 700; font-size: 0.95rem; display: flex; align-items: center; justify-content: center; gap: 0.5rem; border: none; cursor: pointer; }
-        .start-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-      `}</style>
-    </ModalOverlay>
+    </Modal>
   );
 }
 
-export function SplitBillModal({ splitTab, splitWays, total, subtotal, items, itemAssignments, onClose, onSetTab, onSetWays, onAssignItem, onPrintSplit }) {
+export function SplitBillModal({ splitTab, splitWays, total, items, itemAssignments, onClose, onSetTab, onSetWays, onAssignItem, onPrintSplit }) {
   return (
-    <ModalOverlay onClose={onClose} width="480px">
-      <ModalHeader title="Split Bill" onClose={onClose} />
-      <div style={{ padding: '1.5rem' }}>
-        <div className="modal-tabs">
-          <button className={`modal-tab ${splitTab === 'equal' ? 'active' : ''}`} onClick={() => onSetTab('equal')}>Split Equally</button>
-          <button className={`modal-tab ${splitTab === 'items' ? 'active' : ''}`} onClick={() => onSetTab('items')}>Split by Items</button>
-        </div>
+    <Modal onClose={onClose} title="Split bill" width="480px">
+      <div className="segmented" style={{ alignSelf: 'flex-start' }}>
+        <button className={splitTab === 'equal' ? 'on' : ''} onClick={() => onSetTab('equal')}>Split equally</button>
+        <button className={splitTab === 'items' ? 'on' : ''} onClick={() => onSetTab('items')}>Split by items</button>
+      </div>
 
-        {splitTab === 'equal' && (
-          <div>
-            <div className="split-ways-selector">
-              <span>Split into:</span>
-              <input type="number" min="2" max="6" value={splitWays} onChange={(e) => onSetWays(Math.max(2, parseInt(e.target.value) || 2))} />
-              <span>ways</span>
-            </div>
-            <div className="split-results">
-              {Array.from({ length: splitWays }).map((_, i) => (
-                <div key={i} className="split-card">
-                  <div>
-                    <h5>Share {i + 1} of {splitWays}</h5>
-                    <p>{(total / splitWays).toFixed(2)}</p>
-                  </div>
-                  <button className="split-print-btn" onClick={() => onPrintSplit(i + 1, splitWays)}>Print Share</button>
-                </div>
-              ))}
-            </div>
+      {splitTab === 'equal' && (
+        <>
+          <div className="split-ways">
+            <span>Split into</span>
+            <input
+              type="number"
+              min="2"
+              max="6"
+              value={splitWays}
+              onChange={(e) => onSetWays(Math.max(2, parseInt(e.target.value, 10) || 2))}
+            />
+            <span>ways</span>
           </div>
-        )}
-
-        {splitTab === 'items' && (
-          <div className="split-items-list">
-            {items.map((item) => (
-              <div key={item.id} className="split-item-row">
-                <div className="split-item-info">
-                  <h5>{item.name}</h5>
-                  <p>{item.qty}x &bull; {(item.price * item.qty).toFixed(2)}</p>
+          <div className="split-list">
+            {Array.from({ length: splitWays }).map((_, i) => (
+              <div key={i} className="split-card">
+                <div style={{ flex: 1 }}>
+                  <div className="card__subtitle">Share {i + 1} of {splitWays}</div>
+                  <div className="split-amount tnum">₹{(total / splitWays).toFixed(2)}</div>
                 </div>
-                <div className="split-assignment">
-                  <button className={`split-assign-btn ${itemAssignments[item.id] === 'A' ? 'active' : ''}`} onClick={() => onAssignItem(item.id, 'A')}>Bill A</button>
-                  <button className={`split-assign-btn ${itemAssignments[item.id] === 'B' ? 'active' : ''}`} onClick={() => onAssignItem(item.id, 'B')}>Bill B</button>
-                </div>
+                <button className="btn btn--ghost btn--sm" onClick={() => onPrintSplit(i + 1, splitWays)}>
+                  Print share
+                </button>
               </div>
             ))}
           </div>
-        )}
-      </div>
+        </>
+      )}
+
+      {splitTab === 'items' && (
+        <div className="split-list">
+          {items.map((item) => (
+            <div key={item.id} className="split-card">
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="split-name">{item.name}</div>
+                <div className="card__subtitle tnum">{item.qty}× · ₹{(item.price * item.qty).toFixed(2)}</div>
+              </div>
+              <div className="chip-row">
+                <button
+                  className={`chip ${itemAssignments[item.id] === 'A' ? 'on' : ''}`}
+                  onClick={() => onAssignItem(item.id, 'A')}
+                >
+                  Bill A
+                </button>
+                <button
+                  className={`chip ${itemAssignments[item.id] === 'B' ? 'on' : ''}`}
+                  onClick={() => onAssignItem(item.id, 'B')}
+                >
+                  Bill B
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       <style>{`
-        .modal-tabs { display: flex; border-bottom: 2px solid var(--color-border); margin-bottom: 1rem; }
-        .modal-tab { flex: 1; padding: 0.6rem; text-align: center; font-weight: 700; color: var(--color-text-muted); border-bottom: 3px solid transparent; background: none; border: none; cursor: pointer; }
-        .modal-tab.active { color: var(--color-primary); border-bottom-color: var(--color-primary); }
-        .split-ways-selector { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; font-weight: 700; }
-        .split-ways-selector input { width: 60px; padding: 0.45rem; border-radius: 6px; border: 1px solid var(--color-border); text-align: center; font-weight: 700; }
-        .split-results { display: flex; flex-direction: column; gap: 0.5rem; max-height: 200px; overflow-y: auto; }
-        .split-card { background: var(--color-bg); padding: 0.85rem 1.25rem; border-radius: 10px; border: 1px solid var(--color-border); display: flex; justify-content: space-between; align-items: center; }
-        .split-card h5 { font-size: 0.85rem; font-weight: 700; color: var(--color-text-muted); margin: 0; }
-        .split-card p { font-size: 1.1rem; font-weight: 800; color: var(--color-primary); margin: 0.15rem 0 0 0; }
-        .split-print-btn { background: var(--color-primary); color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; font-weight: 700; font-size: 0.8rem; cursor: pointer; }
-        .split-items-list { display: flex; flex-direction: column; gap: 0.5rem; max-height: 300px; overflow-y: auto; }
-        .split-item-row { background: var(--color-bg); padding: 0.85rem 1rem; border-radius: 10px; border: 1px solid var(--color-border); display: flex; justify-content: space-between; align-items: center; }
-        .split-item-info h5 { font-size: 0.85rem; font-weight: 700; color: var(--color-primary); margin: 0; }
-        .split-item-info p { font-size: 0.75rem; color: var(--color-text-muted); margin: 0.15rem 0 0 0; }
-        .split-assignment { display: flex; gap: 0.35rem; }
-        .split-assign-btn { padding: 0.35rem 0.65rem; border-radius: 6px; border: 1px solid var(--color-border); background: white; font-weight: 700; font-size: 0.75rem; color: var(--color-text-muted); cursor: pointer; }
-        .split-assign-btn.active { background: var(--color-primary); color: white; border-color: var(--color-primary); }
+        .split-ways {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          font-size: 13.5px;
+          font-weight: 600;
+          color: var(--color-text-soft);
+        }
+        .split-ways input {
+          width: 64px;
+          height: 36px;
+          border: 1px solid var(--color-border);
+          border-radius: 9px;
+          text-align: center;
+          font-family: inherit;
+          font-size: 13px;
+          font-weight: 700;
+          outline: none;
+        }
+        .split-list {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          max-height: 300px;
+          overflow-y: auto;
+        }
+        .split-card {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          background: var(--color-canvas);
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-md);
+          padding: 12px 14px;
+        }
+        .split-amount { font-size: 17px; font-weight: 800; color: var(--color-text); }
+        .split-name {
+          font-size: 13.5px;
+          font-weight: 600;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
       `}</style>
-    </ModalOverlay>
+    </Modal>
   );
 }
 
 export function EditItemModal({ item, qty, loadingAction, onClose, onSetQty, onDelete, onSave }) {
   return (
-    <ModalOverlay onClose={onClose}>
-      <ModalHeader title={`Edit Quantity: ${item?.name || ''}`} onClose={onClose} />
-      <div className="modal-form">
-        <div className="form-group" style={{ alignItems: 'center', margin: '1rem 0' }}>
-          <p style={{ fontWeight: 700, color: 'var(--color-text-muted)', marginBottom: '0.5rem' }}>Adjust Quantity</p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-            <button type="button" onClick={() => onSetQty(Math.max(0, qty - 1))} style={{ width: '40px', height: '40px', borderRadius: '4px', border: '1px solid var(--color-border)', background: 'white', fontWeight: 700, fontSize: '1.25rem', cursor: 'pointer' }}>-</button>
-            <span style={{ fontSize: '1.5rem', fontWeight: 800 }}>{qty}</span>
-            <button type="button" onClick={() => onSetQty(qty + 1)} style={{ width: '40px', height: '40px', borderRadius: '4px', border: '1px solid var(--color-border)', background: 'white', fontWeight: 700, fontSize: '1rem', cursor: 'pointer' }}>+</button>
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: '1rem' }}>
-          <button type="button" className="delete-btn" onClick={onDelete} disabled={loadingAction}>
-            Delete Item
-          </button>
-          <button type="button" className="save-btn" onClick={onSave} disabled={loadingAction}>
-            Save Changes
-          </button>
+    <Modal onClose={onClose} title={`Edit ${item?.name || 'item'}`}>
+      <div className="qty-editor">
+        <div className="drawer__label" style={{ margin: 0 }}>Quantity</div>
+        <div className="qty-editor__controls">
+          <button type="button" onClick={() => onSetQty(Math.max(0, qty - 1))}>−</button>
+          <span className="tnum">{qty}</span>
+          <button type="button" onClick={() => onSetQty(qty + 1)}>+</button>
         </div>
       </div>
+
+      <div className="modal__actions" style={{ justifyContent: 'space-between' }}>
+        <button className="btn btn--danger" onClick={onDelete} disabled={loadingAction}>
+          Delete item
+        </button>
+        <button className="btn btn--primary" onClick={onSave} disabled={loadingAction}>
+          Save changes
+        </button>
+      </div>
+
       <style>{`
-        .modal-form { padding: 1.5rem; display: flex; flex-direction: column; gap: 1.25rem; }
-        .form-group { display: flex; flex-direction: column; gap: 0.35rem; }
-        .delete-btn { flex: 1; background: #d9534f; color: white; border: none; padding: 0.95rem; border-radius: 12px; font-weight: 700; font-size: 0.95rem; cursor: pointer; }
-        .save-btn { flex: 1; background: var(--color-primary); color: white; border: none; padding: 0.95rem; border-radius: 12px; font-weight: 700; font-size: 0.95rem; cursor: pointer; }
-        .delete-btn:disabled, .save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .qty-editor {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 14px;
+          padding: 20px 0;
+        }
+        .qty-editor__controls { display: flex; align-items: center; gap: 20px; }
+        .qty-editor__controls button {
+          width: 44px;
+          height: 44px;
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-md);
+          background: var(--color-surface);
+          font-size: 20px;
+          font-weight: 700;
+          color: var(--color-text);
+        }
+        .qty-editor__controls button:hover { background: var(--color-canvas); }
+        .qty-editor__controls span { font-size: 24px; font-weight: 800; min-width: 40px; text-align: center; }
       `}</style>
-    </ModalOverlay>
+    </Modal>
   );
 }
 
 export function VoidBillModal({ voidReason, loadingAction, onClose, onSetReason, onConfirm }) {
   return (
-    <ModalOverlay onClose={onClose}>
-      <ModalHeader title="Void Bill" onClose={onClose} />
-      <div className="modal-form">
-        <div className="form-group">
-          <label>Reason for Voiding</label>
-          <textarea
-            value={voidReason}
-            onChange={(e) => onSetReason(e.target.value)}
-            placeholder="Enter reason for voiding this bill..."
-            rows={3}
-            style={{ padding: '0.75rem', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '0.9rem', fontWeight: 600, resize: 'vertical' }}
-          />
-        </div>
-        <div className="modal-footer" style={{ display: 'flex', gap: '0.75rem' }}>
-          <button className="cancel-btn" onClick={onClose}>Cancel</button>
-          <button className="void-btn" onClick={onConfirm} disabled={!voidReason.trim() || loadingAction}>
-            Void Bill
-          </button>
-        </div>
+    <Modal onClose={onClose} title="Void bill">
+      <div className="field">
+        <label>Reason for voiding</label>
+        <textarea
+          value={voidReason}
+          onChange={(e) => onSetReason(e.target.value)}
+          placeholder="Why is this bill being voided?"
+          rows={3}
+          style={{ resize: 'vertical' }}
+        />
       </div>
-      <style>{`
-        .modal-form { padding: 1.5rem; display: flex; flex-direction: column; gap: 1.25rem; }
-        .form-group { display: flex; flex-direction: column; gap: 0.35rem; }
-        .form-group label { font-size: 0.8rem; font-weight: 700; color: var(--color-text-muted); }
-        .cancel-btn { flex: 1; background: var(--color-bg); border: 1px solid var(--color-border); padding: 0.95rem; border-radius: 12px; font-weight: 700; font-size: 0.95rem; cursor: pointer; }
-        .void-btn { flex: 1; background: #d9534f; color: white; border: none; padding: 0.95rem; border-radius: 12px; font-weight: 700; font-size: 0.95rem; cursor: pointer; }
-        .void-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-      `}</style>
-    </ModalOverlay>
+      <div className="modal__actions">
+        <button className="btn btn--ghost" onClick={onClose}>Cancel</button>
+        <button
+          className="btn btn--danger"
+          onClick={onConfirm}
+          disabled={!voidReason.trim() || loadingAction}
+        >
+          Void bill
+        </button>
+      </div>
+    </Modal>
   );
 }
 
 export function ReprintBillModal({ session, onClose }) {
   if (!session) return null;
 
+  const completed = session.session_status === 'completed';
+
   return (
-    <ModalOverlay onClose={onClose} width="480px">
-      <ModalHeader title={`Bill Reprint - Table ${session.restaurant_tables?.table_number || '—'}`} onClose={onClose} />
-      <div style={{ padding: '1.5rem' }}>
-        <div className="reprint-paper">
-          <div style={{ textAlign: 'center', marginBottom: '1rem' }}>
-            <h4 style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--color-primary)', margin: 0 }}>Spice OS</h4>
-            <p style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', margin: 0 }}>123 Downtown St, Metro</p>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed var(--color-border)', borderBottom: '1px dashed var(--color-border)', padding: '0.5rem 0', marginBottom: '0.75rem' }}>
-            <div><p style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)', margin: 0 }}>Customer</p><strong style={{ fontSize: '0.75rem' }}>{session.customer_name || 'Walk-in'}</strong></div>
-            <div><p style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)', margin: 0 }}>Date</p><strong style={{ fontSize: '0.75rem' }}>{session.ended_at ? new Date(session.ended_at).toLocaleDateString() : '—'}</strong></div>
-            <div><p style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)', margin: 0 }}>Bill #</p><strong style={{ fontSize: '0.75rem' }}>{session.id?.slice(0, 4).toUpperCase()}</strong></div>
-          </div>
-          <p style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', textAlign: 'center' }}>
-            Status: <strong style={{ color: session.session_status === 'completed' ? '#2e7d32' : '#d9534f' }}>{session.session_status?.toUpperCase()}</strong>
-          </p>
-          <p style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', textAlign: 'center', marginTop: '1rem' }}>
-            This is a reprinted copy of the original bill.
-          </p>
+    <Modal
+      onClose={onClose}
+      title={`Bill reprint · Table ${session.restaurant_tables?.table_number || '—'}`}
+      width="480px"
+    >
+      <div className="reprint">
+        <div className="reprint__logo">
+          <div className="reprint__name">Spice OS</div>
+          <div>123 Downtown St, Metro</div>
         </div>
-        <button className="close-reprint-btn" onClick={onClose}>Close</button>
+        <div className="reprint__meta">
+          <div><span>Customer</span><b>{session.customer_name || 'Walk-in'}</b></div>
+          <div><span>Date</span><b>{session.ended_at ? new Date(session.ended_at).toLocaleDateString() : '—'}</b></div>
+          <div><span>Bill #</span><b>{session.id?.slice(0, 4).toUpperCase()}</b></div>
+        </div>
+        <div className="reprint__status">
+          <span className={`pill ${completed ? 'tone-green' : 'tone-red'}`}>
+            {session.session_status}
+          </span>
+        </div>
+        <div className="reprint__note">This is a reprinted copy of the original bill.</div>
       </div>
+
+      <div className="modal__actions">
+        <button className="btn btn--primary" onClick={onClose}>Close</button>
+      </div>
+
       <style>{`
-        .reprint-paper { background: white; border-radius: 10px; padding: 1rem; border: 1px solid var(--color-border); }
-        .close-reprint-btn { width: 100%; margin-top: 0.75rem; background: var(--color-primary); color: white; border: none; padding: 0.85rem; border-radius: 10px; font-weight: 800; font-size: 0.95rem; cursor: pointer; }
+        .reprint {
+          background: var(--color-canvas);
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-md);
+          padding: 16px;
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          font-size: 12.5px;
+          color: var(--color-text-soft);
+        }
+        .reprint__logo { text-align: center; }
+        .reprint__name { font-size: 15px; font-weight: 800; color: var(--color-text); }
+        .reprint__meta {
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          border-top: 1px dashed var(--color-border-strong);
+          border-bottom: 1px dashed var(--color-border-strong);
+          padding: 8px 0;
+        }
+        .reprint__meta span { display: block; font-size: 11px; color: var(--color-text-muted); }
+        .reprint__meta b { font-size: 12.5px; color: var(--color-text); }
+        .reprint__status { display: flex; justify-content: center; }
+        .reprint__note { text-align: center; color: var(--color-text-muted); }
       `}</style>
-    </ModalOverlay>
+    </Modal>
   );
 }

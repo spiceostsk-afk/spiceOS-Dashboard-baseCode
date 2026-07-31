@@ -1,10 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Search, Bell, Plus, X, User, Phone, Users, ArrowRight, HelpCircle, Calendar, ChevronDown, LogOut } from 'lucide-react';
+import { Search, Bell, Plus, X, ArrowRight, HelpCircle, ChevronDown, LogOut } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 
 const SHIFT_KEY = 'lumiere_shift_active';
+
+/** Route → page title. Matches the nav label so the rail and the header agree. */
+const TITLES = {
+  '/dashboard': 'Dashboard',
+  '/billing': 'Live Orders',
+  '/payments': 'Payments',
+  '/menu': 'Menu Catalog',
+  '/inventory': 'Inventory',
+  '/reports': 'Reports',
+  '/orders': 'Order History',
+  '/customers': 'Customers',
+  '/qr-management': 'QR Codes',
+  '/staff': 'Staff',
+  '/branding': 'Branding',
+  '/settings': 'Settings',
+  '/admin': 'Platform Admin',
+};
 
 const Header = () => {
   const location = useLocation();
@@ -20,7 +37,7 @@ const Header = () => {
     name: '',
     phone: '',
     guests: 2,
-    tableId: ''
+    tableId: '',
   });
 
   const [currentDate, setCurrentDate] = useState('');
@@ -43,27 +60,7 @@ const Header = () => {
     setShowShiftMenu(false);
   };
 
-  const getTitle = () => {
-    switch(location.pathname) {
-      case '/dashboard': return 'POS Dashboard';
-      case '/menu': return 'Menu Catalog';
-      case '/billing': {
-        const params = new URLSearchParams(location.search);
-        const tab = params.get('tab');
-        if (tab === 'online') return 'Online Orders Activity';
-        if (tab === 'actions') return 'Store Status & Actions';
-        return 'Live Billing Operations';
-      }
-      case '/payments': return 'Payment History';
-      case '/reports': return 'Business Analytics';
-      case '/settings': return 'Restaurant Settings';
-      case '/customers': return 'Customer Management';
-      case '/qr-management': return 'QR Code Management';
-      case '/staff': return 'Staff Management';
-      case '/orders': return 'Order History';
-      default: return 'Spice OS';
-    }
-  };
+  const getTitle = () => TITLES[location.pathname] || 'Spice OS';
 
   const handleOpenModal = async () => {
     setShowModal(true);
@@ -76,11 +73,7 @@ const Header = () => {
         .order('table_number');
       if (!error && data) {
         setAvailableTables(data);
-        if (data.length > 0) {
-          setCustomerData(prev => ({ ...prev, tableId: data[0].id }));
-        } else {
-          setCustomerData(prev => ({ ...prev, tableId: '' }));
-        }
+        setCustomerData((prev) => ({ ...prev, tableId: data.length > 0 ? data[0].id : '' }));
       }
     } catch (err) {
       alert('Error loading available tables: ' + (err.message || err));
@@ -96,7 +89,6 @@ const Header = () => {
       return;
     }
     try {
-      // 1. Create Customer Session
       const { data: session, error: sessionError } = await supabase
         .from('customer_sessions')
         .insert([{
@@ -104,14 +96,13 @@ const Header = () => {
           customer_name: customerData.name,
           phone_number: customerData.phone,
           guest_count: customerData.guests,
-          session_status: 'active'
+          session_status: 'active',
         }])
         .select()
         .single();
 
       if (sessionError) throw sessionError;
 
-      // 2. Update Table Status
       const { error: tableError } = await supabase
         .from('restaurant_tables')
         .update({ status: 'occupied' })
@@ -119,15 +110,8 @@ const Header = () => {
 
       if (tableError) throw tableError;
 
-      // 3. Navigate to Menu
       setShowModal(false);
-      // Reset form
-      setCustomerData({
-        name: '',
-        phone: '',
-        guests: 2,
-        tableId: ''
-      });
+      setCustomerData({ name: '', phone: '', guests: 2, tableId: '' });
       navigate(`/menu?sessionId=${session.id}&tableId=${session.table_id}`);
     } catch (error) {
       alert('Error starting session: ' + error.message);
@@ -136,139 +120,148 @@ const Header = () => {
 
   return (
     <header className="header">
-      <div className="header-left">
-        <h2 className="main-title">{getTitle()}</h2>
-        
-        {/* Search Bar styled like Petpooja */}
-        <div className="search-bar">
-          <Search size={16} color="#8A8A8A" />
-          <input type="text" placeholder="Search tables, items, or orders..." />
-        </div>
+      <h1 className="page-title">{getTitle()}</h1>
+
+      <div className="search-field">
+        <Search size={15} />
+        <input type="text" placeholder="Search tables, items, or orders…" />
       </div>
 
-      <div className="header-right">
-        {/* Outlet Dropdown mimicking Petpooja's header */}
-        <div className="outlet-selector">
-          <span>Main Outlet</span>
-          <ChevronDown size={14} />
-        </div>
+      <div className="header-spacer" />
 
-        {/* Date Display */}
-        <div className="date-display">
-          <Calendar size={15} />
-          <span>{currentDate}</span>
-        </div>
+      <button className="ghost-btn">
+        Main Outlet <ChevronDown size={13} className="chev" />
+      </button>
 
-        {/* New Order Trigger */}
-        {shiftActive && (
-          <button className="new-order-btn" onClick={handleOpenModal}>
-            <Plus size={16} />
-            <span>New Order</span>
-          </button>
-        )}
+      <div className="date-chip">{currentDate}</div>
 
-        <div className="shift-badge-wrapper">
-          <div className={`shift-badge ${shiftActive ? 'active' : 'ended'}`} onClick={() => setShowShiftMenu(!showShiftMenu)}>
-            <div className={`status-dot ${shiftActive ? 'dot-active' : 'dot-ended'}`}></div>
-            <span>{shiftActive ? 'Shift Active' : 'Shift Ended'}</span>
-            <ChevronDown size={12} />
-          </div>
-          {showShiftMenu && (
-            <div className="shift-menu">
-              {shiftActive ? (
-                <button className="shift-menu-item" onClick={handleEndShift}><LogOut size={14} /> End Shift</button>
-              ) : (
-                <button className="shift-menu-item" onClick={handleStartShift}><LogOut size={14} /> Start New Shift</button>
-              )}
-            </div>
-          )}
-        </div>
-        <button className="icon-btn">
-          <Bell size={18} />
-        </button>
-
-        <button className="icon-btn font-support">
-          <HelpCircle size={18} />
-          <span className="tooltip-support">Support Agent</span>
-        </button>
-
+      <div className="shift-wrapper">
         <button
-          className="icon-btn"
-          onClick={signOut}
-          title={user?.email ? `Sign out (${user.email})` : 'Sign out'}
+          className={`shift-pill ${shiftActive ? 'is-active' : 'is-ended'}`}
+          onClick={() => setShowShiftMenu(!showShiftMenu)}
         >
-          <LogOut size={18} />
+          <span className="shift-dot" />
+          {shiftActive ? 'Shift active' : 'Shift ended'}
+          <ChevronDown size={13} />
         </button>
+        {showShiftMenu && (
+          <div className="shift-menu">
+            {shiftActive ? (
+              <button className="shift-menu-item" onClick={handleEndShift}>
+                <LogOut size={14} /> End shift
+              </button>
+            ) : (
+              <button className="shift-menu-item" onClick={handleStartShift}>
+                <LogOut size={14} /> Start new shift
+              </button>
+            )}
+          </div>
+        )}
       </div>
+
+      <button className="icon-btn" title="Notifications">
+        <Bell size={17} />
+        <span className="icon-dot" />
+      </button>
+
+      <button className="icon-btn" title="Support Agent">
+        <HelpCircle size={17} />
+      </button>
+
+      <button
+        className="icon-btn"
+        onClick={signOut}
+        title={user?.email ? `Sign out (${user.email})` : 'Sign out'}
+      >
+        <LogOut size={17} />
+      </button>
+
+      {shiftActive && (
+        <button className="primary-btn" onClick={handleOpenModal}>
+          <Plus size={15} /> New Order
+        </button>
+      )}
 
       {showShiftMenu && <div className="shift-backdrop" onClick={() => setShowShiftMenu(false)} />}
 
-      {/* New Order Modal */}
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal-container" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Assign Table - New Order</h2>
-              <button className="close-modal" onClick={() => setShowModal(false)}><X size={20} /></button>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <div className="modal-title">New order</div>
+              <button className="modal-close" onClick={() => setShowModal(false)}>
+                <X size={17} />
+              </button>
             </div>
-            <form onSubmit={handleStartSession} className="modal-form">
-              <div className="form-group">
-                <label>Select Table</label>
+
+            <form onSubmit={handleStartSession} className="modal-body">
+              <div className="field">
+                <label>Table</label>
                 {loadingTables ? (
-                  <p style={{ fontSize: '0.9rem', color: '#888' }}>Loading tables...</p>
+                  <div className="field-note">Loading tables…</div>
                 ) : availableTables.length === 0 ? (
-                  <p style={{ color: '#d9534f', fontSize: '0.9rem', fontWeight: 600 }}>No available tables. Complete or clean a table first.</p>
+                  <div className="field-note is-error">
+                    No available tables. Complete or clean a table first.
+                  </div>
                 ) : (
-                  <select 
+                  <select
                     value={customerData.tableId}
-                    onChange={(e) => setCustomerData({...customerData, tableId: e.target.value})}
+                    onChange={(e) => setCustomerData({ ...customerData, tableId: e.target.value })}
                     required
                   >
-                    {availableTables.map(t => (
+                    {availableTables.map((t) => (
                       <option key={t.id} value={t.id}>
-                        Table {t.table_number} ({t.capacity} Seats)
+                        Table {t.table_number} ({t.capacity} seats)
                       </option>
                     ))}
                   </select>
                 )}
               </div>
-              <div className="form-group">
-                <label><User size={16} /> Customer Name</label>
-                <input 
-                  type="text" 
-                  placeholder="Enter name..." 
-                  value={customerData.name}
-                  onChange={(e) => setCustomerData({...customerData, name: e.target.value})}
-                  required
-                />
+
+              <div className="field-row">
+                <div className="field">
+                  <label>Customer name</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Rajesh Kumar"
+                    value={customerData.name}
+                    onChange={(e) => setCustomerData({ ...customerData, name: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="field">
+                  <label>Phone</label>
+                  <input
+                    type="tel"
+                    placeholder="+91"
+                    value={customerData.phone}
+                    onChange={(e) => setCustomerData({ ...customerData, phone: e.target.value })}
+                  />
+                </div>
               </div>
-              <div className="form-group">
-                <label><Phone size={16} /> Phone Number</label>
-                <input 
-                  type="tel" 
-                  placeholder="Enter phone..." 
-                  value={customerData.phone}
-                  onChange={(e) => setCustomerData({...customerData, phone: e.target.value})}
-                />
-              </div>
-              <div className="form-group">
-                <label><Users size={16} /> Guest Count</label>
-                <div className="guest-selector">
-                  {[1, 2, 3, 4, 5, 6, 8].map(n => (
-                    <button 
+
+              <div className="field">
+                <label>Guests</label>
+                <div className="guest-picker">
+                  {[1, 2, 3, 4, 5, 6, 8].map((n) => (
+                    <button
                       type="button"
-                      key={n} 
-                      className={customerData.guests === n ? 'active' : ''}
-                      onClick={() => setCustomerData({...customerData, guests: n})}
+                      key={n}
+                      className={customerData.guests === n ? 'on' : ''}
+                      onClick={() => setCustomerData({ ...customerData, guests: n })}
                     >
                       {n}
                     </button>
                   ))}
                 </div>
               </div>
-              <div className="modal-footer">
-                <button type="submit" className="start-btn" disabled={!customerData.tableId}>
-                  Assign Table & Start Order <ArrowRight size={18} />
+
+              <div className="modal-actions">
+                <button type="button" className="ghost-btn" onClick={() => setShowModal(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="primary-btn" disabled={!customerData.tableId}>
+                  Start order <ArrowRight size={15} />
                 </button>
               </div>
             </form>
@@ -278,247 +271,282 @@ const Header = () => {
 
       <style>{`
         .header {
-          height: 70px;
-          padding: 0 2rem;
-          background: white;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          height: 64px;
+          padding: 0 32px;
+          background: var(--color-surface);
           border-bottom: 1px solid var(--color-border);
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          z-index: 10;
           flex-shrink: 0;
+          z-index: 5;
+          box-sizing: border-box;
         }
 
-        .header-left {
-          display: flex;
-          align-items: center;
-          gap: 1.5rem;
-          flex: 1;
-        }
-
-        .main-title {
-          font-size: 1.35rem;
+        .page-title {
+          margin: 0;
+          font-size: 24px;
           font-weight: 700;
-          color: var(--color-primary);
+          letter-spacing: -0.01em;
+          color: var(--color-text);
           white-space: nowrap;
         }
 
-        .search-bar {
+        .header-spacer { flex: 1; }
+
+        .search-field {
           display: flex;
           align-items: center;
-          gap: 0.5rem;
-          background: var(--color-bg);
+          gap: 8px;
+          height: 40px;
+          padding: 0 14px;
+          border-radius: var(--radius-sm);
           border: 1px solid var(--color-border);
-          padding: 0.55rem 1rem;
-          border-radius: 10px;
-          width: 100%;
-          max-width: 320px;
+          background: var(--color-surface);
+          color: var(--color-text-faint);
+          width: 300px;
+          box-sizing: border-box;
         }
 
-        .search-bar input {
+        .search-field input {
           border: none;
           background: transparent;
           outline: none;
           width: 100%;
-          font-size: 0.85rem;
-          color: var(--color-primary);
+          font-size: 13px;
+          color: var(--color-text);
         }
 
-        .header-right {
-          display: flex;
-          align-items: center;
-          gap: 1rem;
-        }
+        .search-field input::placeholder { color: var(--color-text-faint); }
 
-        .outlet-selector {
+        .ghost-btn {
           display: flex;
           align-items: center;
-          gap: 0.35rem;
-          background: var(--color-bg);
+          gap: 8px;
+          height: 40px;
+          padding: 0 14px;
+          border-radius: var(--radius-sm);
           border: 1px solid var(--color-border);
-          padding: 0.5rem 0.85rem;
-          border-radius: 8px;
-          font-size: 0.8rem;
-          font-weight: 700;
-          color: var(--color-primary);
-          cursor: pointer;
+          background: var(--color-surface);
+          font-size: 13px;
+          font-weight: 600;
+          color: var(--color-text);
+          white-space: nowrap;
         }
 
-        .date-display {
+        .ghost-btn:hover { background: var(--color-canvas); }
+        .ghost-btn .chev { color: var(--color-text-muted); }
+
+        .date-chip {
           display: flex;
           align-items: center;
-          gap: 0.35rem;
-          background: var(--color-accent-soft);
+          height: 40px;
+          padding: 0 14px;
+          border-radius: var(--radius-sm);
           border: 1px solid var(--color-border);
-          padding: 0.5rem 0.85rem;
-          border-radius: 8px;
-          font-size: 0.8rem;
-          font-weight: 700;
-          color: var(--color-primary);
+          background: var(--color-surface);
+          font-size: 13px;
+          font-weight: 600;
+          color: var(--color-text);
+          white-space: nowrap;
+          box-sizing: border-box;
         }
 
-        .new-order-btn {
+        .shift-wrapper { position: relative; }
+
+        .shift-pill {
           display: flex;
           align-items: center;
-          gap: 0.35rem;
-          background: var(--color-accent);
-          color: var(--color-primary);
-          padding: 0.55rem 1.1rem;
-          border-radius: 8px;
-          font-weight: 700;
-          font-size: 0.85rem;
+          gap: 8px;
+          height: 40px;
+          padding: 0 14px;
+          border-radius: var(--radius-sm);
           border: none;
-          cursor: pointer;
-          transition: var(--transition-smooth);
+          font-size: 13px;
+          font-weight: 600;
+          white-space: nowrap;
+          box-sizing: border-box;
         }
 
-        .new-order-btn:hover {
-          background: var(--color-primary);
-          color: white;
+        .shift-pill.is-active { background: var(--color-success-soft); color: var(--color-success); }
+        .shift-pill.is-ended { background: var(--color-danger-soft); color: var(--color-danger); }
+
+        .shift-dot {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: currentColor;
         }
 
-        .shift-badge-wrapper { position: relative; }
-        .shift-badge {
+        .shift-menu {
+          position: absolute;
+          top: calc(100% + 6px);
+          right: 0;
+          min-width: 180px;
+          background: var(--color-surface);
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-md);
+          box-shadow: 0 12px 32px rgba(22, 24, 29, 0.12);
+          padding: 6px;
+          z-index: 20;
+        }
+
+        .shift-menu-item {
           display: flex;
           align-items: center;
-          gap: 0.35rem;
-          padding: 0.5rem 0.85rem;
+          gap: 10px;
+          width: 100%;
+          padding: 10px 12px;
+          border: none;
+          background: none;
           border-radius: 8px;
-          font-size: 0.8rem;
-          font-weight: 700;
-          cursor: pointer;
-          user-select: none;
+          font-size: 13px;
+          font-weight: 600;
+          color: var(--color-text);
+          text-align: left;
         }
-        .shift-badge.active { background: rgba(46, 125, 50, 0.05); color: #2e7d32; }
-        .shift-badge.ended { background: rgba(198, 40, 40, 0.05); color: #C62828; }
 
-        .status-dot { width: 6px; height: 6px; border-radius: 50%; }
-        .dot-active { background: #2e7d32; }
-        .dot-ended { background: #C62828; }
+        .shift-menu-item:hover { background: var(--color-canvas); }
 
-        .shift-menu { position: absolute; top: calc(100% + 4px); right: 0; background: white; border: 1px solid var(--color-border); border-radius: 10px; box-shadow: var(--shadow-soft); overflow: hidden; z-index: 20; min-width: 160px; }
-        .shift-menu-item { display: flex; align-items: center; gap: 0.5rem; width: 100%; padding: 0.65rem 1rem; border: none; background: none; font-size: 0.82rem; font-weight: 600; color: var(--color-primary); cursor: pointer; }
-        .shift-menu-item:hover { background: var(--color-sidebar); }
+        .shift-backdrop { position: fixed; inset: 0; z-index: 15; }
 
         .icon-btn {
+          position: relative;
+          width: 40px;
+          height: 40px;
+          flex-shrink: 0;
+          border-radius: var(--radius-sm);
+          border: 1px solid var(--color-border);
+          background: var(--color-surface);
+          color: var(--color-text);
           display: flex;
           align-items: center;
           justify-content: center;
-          width: 36px;
-          height: 36px;
-          color: var(--color-text-muted);
-          background: var(--color-bg);
-          border: 1px solid var(--color-border);
-          border-radius: 8px;
-          cursor: pointer;
-          position: relative;
-          transition: var(--transition-smooth);
         }
 
-        .icon-btn:hover {
-          color: var(--color-primary);
-          background: var(--color-accent-soft);
+        .icon-btn:hover { background: var(--color-canvas); }
+
+        .icon-dot {
+          position: absolute;
+          top: 8px;
+          right: 9px;
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: var(--color-danger);
+          border: 1.5px solid var(--color-surface);
         }
 
-        .shift-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 15; }
-        .font-support {
-          gap: 0.25rem;
-          width: auto;
-          padding: 0 0.5rem;
-        }
-
-        .tooltip-support {
-          font-size: 0.75rem;
+        .primary-btn {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          height: 40px;
+          padding: 0 18px;
+          border-radius: var(--radius-sm);
+          border: none;
+          background: var(--color-primary);
+          color: #fff;
+          font-size: 13px;
           font-weight: 700;
+          white-space: nowrap;
         }
 
-        /* Modal Styles */
+        .primary-btn:hover:not(:disabled) { background: var(--color-primary-hover); }
+        .primary-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* ---- New order modal ---- */
         .modal-overlay {
           position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background: rgba(0,0,0,0.4);
-          backdrop-filter: blur(4px);
+          inset: 0;
+          background: rgba(22, 24, 29, 0.35);
           display: flex;
           align-items: center;
           justify-content: center;
           z-index: 1000;
         }
 
-        .modal-container {
-          background: white;
-          width: 420px;
-          border-radius: 20px;
-          box-shadow: var(--shadow-soft);
-          overflow: hidden;
-          border: 1px solid var(--color-border);
+        .modal-card {
+          width: 440px;
+          max-width: calc(100vw - 32px);
+          background: var(--color-surface);
+          border-radius: var(--radius-lg);
+          padding: 28px;
+          box-sizing: border-box;
+          box-shadow: var(--shadow-modal);
         }
 
-        .modal-header {
-          padding: 1.25rem 1.5rem;
-          background: var(--color-sidebar);
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          border-bottom: 1px solid var(--color-border);
-        }
-
-        .modal-header h2 { font-size: 1.1rem; font-weight: 700; color: var(--color-primary); }
-        .close-modal { color: var(--color-text-muted); background: none; border: none; cursor: pointer; }
-
-        .modal-form { padding: 1.5rem; display: flex; flex-direction: column; gap: 1.25rem; }
-
-        .form-group { display: flex; flex-direction: column; gap: 0.35rem; }
-        .form-group label { display: flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; font-weight: 700; color: var(--color-text-muted); }
-        
-        .form-group input, .form-group select {
-          padding: 0.75rem 0.85rem;
-          border-radius: 10px;
-          border: 1px solid var(--color-border);
-          font-size: 0.9rem;
-          color: var(--color-primary);
-          font-weight: 600;
-          background: white;
-          outline: none;
-        }
-
-        .guest-selector { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.35rem; }
-        .guest-selector button {
-          padding: 0.6rem;
-          border: 1px solid var(--color-border);
-          border-radius: 8px;
-          font-weight: 700;
-          color: var(--color-text-muted);
-          background: white;
-          cursor: pointer;
-        }
-        .guest-selector button.active {
-          background: var(--color-primary);
-          color: white;
-          border-color: var(--color-primary);
-        }
-
-        .modal-footer { margin-top: 0.75rem; }
-        .start-btn {
-          width: 100%;
-          background: var(--color-primary);
-          color: white;
-          padding: 0.95rem;
-          border-radius: 12px;
-          font-weight: 700;
-          font-size: 0.95rem;
+        .modal-head {
           display: flex;
           align-items: center;
-          justify-content: center;
-          gap: 0.5rem;
+          margin-bottom: 20px;
+        }
+
+        .modal-title { flex: 1; font-size: 18px; font-weight: 800; color: var(--color-text); }
+
+        .modal-close {
           border: none;
-          cursor: pointer;
+          background: none;
+          color: var(--color-text-muted);
+          display: flex;
         }
-        .start-btn:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
+
+        .modal-body { display: flex; flex-direction: column; gap: 14px; }
+
+        .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+        .field label {
+          display: block;
+          font-size: 12.5px;
+          font-weight: 600;
+          color: var(--color-text);
+          margin-bottom: 6px;
+        }
+
+        .field input,
+        .field select {
+          width: 100%;
+          height: 40px;
+          padding: 0 14px;
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-sm);
+          font-size: 13.5px;
+          color: var(--color-text);
+          background: var(--color-surface);
+          outline: none;
+          box-sizing: border-box;
+        }
+
+        .field input:focus,
+        .field select:focus { border-color: var(--color-border-strong); }
+        .field input::placeholder { color: var(--color-text-faint); }
+
+        .field-note { font-size: 13px; color: var(--color-text-muted); }
+        .field-note.is-error { color: var(--color-danger); font-weight: 600; }
+
+        .guest-picker { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+
+        .guest-picker button {
+          height: 40px;
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-sm);
+          background: var(--color-surface);
+          font-size: 13.5px;
+          font-weight: 600;
+          color: var(--color-text-soft);
+        }
+
+        .guest-picker button.on {
+          background: var(--color-text);
+          border-color: var(--color-text);
+          color: #fff;
+        }
+
+        .modal-actions {
+          display: flex;
+          gap: 10px;
+          justify-content: flex-end;
+          padding-top: 8px;
         }
       `}</style>
     </header>

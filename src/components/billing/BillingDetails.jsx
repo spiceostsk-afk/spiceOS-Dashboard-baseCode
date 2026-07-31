@@ -1,68 +1,151 @@
 import React, { useState } from 'react';
 import {
-  FileText, Printer, Edit3, CheckCircle2, CreditCard, Banknote, QrCode,
-  X, Minus, Plus, Trash2, Check, ArrowLeftRight, Split, LayoutGrid, RefreshCw,
-  Percent, Coffee, Receipt,
+  Printer, Edit3, CreditCard, Banknote, QrCode, X, Minus, Plus, Trash2, Check,
+  ArrowLeftRight, Split, LayoutGrid, RefreshCw, Coffee, FileText,
 } from 'lucide-react';
 
 const FORMAT_CURRENCY = new Intl.NumberFormat('en-IN', {
   style: 'currency', currency: 'INR', minimumFractionDigits: 2,
 });
 
-function SessionHeader({ session, isPaid, onMoveTable, onSplit, onHold, onVoid, onClose }) {
+const fmt = (v) => FORMAT_CURRENCY.format(v || 0);
+
+const minutesSince = (iso) => {
+  if (!iso) return null;
+  const diff = (Date.now() - new Date(iso).getTime()) / 60000;
+  return Number.isFinite(diff) ? Math.max(0, Math.floor(diff)) : null;
+};
+
+/* ------------------------------------------------------------------ header */
+
+function SessionHeader({ session, items, isPaid, onMoveTable, onSplit, onHold, onVoid, onClose }) {
+  const min = minutesSince(session?.started_at);
+  const meta = [
+    session?.customer_name || 'Walk-in',
+    session?.guest_count ? `${session.guest_count} guests` : null,
+    min !== null ? `${min} min` : null,
+    `${items.length} item${items.length === 1 ? '' : 's'}`,
+  ].filter(Boolean).join(' · ');
+
   return (
-    <div className="session-header">
-      <div>
-        <span className="session-label">BILLING CONTEXT</span>
-        <h2>Table {session?.restaurant_tables?.table_number}</h2>
-        <p className="customer-meta">
-          {session?.customer_name} &bull; {session?.guest_count} Guests
-        </p>
-      </div>
-      <div className="header-actions">
-        <button className="action-pill" onClick={onHold} disabled={isPaid}>
-          <Coffee size={14} /> Hold
-        </button>
-        <button className="action-pill" onClick={onMoveTable} disabled={isPaid}>
-          <ArrowLeftRight size={14} /> Move
-        </button>
-        <button className="action-pill" onClick={onSplit} disabled={isPaid}>
-          <Split size={14} /> Split
-        </button>
-        <button className="action-pill void-btn" onClick={onVoid} disabled={isPaid}>
-          <X size={14} /> Void
-        </button>
-        <button className="action-pill close-btn" onClick={onClose}>
+    <div className="bd-header">
+      <div className="bd-header__row">
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="bd-title">
+            Table {session?.restaurant_tables?.table_number}
+            {isPaid && <span className="pill pill--sm tone-green" style={{ marginLeft: 8 }}>• PAID</span>}
+          </div>
+          <div className="bd-meta">{meta}</div>
+        </div>
+        <button className="icon-button" onClick={onClose} title="Close session view">
           <X size={16} />
         </button>
       </div>
-      <style>{`
-        .session-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-border); padding-bottom: 1rem; }
-        .session-label { font-size: 0.7rem; font-weight: 800; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
-        h2 { font-size: 1.35rem; font-weight: 800; color: var(--color-primary); margin: 0.15rem 0; }
-        .customer-meta { font-size: 0.8rem; color: var(--color-text-muted); font-weight: 600; }
-        .header-actions { display: flex; gap: 0.35rem; }
-        .action-pill { display: flex; align-items: center; gap: 0.25rem; padding: 0.45rem 0.75rem; border: 1px solid var(--color-border); background: white; border-radius: 6px; font-size: 0.75rem; font-weight: 700; color: var(--color-primary); cursor: pointer; }
-        .action-pill:disabled { opacity: 0.5; cursor: not-allowed; }
-        .action-pill.void-btn { color: #d9534f; }
-        .action-pill.close-btn { color: var(--color-text-muted); }
-      `}</style>
+
+      <div className="bd-actions">
+        <button className="btn btn--ghost btn--sm" onClick={onHold} disabled={isPaid}>
+          <Coffee size={14} /> Hold
+        </button>
+        <button className="btn btn--ghost btn--sm" onClick={onMoveTable} disabled={isPaid}>
+          <ArrowLeftRight size={14} /> Move
+        </button>
+        <button className="btn btn--ghost btn--sm" onClick={onSplit} disabled={isPaid}>
+          <Split size={14} /> Split
+        </button>
+        <button className="btn btn--danger btn--sm" onClick={onVoid} disabled={isPaid}>
+          <X size={14} /> Void
+        </button>
+      </div>
     </div>
   );
 }
 
-function DiscountSection({ discountType, discountValue, subtotal, onSetType, onSetValue, isPaid }) {
-  return (
-    <div className="discount-section">
-      <div className="discount-header">
-        <Percent size={14} />
-        <span>Discount</span>
+/* ------------------------------------------------------------------- items */
+
+function ItemsList({
+  items, isEditing, isPaid, loadingAction,
+  onEditItem, onUpdateQty, onDeleteItem, onToggleEdit, onNavigateMenu, isOnline,
+}) {
+  if (items.length === 0) {
+    return (
+      <div className="empty-state">
+        <span className="empty-state__mark"><FileText size={22} /></span>
+        <div className="empty-state__title">No items punched yet</div>
+        <div className="empty-state__sub">
+          {isOnline
+            ? 'Add dishes from the menu to start this bill.'
+            : 'You’re offline — use manual order entry below to add items.'}
+        </div>
+        {isOnline && (
+          <button className="btn btn--primary" style={{ marginTop: 12 }} onClick={onNavigateMenu} disabled={isPaid}>
+            Add items
+          </button>
+        )}
       </div>
-      <div className="discount-controls">
-        <select value={discountType} onChange={(e) => onSetType(e.target.value)} disabled={isPaid}>
-          <option value="none">No Discount</option>
-          <option value="percentage">% Percentage</option>
-          <option value="flat">Flat Amount</option>
+    );
+  }
+
+  return (
+    <div className="bd-items">
+      <div className="bd-section-head">
+        <div className="drawer__label" style={{ margin: 0, flex: 1 }}>Items</div>
+        <button className="link-action" onClick={onToggleEdit} disabled={isPaid}>
+          {isEditing ? 'Done' : 'Edit quantities'}
+        </button>
+      </div>
+
+      {items.map((item) => (
+        <div key={item.id} className="bd-item">
+          <div className="bd-item__name">{item.name}</div>
+
+          {isEditing ? (
+            <div className="bd-stepper">
+              <button onClick={() => onUpdateQty(item, item.qty - 1)} disabled={loadingAction}>
+                <Minus size={12} />
+              </button>
+              <span className="tnum">{item.qty}</span>
+              <button onClick={() => onUpdateQty(item, item.qty + 1)} disabled={loadingAction}>
+                <Plus size={12} />
+              </button>
+              <button className="bd-del" onClick={() => onDeleteItem(item)} disabled={loadingAction}>
+                <Trash2 size={13} />
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="bd-item__qty muted tnum">×{item.qty}</div>
+              <div className="bd-item__amt tnum">{fmt(item.price * item.qty)}</div>
+              <button className="bd-edit" onClick={() => onEditItem(item)} disabled={isPaid} title="Edit item">
+                <Edit3 size={14} />
+              </button>
+            </>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------- adjustments */
+
+function Adjustments({
+  discountType, discountValue, subtotal, onSetDiscountType, onSetDiscountValue,
+  showServiceCharge, serviceChargePercent, onToggleServiceCharge, onSetServiceChargePercent,
+  isPaid,
+}) {
+  return (
+    <div className="bd-well">
+      <div className="bd-adjust-row">
+        <div className="bd-adjust-label">Discount</div>
+        <select
+          value={discountType}
+          onChange={(e) => onSetDiscountType(e.target.value)}
+          disabled={isPaid}
+          className="bd-select"
+        >
+          <option value="none">None</option>
+          <option value="percentage">Percentage</option>
+          <option value="flat">Flat amount</option>
         </select>
         {discountType !== 'none' && (
           <input
@@ -71,218 +154,131 @@ function DiscountSection({ discountType, discountValue, subtotal, onSetType, onS
             max={discountType === 'percentage' ? 100 : subtotal}
             step={discountType === 'percentage' ? '1' : '0.01'}
             value={discountValue || ''}
-            onChange={(e) => onSetValue(parseFloat(e.target.value) || 0)}
-            placeholder={discountType === 'percentage' ? '% off' : 'Amount'}
+            onChange={(e) => onSetDiscountValue(parseFloat(e.target.value) || 0)}
+            placeholder={discountType === 'percentage' ? '%' : '₹'}
             disabled={isPaid}
+            className="bd-num"
           />
         )}
       </div>
-      <style>{`
-        .discount-section { background: #F3E5F5; border: 1px solid #CE93D8; border-radius: 10px; padding: 0.75rem; }
-        .discount-header { display: flex; align-items: center; gap: 0.35rem; font-size: 0.75rem; font-weight: 800; color: #7B1FA2; text-transform: uppercase; margin-bottom: 0.5rem; }
-        .discount-controls { display: flex; gap: 0.35rem; }
-        .discount-controls select { flex: 1; padding: 0.45rem; border-radius: 6px; border: 1px solid var(--color-border); font-size: 0.8rem; font-weight: 600; }
-        .discount-controls input { width: 100px; padding: 0.45rem; border-radius: 6px; border: 1px solid var(--color-border); font-size: 0.8rem; font-weight: 600; text-align: center; }
-        .discount-controls select:disabled, .discount-controls input:disabled { opacity: 0.5; cursor: not-allowed; }
-      `}</style>
-    </div>
-  );
-}
 
-function ServiceChargeToggle({ showServiceCharge, serviceChargePercent, onToggle, onSetPercent, isPaid }) {
-  return (
-    <div className="sc-section">
-      <label className="sc-toggle">
-        <input type="checkbox" checked={showServiceCharge} onChange={onToggle} disabled={isPaid} />
-        <Coffee size={14} />
-        <span>Service Charge</span>
-      </label>
-      {showServiceCharge && (
-        <div className="sc-input-group">
+      <div className="bd-adjust-row">
+        <div className="bd-adjust-label">Service charge</div>
+        <button
+          type="button"
+          className={`toggle toggle--sm ${showServiceCharge ? 'on' : ''}`}
+          onClick={onToggleServiceCharge}
+          disabled={isPaid}
+          aria-pressed={showServiceCharge}
+        />
+        {showServiceCharge && (
           <input
             type="number"
             min="0"
             max="50"
             step="0.5"
             value={serviceChargePercent || ''}
-            onChange={(e) => onSetPercent(parseFloat(e.target.value) || 0)}
+            onChange={(e) => onSetServiceChargePercent(parseFloat(e.target.value) || 0)}
             disabled={isPaid}
+            className="bd-num"
           />
-          <span>%</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ totals */
+
+function Totals({
+  subtotal, discountAmount, serviceCharge, cgst, sgst, total,
+  discountType, discountValue, showServiceCharge, serviceChargePercent,
+}) {
+  return (
+    <div className="bd-totals tnum">
+      <div className="bd-total-row"><span>Subtotal</span><b>{fmt(subtotal)}</b></div>
+      {discountAmount > 0 && (
+        <div className="bd-total-row">
+          <span>Discount{discountType === 'percentage' ? ` (${discountValue}%)` : ''}</span>
+          <b style={{ color: 'var(--color-danger)' }}>−{fmt(discountAmount)}</b>
         </div>
       )}
-      <style>{`
-        .sc-section { background: #E8F5E9; border: 1px solid #A5D6A7; border-radius: 10px; padding: 0.75rem; display: flex; align-items: center; gap: 1rem; }
-        .sc-toggle { display: flex; align-items: center; gap: 0.35rem; font-size: 0.75rem; font-weight: 800; color: #2E7D32; text-transform: uppercase; cursor: pointer; }
-        .sc-toggle input { margin: 0; }
-        .sc-input-group { display: flex; align-items: center; gap: 0.25rem; margin-left: auto; }
-        .sc-input-group input { width: 60px; padding: 0.35rem; border-radius: 6px; border: 1px solid var(--color-border); font-size: 0.8rem; font-weight: 600; text-align: center; }
-        .sc-input-group span { font-weight: 700; font-size: 0.8rem; color: var(--color-text-muted); }
-      `}</style>
+      {showServiceCharge && serviceCharge > 0 && (
+        <div className="bd-total-row"><span>Service charge ({serviceChargePercent}%)</span><b>{fmt(serviceCharge)}</b></div>
+      )}
+      <div className="bd-total-row"><span>CGST (5%)</span><b>{fmt(cgst)}</b></div>
+      <div className="bd-total-row"><span>SGST (5%)</span><b>{fmt(sgst)}</b></div>
+      <div className="bd-total-row bd-total-row--grand"><span>Grand total</span><span>{fmt(total)}</span></div>
     </div>
   );
 }
 
-function ItemsList({ items, sessionId, tableId, isEditing, isPaid, loadingAction, onEditItem, onUpdateQty, onDeleteItem, onToggleEdit, onNavigateMenu, isOnline }) {
-  if (items.length === 0) {
-    return (
-      <div className="empty-order-msg">
-        {isOnline ? 'No items punched for this session yet.' : 'No items yet. Use "Manual Order Entry" below to add items.'}
-        {isOnline && (
-          <button className="add-items-link" onClick={onNavigateMenu} disabled={isPaid}>
-            Go to Menu Catalog
-          </button>
-        )}
-        <style>{`
-          .empty-order-msg { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.75rem; color: var(--color-text-muted); font-size: 0.85rem; padding: 3rem 1rem; }
-          .add-items-link { background: var(--color-primary); color: white; border: none; padding: 0.5rem 1rem; border-radius: 8px; font-weight: 700; font-size: 0.8rem; cursor: pointer; }
-          .add-items-link:disabled { opacity: 0.5; cursor: not-allowed; }
-        `}</style>
-      </div>
-    );
-  }
+/* ---------------------------------------------------------------- invoice */
 
+function InvoicePreview({ session, items, subtotal, discountAmount, serviceCharge, cgst, sgst, total, discountType, discountValue, showServiceCharge, serviceChargePercent }) {
   return (
-    <>
-      <div className="bill-items-list">
-        {items.map((item) => (
-          <div key={item.id} className="bill-item-card">
-            {isEditing ? (
-              <div className="inline-qty-control">
-                <button className="inline-qty-btn" onClick={() => onUpdateQty(item, item.qty - 1)} disabled={loadingAction}>
-                  <Minus size={10} />
-                </button>
-                <span className="inline-qty-val">{item.qty}x</span>
-                <button className="inline-qty-btn" onClick={() => onUpdateQty(item, item.qty + 1)} disabled={loadingAction}>
-                  <Plus size={10} />
-                </button>
-                <button className="inline-delete-btn" onClick={() => onDeleteItem(item)} disabled={loadingAction}>
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            ) : (
-              <div className="item-qty-box">{item.qty}x</div>
-            )}
-            <div className="item-main-info">
-              <h4>{item.name}</h4>
-              <p>Standard preparation</p>
-            </div>
-            <div className="item-meta">
-              <span className="item-price">{FORMAT_CURRENCY.format(item.price * item.qty)}</span>
-            </div>
-            {!isEditing && (
-              <button className="edit-btn" onClick={() => onEditItem(item)} disabled={isPaid}>
-                <Edit3 size={16} />
-              </button>
-            )}
-          </div>
-        ))}
+    <div className="bd-receipt">
+      <div className="bd-receipt__logo">
+        <div className="bd-receipt__name">Spice OS</div>
+        <div>123 Downtown St, Metro</div>
+        <div>Tel: +91 90812 01234</div>
       </div>
-
-      <div className="session-footer-actions">
-        <button className="footer-btn" disabled={isPaid}>
-          <FileText size={18} /> Merge Bill
-        </button>
-        <button className="footer-btn">
-          <Printer size={18} /> Print KOT
-        </button>
-        <button className={`footer-btn ${isEditing ? 'active-edit' : ''}`} onClick={onToggleEdit} disabled={isPaid}>
-          {isEditing ? <Check size={18} /> : <Edit3 size={18} />}
-          {isEditing ? 'Finish Qty' : 'Edit Qty'}
-        </button>
+      <div className="bd-receipt__meta">
+        <div><span>Table</span><b>T-{session?.restaurant_tables?.table_number}</b></div>
+        <div><span>Bill #</span><b>{session?.id?.slice(0, 4).toUpperCase()}</b></div>
+        <div><span>Date</span><b>{session?.started_at ? new Date(session.started_at).toLocaleDateString() : ''}</b></div>
       </div>
-
-      <style>{`
-        .bill-items-list { display: flex; flex-direction: column; gap: 0.5rem; overflow-y: auto; flex: 1; }
-        .bill-item-card { border: 1px solid var(--color-border); border-radius: 10px; padding: 0.75rem; display: flex; align-items: center; gap: 1rem; }
-        .item-qty-box { width: 32px; height: 32px; background: var(--color-accent-soft); color: var(--color-primary); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.85rem; }
-        .item-main-info h4 { font-size: 0.9rem; font-weight: 700; color: var(--color-primary); margin: 0; }
-        .item-main-info p { font-size: 0.75rem; color: var(--color-text-muted); margin: 0; }
-        .item-meta { margin-left: auto; }
-        .item-price { font-size: 0.9rem; font-weight: 800; color: var(--color-primary); }
-        .edit-btn { color: var(--color-text-muted); cursor: pointer; background: none; border: none; }
-        .edit-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-        .inline-qty-control { display: flex; align-items: center; gap: 0.35rem; background: var(--color-bg); padding: 0.2rem 0.4rem; border-radius: 6px; }
-        .inline-qty-btn { width: 24px; height: 24px; border-radius: 4px; background: white; border: 1px solid var(--color-border); display: flex; align-items: center; justify-content: center; font-weight: 700; color: var(--color-primary); cursor: pointer; }
-        .inline-qty-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        .inline-qty-val { font-weight: 700; font-size: 0.85rem; min-width: 20px; text-align: center; }
-        .inline-delete-btn { color: #d9534f; cursor: pointer; background: none; border: none; }
-        .session-footer-actions { display: flex; gap: 0.5rem; }
-        .footer-btn { flex: 1; background: var(--color-sidebar); color: var(--color-primary); border: 1px solid var(--color-border); border-radius: 8px; padding: 0.6rem; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 0.35rem; font-size: 0.8rem; cursor: pointer; }
-        .footer-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        .footer-btn.active-edit { background: #E8F5E9; color: #2E7D32; border-color: #2E7D32; }
-      `}</style>
-    </>
-  );
-}
-
-function InvoicePreview({ session, items, subtotal, discountAmount, serviceCharge, cgst, sgst, total, isPaid, discountType, discountValue, showServiceCharge, serviceChargePercent }) {
-  return (
-    <div className="invoice-paper">
-      <div className="receipt-logo">
-        <h4>Spice OS</h4>
-        <p>123 Downtown St, Metro</p>
-        <p>Tel: +91 90812 01234</p>
-      </div>
-      <div className="receipt-meta">
-        <div><p>Table</p><strong>T-{session?.restaurant_tables?.table_number}</strong></div>
-        <div><p>Bill #</p><strong>{session?.id?.slice(0, 4).toUpperCase()}</strong></div>
-        <div><p>Date</p><strong>{session?.started_at ? new Date(session.started_at).toLocaleDateString() : ''}</strong></div>
-      </div>
-      <div className="receipt-items">
+      <div className="bd-receipt__items">
         {items.map((item, idx) => (
-          <div key={idx} className="receipt-row">
-            <span>{item.qty}x {item.name}</span>
-            <span>{FORMAT_CURRENCY.format(item.price * item.qty)}</span>
+          <div key={idx} className="bd-receipt__row">
+            <span>{item.qty}× {item.name}</span>
+            <span className="tnum">{fmt(item.price * item.qty)}</span>
           </div>
         ))}
       </div>
-      <div className="receipt-totals">
-        <div className="receipt-row"><span>Subtotal</span><span>{FORMAT_CURRENCY.format(subtotal)}</span></div>
+      <div className="bd-receipt__totals tnum">
+        <div className="bd-receipt__row"><span>Subtotal</span><span>{fmt(subtotal)}</span></div>
         {discountAmount > 0 && (
-          <div className="receipt-row discount"><span>Discount {discountType === 'percentage' ? `(${discountValue}%)` : ''}</span><span>-{FORMAT_CURRENCY.format(discountAmount)}</span></div>
+          <div className="bd-receipt__row" style={{ color: 'var(--color-danger)' }}>
+            <span>Discount {discountType === 'percentage' ? `(${discountValue}%)` : ''}</span>
+            <span>−{fmt(discountAmount)}</span>
+          </div>
         )}
         {showServiceCharge && serviceCharge > 0 && (
-          <div className="receipt-row"><span>Service Charge ({serviceChargePercent}%)</span><span>{FORMAT_CURRENCY.format(serviceCharge)}</span></div>
+          <div className="bd-receipt__row"><span>Service charge ({serviceChargePercent}%)</span><span>{fmt(serviceCharge)}</span></div>
         )}
-        <div className="receipt-row"><span>CGST (5%)</span><span>{FORMAT_CURRENCY.format(cgst)}</span></div>
-        <div className="receipt-row"><span>SGST (5%)</span><span>{FORMAT_CURRENCY.format(sgst)}</span></div>
-        <div className="receipt-row total"><span>Grand Total</span><span>{FORMAT_CURRENCY.format(total)}</span></div>
+        <div className="bd-receipt__row"><span>CGST (5%)</span><span>{fmt(cgst)}</span></div>
+        <div className="bd-receipt__row"><span>SGST (5%)</span><span>{fmt(sgst)}</span></div>
+        <div className="bd-receipt__row bd-receipt__row--total"><span>Grand total</span><span>{fmt(total)}</span></div>
       </div>
-      <style>{`
-        .invoice-paper { background: white; border-radius: 10px; padding: 1.25rem; border: 1px solid var(--color-border); display: flex; flex-direction: column; gap: 1rem; }
-        .receipt-logo { text-align: center; }
-        .receipt-logo h4 { font-size: 1.05rem; font-weight: 800; color: var(--color-primary); margin: 0; }
-        .receipt-logo p { font-size: 0.7rem; color: var(--color-text-muted); margin: 0; }
-        .receipt-meta { display: flex; justify-content: space-between; border-top: 1px dashed var(--color-border); border-bottom: 1px dashed var(--color-border); padding: 0.5rem 0; }
-        .receipt-meta div p { font-size: 0.65rem; color: var(--color-text-muted); margin: 0; }
-        .receipt-meta div strong { font-size: 0.75rem; color: var(--color-primary); }
-        .receipt-items { display: flex; flex-direction: column; gap: 0.45rem; }
-        .receipt-row { display: flex; justify-content: space-between; font-size: 0.8rem; font-weight: 600; }
-        .receipt-row.discount { color: #d9534f; }
-        .receipt-totals { border-top: 1px dashed var(--color-border); padding-top: 0.5rem; display: flex; flex-direction: column; gap: 0.35rem; }
-        .receipt-totals .receipt-row.total { font-size: 1.15rem; font-weight: 800; color: var(--color-primary); margin-top: 0.25rem; }
-      `}</style>
     </div>
   );
 }
 
-function SplitPaymentBlock({ splitPayments, total, remainingBalance, isPaid, onUpdateSplitPayment, onAddSplit, onRemoveSplit, onSettlePartial }) {
+/* ---------------------------------------------------------- split payment */
+
+function SplitPaymentBlock({ splitPayments, total, isPaid, onUpdateSplitPayment, onAddSplit, onRemoveSplit, onSettlePartial }) {
   const methods = [
-    { key: 'cash', label: 'Cash', icon: Banknote },
-    { key: 'card', label: 'Card', icon: CreditCard },
-    { key: 'upi', label: 'UPI', icon: QrCode },
+    { key: 'cash', label: 'Cash' },
+    { key: 'card', label: 'Card' },
+    { key: 'upi', label: 'UPI' },
   ];
 
   const splitTotal = splitPayments.reduce((s, p) => s + (p.amount || 0), 0);
   const balance = total - splitTotal;
 
   return (
-    <div className="split-payment-block">
-      <h4>Split Payment</h4>
+    <div className="bd-well">
+      <div className="drawer__label" style={{ marginBottom: 8 }}>Split payment</div>
+
       {splitPayments.map((sp, idx) => (
-        <div key={idx} className="split-pay-row">
-          <select value={sp.method} onChange={(e) => onUpdateSplitPayment(idx, { ...sp, method: e.target.value })} disabled={isPaid}>
+        <div key={idx} className="bd-split-row">
+          <select
+            value={sp.method}
+            onChange={(e) => onUpdateSplitPayment(idx, { ...sp, method: e.target.value })}
+            disabled={isPaid}
+            className="bd-select"
+          >
             {methods.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
           </select>
           <input
@@ -293,121 +289,87 @@ function SplitPaymentBlock({ splitPayments, total, remainingBalance, isPaid, onU
             onChange={(e) => onUpdateSplitPayment(idx, { ...sp, amount: parseFloat(e.target.value) || 0 })}
             placeholder="Amount"
             disabled={isPaid}
+            className="bd-num bd-num--wide"
           />
           {splitPayments.length > 1 && (
-            <button className="remove-split-btn" onClick={() => onRemoveSplit(idx)} disabled={isPaid}>
+            <button className="bd-del" onClick={() => onRemoveSplit(idx)} disabled={isPaid}>
               <X size={14} />
             </button>
           )}
         </div>
       ))}
-      <div className="split-actions">
-        <button className="add-split-btn" onClick={onAddSplit} disabled={isPaid}>
-          + Add Method
-        </button>
-        {balance > 0 && (
-          <span className="balance-remaining">Balance: {FORMAT_CURRENCY.format(balance)}</span>
-        )}
+
+      <div className="bd-split-foot">
+        <button className="link-action" onClick={onAddSplit} disabled={isPaid}>+ Add method</button>
+        {balance > 0 && <span className="bd-balance tnum">Balance {fmt(balance)}</span>}
       </div>
-      <button className="partial-settle-btn" onClick={onSettlePartial} disabled={isPaid || splitTotal <= 0}>
-        Pay {FORMAT_CURRENCY.format(splitTotal)}
+
+      <button
+        className="btn btn--ghost"
+        style={{ width: '100%', marginTop: 8 }}
+        onClick={onSettlePartial}
+        disabled={isPaid || splitTotal <= 0}
+      >
+        Pay {fmt(splitTotal)}
       </button>
-      <style>{`
-        .split-payment-block { background: #E3F2FD; border: 1px solid #90CAF9; border-radius: 10px; padding: 0.75rem; }
-        .split-payment-block h4 { font-size: 0.75rem; font-weight: 800; color: #1565C0; text-transform: uppercase; margin: 0 0 0.5rem 0; }
-        .split-pay-row { display: flex; gap: 0.35rem; margin-bottom: 0.35rem; }
-        .split-pay-row select { flex: 1; padding: 0.45rem; border-radius: 6px; border: 1px solid var(--color-border); font-size: 0.8rem; font-weight: 600; }
-        .split-pay-row input { width: 100px; padding: 0.45rem; border-radius: 6px; border: 1px solid var(--color-border); font-size: 0.8rem; font-weight: 600; text-align: center; }
-        .remove-split-btn { color: #d9534f; background: none; border: none; cursor: pointer; }
-        .split-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 0.35rem; }
-        .add-split-btn { background: none; border: 1px dashed var(--color-border); border-radius: 6px; padding: 0.35rem 0.65rem; font-size: 0.75rem; font-weight: 700; color: #1565C0; cursor: pointer; }
-        .balance-remaining { font-size: 0.8rem; font-weight: 700; color: var(--color-text-muted); }
-        .partial-settle-btn { width: 100%; margin-top: 0.5rem; background: #1565C0; color: white; border: none; padding: 0.65rem; border-radius: 8px; font-weight: 800; font-size: 0.85rem; cursor: pointer; }
-        .partial-settle-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-      `}</style>
     </div>
   );
 }
+
+/* -------------------------------------------------------------- settlement */
 
 function PaymentBlock({ paymentMethod, total, isPaid, itemsEmpty, loadingAction, onSelectPayment, onSettle, onPrint }) {
+  const methods = [
+    { key: 'cash', label: 'Cash', Icon: Banknote },
+    { key: 'card', label: 'Card', Icon: CreditCard },
+    { key: 'qr', label: 'UPI', Icon: QrCode },
+  ];
+
   return (
-    <div className="payment-action-block">
-      <div className="payment-options">
-        <button className={`pay-opt ${paymentMethod === 'card' ? 'active' : ''}`} onClick={() => onSelectPayment('card')} disabled={isPaid}>
-          <CreditCard size={16} /> Card
+    <div className="bd-pay">
+      <div className="bd-pay__methods">
+        {methods.map(({ key, label, Icon }) => (
+          <button
+            key={key}
+            className={`bd-method ${paymentMethod === key ? 'on' : ''}`}
+            onClick={() => onSelectPayment(key)}
+            disabled={isPaid}
+          >
+            <Icon size={16} />
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="bd-pay__row">
+        <button
+          className="btn btn--primary"
+          style={{ flex: 1 }}
+          onClick={onSettle}
+          disabled={isPaid || itemsEmpty || loadingAction}
+        >
+          {isPaid ? 'Paid & completed' : `Settle ${fmt(total)}`}
         </button>
-        <button className={`pay-opt ${paymentMethod === 'cash' ? 'active' : ''}`} onClick={() => onSelectPayment('cash')} disabled={isPaid}>
-          <Banknote size={16} /> Cash
-        </button>
-        <button className={`pay-opt ${paymentMethod === 'qr' ? 'active' : ''}`} onClick={() => onSelectPayment('qr')} disabled={isPaid}>
-          <QrCode size={16} /> UPI QR
+        <button className="btn btn--ghost" onClick={onPrint}>
+          <Printer size={14} /> Print bill
         </button>
       </div>
-      <button className="pay-settle-btn" onClick={onSettle} disabled={isPaid || itemsEmpty || loadingAction}>
-        <CheckCircle2 size={18} /> {isPaid ? 'PAID & COMPLETED' : `SETTLE ${FORMAT_CURRENCY.format(total)}`}
-      </button>
-      <div className="print-sub-actions">
-        <button className="sub-btn" onClick={onPrint}><Printer size={14} /> Print Bill</button>
-      </div>
-      <style>{`
-        .payment-action-block { display: flex; flex-direction: column; gap: 0.75rem; }
-        .payment-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.35rem; }
-        .pay-opt { border: 1px solid var(--color-border); border-radius: 8px; background: white; padding: 0.5rem; font-size: 0.8rem; font-weight: 700; color: var(--color-text-muted); display: flex; align-items: center; justify-content: center; gap: 0.25rem; cursor: pointer; }
-        .pay-opt.active { background: var(--color-accent-soft); color: var(--color-primary); border-color: var(--color-primary); }
-        .pay-opt:disabled { opacity: 0.5; cursor: not-allowed; }
-        .pay-settle-btn { background: var(--color-primary); color: white; border: none; padding: 0.85rem; border-radius: 10px; font-weight: 800; font-size: 0.95rem; display: flex; align-items: center; justify-content: center; gap: 0.35rem; cursor: pointer; }
-        .pay-settle-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        .print-sub-actions { display: flex; }
-        .sub-btn { flex: 1; background: white; border: 1px solid var(--color-border); border-radius: 8px; padding: 0.5rem; font-size: 0.75rem; font-weight: 700; color: var(--color-primary); display: flex; align-items: center; justify-content: center; gap: 0.25rem; cursor: pointer; }
-      `}</style>
     </div>
   );
 }
 
+/* -------------------------------------------------------------------- root */
+
 export default function BillingDetails({
-  sessionId,
-  session,
-  items,
-  loading,
-  error,
-  isPaid,
-  subtotal,
-  discountAmount,
-  serviceCharge,
-  cgst,
-  sgst,
-  total,
-  paymentMethod,
-  isEditingQuantities,
-  loadingAction,
-  discountType,
-  discountValue,
-  showServiceCharge,
-  serviceChargePercent,
-  splitPayments,
-  onCloseSession,
-  onNavigateMenu,
-  onEditItem,
-  onUpdateQty,
-  onDeleteItem,
-  onToggleEdit,
-  onSelectPayment,
-  onSettle,
-  onPrint,
-  onMoveTable,
-  onSplit,
-  onHold,
-  onVoid,
-  isOnline,
-  onAddManualItem,
-  onSetDiscountType,
-  onSetDiscountValue,
-  onToggleServiceCharge,
-  onSetServiceChargePercent,
-  onUpdateSplitPayment,
-  onAddSplitPayment,
-  onRemoveSplitPayment,
-  onSettlePartial,
+  sessionId, session, items, loading, error, isPaid,
+  subtotal, discountAmount, serviceCharge, cgst, sgst, total,
+  paymentMethod, isEditingQuantities, loadingAction,
+  discountType, discountValue, showServiceCharge, serviceChargePercent, splitPayments,
+  onCloseSession, onNavigateMenu, onEditItem, onUpdateQty, onDeleteItem, onToggleEdit,
+  onSelectPayment, onSettle, onPrint, onMoveTable, onMergeBill, onSplit, onHold, onVoid,
+  isOnline, onAddManualItem, onSetDiscountType, onSetDiscountValue,
+  onToggleServiceCharge, onSetServiceChargePercent,
+  onUpdateSplitPayment, onAddSplitPayment, onRemoveSplitPayment, onSettlePartial,
 }) {
   const [manualName, setManualName] = useState('');
   const [manualQty, setManualQty] = useState(1);
@@ -415,62 +377,58 @@ export default function BillingDetails({
 
   if (!sessionId) {
     return (
-      <div className="no-session-details">
-        <LayoutGrid size={40} strokeWidth={1} />
-        <h4>Select an active table on the left</h4>
-        <p>Select any table or order to display item details and process invoice settlements</p>
-        <style>{`
-          .no-session-details { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 4rem 2rem; color: var(--color-text-muted); height: 100%; gap: 0.5rem; }
-          .no-session-details h4 { font-size: 1.05rem; font-weight: 700; color: var(--color-primary); margin: 0; }
-          .no-session-details p { font-size: 0.8rem; max-width: 240px; line-height: 1.4; }
-        `}</style>
+      <div className="card bd-shell">
+        <div className="empty-state">
+          <span className="empty-state__mark"><LayoutGrid size={22} /></span>
+          <div className="empty-state__title">Select an active table on the left</div>
+          <div className="empty-state__sub">
+            Pick any table or order to see item details and process the settlement.
+          </div>
+        </div>
+        <BillingStyles />
       </div>
     );
   }
 
   if (loading) {
     return (
-      <div className="loading-state">
-        <RefreshCw className="spinner" /> Loading session bill details...
-        <style>{`
-          .loading-state { display: flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 4rem; font-weight: 700; color: var(--color-text-muted); }
-          .spinner { animation: spin 1s linear infinite; }
-          @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        `}</style>
+      <div className="card bd-shell">
+        <div className="empty-state">
+          <RefreshCw size={20} className="spin" />
+          <div className="empty-state__sub">Loading bill details…</div>
+        </div>
+        <BillingStyles />
       </div>
     );
   }
 
-  if (error) {
+  if (error || !session) {
     return (
-      <div className="error-state">
-        <p>Failed to load session: {error}</p>
-        <style>{`
-          .error-state { display: flex; align-items: center; justify-content: center; padding: 4rem; color: var(--color-text-muted); font-weight: 600; }
-        `}</style>
-      </div>
-    );
-  }
-
-  if (!session) {
-    return (
-      <div className="no-session-details">
-        <p>Active Session could not be loaded.</p>
-        <style>{`
-          .no-session-details { display: flex; align-items: center; justify-content: center; padding: 4rem; color: var(--color-text-muted); font-weight: 600; }
-        `}</style>
+      <div className="card bd-shell">
+        <div className="empty-state">
+          <div className="empty-state__title">Couldn’t load this session</div>
+          <div className="empty-state__sub">{error || 'The active session could not be loaded.'}</div>
+        </div>
+        <BillingStyles />
       </div>
     );
   }
 
   return (
-    <div className="billing-details-wrapper">
-      <SessionHeader session={session} isPaid={isPaid} onMoveTable={onMoveTable} onSplit={onSplit} onHold={onHold} onVoid={onVoid} onClose={onCloseSession} />
+    <div className="card bd-shell">
+      <SessionHeader
+        session={session}
+        items={items}
+        isPaid={isPaid}
+        onMoveTable={onMoveTable}
+        onSplit={onSplit}
+        onHold={onHold}
+        onVoid={onVoid}
+        onClose={onCloseSession}
+      />
 
       <ItemsList
         items={items}
-        sessionId={sessionId}
-        tableId={session.table_id}
         isEditing={isEditingQuantities}
         isPaid={isPaid}
         loadingAction={loadingAction}
@@ -483,84 +441,306 @@ export default function BillingDetails({
       />
 
       {!isPaid && (
-        <>
-          <DiscountSection
-            discountType={discountType}
-            discountValue={discountValue}
-            subtotal={subtotal}
-            onSetType={onSetDiscountType}
-            onSetValue={onSetDiscountValue}
-            isPaid={isPaid}
-          />
-          <ServiceChargeToggle
-            showServiceCharge={showServiceCharge}
-            serviceChargePercent={serviceChargePercent}
-            onToggle={onToggleServiceCharge}
-            onSetPercent={onSetServiceChargePercent}
-            isPaid={isPaid}
-          />
-        </>
+        <Adjustments
+          discountType={discountType}
+          discountValue={discountValue}
+          subtotal={subtotal}
+          onSetDiscountType={onSetDiscountType}
+          onSetDiscountValue={onSetDiscountValue}
+          showServiceCharge={showServiceCharge}
+          serviceChargePercent={serviceChargePercent}
+          onToggleServiceCharge={onToggleServiceCharge}
+          onSetServiceChargePercent={onSetServiceChargePercent}
+          isPaid={isPaid}
+        />
       )}
 
       {!isPaid && !isOnline && (
-        <div className="manual-entry-section">
-          <h4>Manual Order Entry</h4>
-          <div className="manual-entry-row">
-            <input type="text" placeholder="Item name..." value={manualName} onChange={(e) => setManualName(e.target.value)} className="manual-input name-input" />
-            <input type="number" min="1" value={manualQty} onChange={(e) => setManualQty(Math.max(1, parseInt(e.target.value) || 1))} className="manual-input qty-input" />
-            <input type="number" min="0" step="0.01" placeholder="Price" value={manualPrice} onChange={(e) => setManualPrice(e.target.value)} className="manual-input price-input" />
-            <button className="manual-add-btn" disabled={!manualName || !manualPrice || loadingAction} onClick={() => { onAddManualItem(manualName, manualQty, parseFloat(manualPrice)); setManualName(''); setManualQty(1); setManualPrice(''); }}>
+        <div className="bd-well">
+          <div className="drawer__label" style={{ marginBottom: 8 }}>Manual order entry</div>
+          <div className="bd-manual">
+            <input
+              type="text"
+              placeholder="Item name"
+              value={manualName}
+              onChange={(e) => setManualName(e.target.value)}
+              className="bd-text"
+            />
+            <input
+              type="number"
+              min="1"
+              value={manualQty}
+              onChange={(e) => setManualQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
+              className="bd-num"
+            />
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="Price"
+              value={manualPrice}
+              onChange={(e) => setManualPrice(e.target.value)}
+              className="bd-num bd-num--wide"
+            />
+            <button
+              className="btn btn--primary btn--sm"
+              disabled={!manualName || !manualPrice || loadingAction}
+              onClick={() => {
+                onAddManualItem(manualName, manualQty, parseFloat(manualPrice));
+                setManualName('');
+                setManualQty(1);
+                setManualPrice('');
+              }}
+            >
               Add
             </button>
           </div>
-          <style>{`
-            .manual-entry-section { background: #FFF8E1; border: 1px solid #FFE082; border-radius: 10px; padding: 0.75rem; }
-            .manual-entry-section h4 { font-size: 0.75rem; font-weight: 800; color: #E65100; margin: 0 0 0.5rem 0; text-transform: uppercase; letter-spacing: 0.3px; }
-            .manual-entry-row { display: flex; gap: 0.35rem; align-items: center; }
-            .manual-input { padding: 0.45rem 0.5rem; border-radius: 6px; border: 1px solid var(--color-border); font-size: 0.8rem; font-weight: 600; color: var(--color-primary); outline: none; }
-            .name-input { flex: 1; min-width: 0; }
-            .qty-input { width: 44px; text-align: center; }
-            .price-input { width: 80px; }
-            .manual-add-btn { padding: 0.45rem 0.75rem; background: var(--color-primary); color: white; border: none; border-radius: 6px; font-weight: 700; font-size: 0.8rem; cursor: pointer; white-space: nowrap; }
-            .manual-add-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-          `}</style>
         </div>
       )}
 
-      <div className="invoice-settlement-block">
-        <div className="invoice-header">
-          <h3>Bill Invoice {isPaid && <span className="paid-badge">&bull; PAID</span>}</h3>
-        </div>
-        <InvoicePreview session={session} items={items} subtotal={subtotal} discountAmount={discountAmount} serviceCharge={serviceCharge} cgst={cgst} sgst={sgst} total={total} isPaid={isPaid} discountType={discountType} discountValue={discountValue} showServiceCharge={showServiceCharge} serviceChargePercent={serviceChargePercent} />
-        {!isPaid && (
-          <SplitPaymentBlock
-            splitPayments={splitPayments}
-            total={total}
-            isPaid={isPaid}
-            onUpdateSplitPayment={onUpdateSplitPayment}
-            onAddSplit={onAddSplitPayment}
-            onRemoveSplit={onRemoveSplitPayment}
-            onSettlePartial={onSettlePartial}
-          />
+      <Totals
+        subtotal={subtotal}
+        discountAmount={discountAmount}
+        serviceCharge={serviceCharge}
+        cgst={cgst}
+        sgst={sgst}
+        total={total}
+        discountType={discountType}
+        discountValue={discountValue}
+        showServiceCharge={showServiceCharge}
+        serviceChargePercent={serviceChargePercent}
+      />
+
+      <div className="bd-secondary">
+        <button className="btn btn--ghost btn--sm" onClick={onMergeBill} disabled={isPaid || !onMergeBill}>
+          <FileText size={14} /> Merge bill
+        </button>
+        <button className="btn btn--ghost btn--sm">
+          <Printer size={14} /> Print KOT
+        </button>
+        <button className="btn btn--ghost btn--sm" onClick={onNavigateMenu} disabled={isPaid || !isOnline}>
+          <Plus size={14} /> Add items
+        </button>
+        {isEditingQuantities && (
+          <button className="btn btn--ghost btn--sm" onClick={onToggleEdit}>
+            <Check size={14} /> Finish qty
+          </button>
         )}
-        <PaymentBlock
-          paymentMethod={paymentMethod}
-          total={total}
-          isPaid={isPaid}
-          itemsEmpty={items.length === 0}
-          loadingAction={loadingAction}
-          onSelectPayment={onSelectPayment}
-          onSettle={onSettle}
-          onPrint={onPrint}
-        />
       </div>
 
-      <style>{`
-        .billing-details-wrapper { padding: 1.5rem; display: flex; flex-direction: column; height: 100%; gap: 1.5rem; }
-        .invoice-settlement-block { background: var(--color-sidebar); border-radius: 16px; padding: 1rem; border: 1px solid var(--color-border); }
-        .invoice-header h3 { font-size: 0.95rem; font-weight: 800; color: var(--color-primary); margin: 0 0 0.75rem 0; }
-        .paid-badge { color: #2e7d32; font-size: 0.85rem; }
-      `}</style>
+      {!isPaid && (
+        <SplitPaymentBlock
+          splitPayments={splitPayments}
+          total={total}
+          isPaid={isPaid}
+          onUpdateSplitPayment={onUpdateSplitPayment}
+          onAddSplit={onAddSplitPayment}
+          onRemoveSplit={onRemoveSplitPayment}
+          onSettlePartial={onSettlePartial}
+        />
+      )}
+
+      <PaymentBlock
+        paymentMethod={paymentMethod}
+        total={total}
+        isPaid={isPaid}
+        itemsEmpty={items.length === 0}
+        loadingAction={loadingAction}
+        onSelectPayment={onSelectPayment}
+        onSettle={onSettle}
+        onPrint={onPrint}
+      />
+
+      <details className="bd-invoice">
+        <summary>Bill invoice preview</summary>
+        <InvoicePreview
+          session={session}
+          items={items}
+          subtotal={subtotal}
+          discountAmount={discountAmount}
+          serviceCharge={serviceCharge}
+          cgst={cgst}
+          sgst={sgst}
+          total={total}
+          discountType={discountType}
+          discountValue={discountValue}
+          showServiceCharge={showServiceCharge}
+          serviceChargePercent={serviceChargePercent}
+        />
+      </details>
+
+      <BillingStyles />
     </div>
+  );
+}
+
+function BillingStyles() {
+  return (
+    <style>{`
+      .bd-shell { display: flex; flex-direction: column; gap: 14px; }
+
+      .bd-header { border-bottom: 1px solid var(--color-border); padding-bottom: 14px; }
+      .bd-header__row { display: flex; align-items: flex-start; gap: 12px; }
+      .bd-title { font-size: 17px; font-weight: 800; display: flex; align-items: center; }
+      .bd-meta { font-size: 13px; color: var(--color-text-muted); margin-top: 3px; }
+      .bd-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+
+      .bd-items { display: flex; flex-direction: column; }
+      .bd-section-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+
+      .bd-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 11px 0;
+        border-bottom: 1px solid var(--color-border-soft);
+        font-size: 13.5px;
+      }
+      .bd-item:last-child { border-bottom: none; }
+      .bd-item__name { flex: 1; font-weight: 600; min-width: 0; }
+      .bd-item__qty { width: 34px; text-align: center; color: var(--color-text-muted); }
+      .bd-item__amt { width: 74px; text-align: right; font-weight: 600; }
+
+      .bd-edit { border: none; background: none; color: var(--color-text-faint); display: flex; }
+      .bd-edit:hover:not(:disabled) { color: var(--color-text); }
+      .bd-edit:disabled { opacity: 0.4; cursor: not-allowed; }
+
+      .bd-stepper { display: flex; align-items: center; gap: 6px; }
+      .bd-stepper button {
+        width: 26px; height: 26px;
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        background: var(--color-surface);
+        color: var(--color-text-soft);
+        display: inline-flex; align-items: center; justify-content: center;
+      }
+      .bd-stepper button:hover:not(:disabled) { background: var(--color-canvas); }
+      .bd-stepper span { min-width: 20px; text-align: center; font-weight: 700; font-size: 13px; }
+
+      .bd-del { border: none; background: none; color: var(--color-danger); display: flex; }
+      .bd-del:disabled { opacity: 0.4; cursor: not-allowed; }
+
+      .bd-well {
+        background: var(--color-canvas);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        padding: 14px 16px;
+      }
+
+      .bd-adjust-row { display: flex; align-items: center; gap: 10px; }
+      .bd-adjust-row + .bd-adjust-row { margin-top: 10px; }
+      .bd-adjust-label { flex: 1; font-size: 13.5px; font-weight: 600; }
+
+      .bd-select, .bd-num, .bd-text {
+        height: 36px;
+        padding: 0 10px;
+        border: 1px solid var(--color-border);
+        border-radius: 9px;
+        background: var(--color-surface);
+        font-family: inherit;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--color-text);
+        outline: none;
+        box-sizing: border-box;
+      }
+      .bd-select { min-width: 130px; }
+      .bd-num { width: 64px; text-align: center; }
+      .bd-num--wide { width: 96px; text-align: right; }
+      .bd-text { flex: 1; min-width: 0; text-align: left; }
+      .bd-select:disabled, .bd-num:disabled, .bd-text:disabled { opacity: 0.5; cursor: not-allowed; }
+
+      .bd-manual { display: flex; gap: 8px; align-items: center; }
+      .bd-split-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+      .bd-split-row .bd-select { flex: 1; }
+      .bd-split-foot { display: flex; align-items: center; justify-content: space-between; }
+      .bd-balance { font-size: 12.5px; font-weight: 700; color: var(--color-text-muted); }
+
+      .bd-totals { display: flex; flex-direction: column; gap: 7px; font-size: 13.5px; }
+      .bd-total-row { display: flex; justify-content: space-between; color: var(--color-text-muted); }
+      .bd-total-row b { color: var(--color-text); font-weight: 600; }
+      .bd-total-row--grand {
+        font-size: 16px;
+        font-weight: 800;
+        color: var(--color-text);
+        padding-top: 8px;
+        border-top: 1px solid var(--color-border);
+      }
+
+      .bd-secondary { display: flex; gap: 8px; flex-wrap: wrap; }
+
+      .bd-pay { display: flex; flex-direction: column; gap: 10px; }
+      .bd-pay__methods { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+      .bd-pay__row { display: flex; gap: 8px; }
+
+      .bd-method {
+        height: 48px;
+        border: 1.5px solid var(--color-border);
+        border-radius: var(--radius-md);
+        background: var(--color-surface);
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--color-text);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 2px;
+      }
+      .bd-method:hover:not(:disabled) { background: var(--color-canvas); }
+      .bd-method.on { background: var(--color-text); border-color: var(--color-text); color: #fff; }
+      .bd-method:disabled { opacity: 0.5; cursor: not-allowed; }
+
+      .bd-invoice { border-top: 1px solid var(--color-border); padding-top: 12px; }
+      .bd-invoice summary {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--color-text-muted);
+        cursor: pointer;
+        list-style: none;
+      }
+      .bd-invoice summary::-webkit-details-marker { display: none; }
+      .bd-invoice summary::before { content: '▸ '; }
+      .bd-invoice[open] summary::before { content: '▾ '; }
+
+      .bd-receipt {
+        background: var(--color-canvas);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        padding: 16px;
+        margin-top: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        font-size: 12.5px;
+        color: var(--color-text-soft);
+      }
+      .bd-receipt__logo { text-align: center; }
+      .bd-receipt__name { font-size: 15px; font-weight: 800; color: var(--color-text); }
+      .bd-receipt__meta {
+        display: flex;
+        justify-content: space-between;
+        border-top: 1px dashed var(--color-border-strong);
+        border-bottom: 1px dashed var(--color-border-strong);
+        padding: 8px 0;
+      }
+      .bd-receipt__meta span { display: block; font-size: 11px; color: var(--color-text-muted); }
+      .bd-receipt__meta b { font-size: 12.5px; color: var(--color-text); }
+      .bd-receipt__items { display: flex; flex-direction: column; gap: 6px; }
+      .bd-receipt__row { display: flex; justify-content: space-between; gap: 12px; }
+      .bd-receipt__totals {
+        border-top: 1px dashed var(--color-border-strong);
+        padding-top: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+      .bd-receipt__row--total {
+        font-size: 15px;
+        font-weight: 800;
+        color: var(--color-text);
+        margin-top: 4px;
+      }
+    `}</style>
   );
 }

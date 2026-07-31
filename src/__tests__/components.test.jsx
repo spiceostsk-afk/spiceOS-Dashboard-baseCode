@@ -32,7 +32,7 @@ describe('StatCard', () => {
 describe('ConnectivityBanner', () => {
   it('renders offline state', () => {
     render(<ConnectivityBanner isOnline={false} syncing={false} syncProgress={{ current: 0, total: 0 }} lastSyncResult={null} syncNow={() => {}} />);
-    expect(screen.getByText(/Offline Mode/)).toBeInTheDocument();
+    expect(screen.getByText(/Offline mode/)).toBeInTheDocument();
   });
 
   it('renders syncing state', () => {
