@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Search, Bell, Plus, X, ArrowRight, HelpCircle, ChevronDown, LogOut } from 'lucide-react';
+import { Search, Bell, Plus, X, ArrowRight, ChevronDown, LogOut, Check } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { useAuth } from '../context/AuthContext';
 
 const SHIFT_KEY = 'lumiere_shift_active';
 
@@ -26,9 +25,14 @@ const TITLES = {
 const Header = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { signOut, user } = useAuth();
   const [shiftActive, setShiftActive] = useState(() => localStorage.getItem(SHIFT_KEY) !== 'ended');
   const [showShiftMenu, setShowShiftMenu] = useState(false);
+
+  const [showOutletMenu, setShowOutletMenu] = useState(false);
+  const [showAlerts, setShowAlerts] = useState(false);
+  const [outlets, setOutlets] = useState([]);
+  const [alerts, setAlerts] = useState([]);
+  const [alertsLoading, setAlertsLoading] = useState(false);
 
   const [showModal, setShowModal] = useState(false);
   const [availableTables, setAvailableTables] = useState([]);
@@ -61,6 +65,51 @@ const Header = () => {
   };
 
   const getTitle = () => TITLES[location.pathname] || 'Spice OS';
+
+  /** Outlets this account can see. RLS scopes it to the current tenant. */
+  const openOutletMenu = async () => {
+    const next = !showOutletMenu;
+    setShowOutletMenu(next);
+    if (!next || outlets.length > 0) return;
+    const { data } = await supabase.from('restaurants').select('id, name').order('name');
+    setOutlets(data || []);
+  };
+
+  /** Anything on the floor that needs a manager's eyes right now. */
+  const openAlerts = async () => {
+    const next = !showAlerts;
+    setShowAlerts(next);
+    if (!next) return;
+    setAlertsLoading(true);
+    try {
+      const { data: tables } = await supabase
+        .from('restaurant_tables')
+        .select('table_number, status, customer_sessions(started_at, session_status)')
+        .order('table_number');
+
+      const found = [];
+      for (const t of tables || []) {
+        if (t.status === 'billing') {
+          found.push({ id: `bill-${t.table_number}`, tone: 'amber', text: `Table ${t.table_number} is waiting to settle` });
+        }
+        const active = (t.customer_sessions || []).find((x) => x.session_status === 'active');
+        if (active?.started_at) {
+          const mins = Math.floor((Date.now() - new Date(active.started_at).getTime()) / 60000);
+          if (mins > 45) {
+            found.push({ id: `stale-${t.table_number}`, tone: 'amber', text: `Table ${t.table_number} open ${mins} min` });
+          }
+        }
+        if (t.status === 'cleaning') {
+          found.push({ id: `clean-${t.table_number}`, tone: 'neutral', text: `Table ${t.table_number} needs clearing` });
+        }
+      }
+      setAlerts(found);
+    } catch {
+      setAlerts([]);
+    } finally {
+      setAlertsLoading(false);
+    }
+  };
 
   const handleOpenModal = async () => {
     setShowModal(true);
@@ -129,9 +178,26 @@ const Header = () => {
 
       <div className="header-spacer" />
 
-      <button className="ghost-btn">
-        Main Outlet <ChevronDown size={13} className="chev" />
-      </button>
+      <div className="pop-wrapper">
+        <button className="ghost-btn" onClick={openOutletMenu}>
+          Main Outlet <ChevronDown size={13} className="chev" />
+        </button>
+        {showOutletMenu && (
+          <>
+            <div className="pop-backdrop" onClick={() => setShowOutletMenu(false)} />
+            <div className="pop pop--sm">
+              <div className="pop__label">Outlet</div>
+              {outlets.length === 0 && <div className="pop__empty">Main Outlet</div>}
+              {outlets.map((o, i) => (
+                <button key={o.id} className="pop__item" onClick={() => setShowOutletMenu(false)}>
+                  <span>{o.name}</span>
+                  {i === 0 && <Check size={14} />}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
 
       <div className="date-chip">{currentDate}</div>
 
@@ -159,22 +225,34 @@ const Header = () => {
         )}
       </div>
 
-      <button className="icon-btn" title="Notifications">
-        <Bell size={17} />
-        <span className="icon-dot" />
-      </button>
-
-      <button className="icon-btn" title="Support Agent">
-        <HelpCircle size={17} />
-      </button>
-
-      <button
-        className="icon-btn"
-        onClick={signOut}
-        title={user?.email ? `Sign out (${user.email})` : 'Sign out'}
-      >
-        <LogOut size={17} />
-      </button>
+      <div className="pop-wrapper">
+        <button className="icon-btn" title="Notifications" onClick={openAlerts}>
+          <Bell size={17} />
+          {alerts.length > 0 && <span className="icon-dot" />}
+        </button>
+        {showAlerts && (
+          <>
+            <div className="pop-backdrop" onClick={() => setShowAlerts(false)} />
+            <div className="pop">
+              <div className="pop__label">Needs attention</div>
+              {alertsLoading && <div className="pop__empty">Checking the floor…</div>}
+              {!alertsLoading && alerts.length === 0 && (
+                <div className="pop__empty">All clear — nothing needs you.</div>
+              )}
+              {!alertsLoading && alerts.map((a) => (
+                <button
+                  key={a.id}
+                  className="pop__item"
+                  onClick={() => { setShowAlerts(false); navigate('/billing'); }}
+                >
+                  <span className={`pop__dot pop__dot--${a.tone}`} />
+                  <span>{a.text}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
 
       {shiftActive && (
         <button className="primary-btn" onClick={handleOpenModal}>
@@ -409,6 +487,81 @@ const Header = () => {
         .shift-menu-item:hover { background: var(--color-canvas); }
 
         .shift-backdrop { position: fixed; inset: 0; z-index: 15; }
+
+        /* ---- Popovers ---- */
+        .pop-wrapper { position: relative; }
+        .pop-backdrop { position: fixed; inset: 0; z-index: 15; }
+
+        .pop {
+          position: absolute;
+          top: calc(100% + 6px);
+          right: 0;
+          min-width: 260px;
+          max-width: 320px;
+          max-height: 340px;
+          overflow-y: auto;
+          background: var(--color-surface);
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-md);
+          box-shadow: 0 12px 32px rgba(22, 24, 29, 0.12);
+          padding: 6px;
+          z-index: 20;
+        }
+
+        .pop--sm { min-width: 200px; }
+
+        .pop__label {
+          padding: 8px 12px 6px;
+          font-size: 11px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+          color: var(--color-text-muted);
+        }
+
+        .pop__item {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          width: 100%;
+          padding: 10px 12px;
+          border: none;
+          background: none;
+          border-radius: 8px;
+          font-size: 13px;
+          font-weight: 600;
+          color: var(--color-text);
+          text-align: left;
+          text-decoration: none;
+        }
+
+        .pop__item:hover { background: var(--color-canvas); }
+        .pop__item span:not(.pop__dot) { flex: 1; min-width: 0; }
+
+        .pop__dot {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          flex-shrink: 0;
+          background: var(--color-text-faint);
+        }
+
+        .pop__dot--amber { background: var(--color-warning); }
+        .pop__dot--neutral { background: var(--color-text-faint); }
+
+        .pop__empty {
+          padding: 10px 12px 14px;
+          font-size: 13px;
+          color: var(--color-text-muted);
+        }
+
+        .pop__note {
+          padding: 10px 12px 6px;
+          margin-top: 4px;
+          border-top: 1px solid var(--color-border-soft);
+          font-size: 12px;
+          color: var(--color-text-faint);
+        }
 
         .icon-btn {
           position: relative;

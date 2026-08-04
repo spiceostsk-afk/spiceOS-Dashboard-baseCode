@@ -366,7 +366,7 @@ export default function BillingDetails({
   paymentMethod, isEditingQuantities, loadingAction,
   discountType, discountValue, showServiceCharge, serviceChargePercent, splitPayments,
   onCloseSession, onNavigateMenu, onEditItem, onUpdateQty, onDeleteItem, onToggleEdit,
-  onSelectPayment, onSettle, onPrint, onMoveTable, onMergeBill, onSplit, onHold, onVoid,
+  onSelectPayment, onSettle, onPrint, onPrintKot, onMoveTable, onMergeBill, onSplit, onHold, onVoid,
   isOnline, onAddManualItem, onSetDiscountType, onSetDiscountValue,
   onToggleServiceCharge, onSetServiceChargePercent,
   onUpdateSplitPayment, onAddSplitPayment, onRemoveSplitPayment, onSettlePartial,
@@ -515,7 +515,7 @@ export default function BillingDetails({
         <button className="btn btn--ghost btn--sm" onClick={onMergeBill} disabled={isPaid || !onMergeBill}>
           <FileText size={14} /> Merge bill
         </button>
-        <button className="btn btn--ghost btn--sm">
+        <button className="btn btn--ghost btn--sm" onClick={onPrintKot} disabled={items.length === 0}>
           <Printer size={14} /> Print KOT
         </button>
         <button className="btn btn--ghost btn--sm" onClick={onNavigateMenu} disabled={isPaid || !isOnline}>

@@ -126,8 +126,8 @@ export default function Branding() {
               <div className="brand-preview__id">D3</div>
               <div className="brand-preview__meta">₹2,160 · 68 min</div>
             </div>
-            <button className="brand-preview__btn" style={{ background: primary }}>New order</button>
-            <button className="brand-preview__btn" style={{ background: accent }}>Accent</button>
+            <span className="brand-preview__btn" style={{ background: primary }}>New order</span>
+            <span className="brand-preview__btn" style={{ background: accent }}>Accent</span>
             <span className="brand-note">Live preview</span>
           </div>
 

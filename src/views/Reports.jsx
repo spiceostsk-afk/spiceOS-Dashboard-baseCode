@@ -213,7 +213,16 @@ export default function Reports() {
 
       <style>{`
         .rep-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-        .rep-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+        /* stretch, so both cards share the tallest one's height */
+        .rep-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 16px;
+          align-items: stretch;
+        }
+
+        .rep-grid > .card { display: flex; flex-direction: column; }
+        .rep-grid > .card .empty-state { flex: 1; }
 
         @media (max-width: 1000px) {
           .rep-grid { grid-template-columns: 1fr; }

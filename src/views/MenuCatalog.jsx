@@ -352,9 +352,19 @@ const MenuCatalog = () => {
   const searched = q
     ? inCategory.filter((i) => (i.item_name || '').toLowerCase().includes(q))
     : inCategory;
-  const visibleItems = manageMode ? searched : searched.filter((i) => i.is_available !== false);
+  // Diners can only be sold what's on; managers need to see the 86'd items too.
+  const availabilityScoped = manageMode ? searched : searched.filter((i) => i.is_available !== false);
+  const visibleItems = availabilityScoped.filter((i) => {
+    if (activeFilter === 'Available') return i.is_available !== false;
+    if (activeFilter === 'Unavailable') return i.is_available === false;
+    return true;
+  });
 
   const countFor = (catId) => menuItems.filter((i) => i.category_id === catId).length;
+
+  // The basket only makes sense when this screen was opened to punch an order
+  // (via New Order). Browsing the catalog on its own gets the full width.
+  const isOrdering = Boolean(sessionId && sessionId !== 'undefined' && sessionId !== 'null');
 
   if (loadError) {
     return (
@@ -378,7 +388,7 @@ const MenuCatalog = () => {
         </div>
       )}
 
-      <div className="menu-layout">
+      <div className={`menu-layout ${isOrdering ? '' : 'menu-layout--catalog'}`}>
         {/* Category rail */}
         <div className="card menu-rail">
           {categories.map((cat) => (
@@ -420,7 +430,7 @@ const MenuCatalog = () => {
         {/* Dish grid */}
         <div className="menu-main">
           <div className="menu-toolbar">
-            <div className="search-input" style={{ flex: 1, maxWidth: 320 }}>
+            <div className="search-input menu-search">
               <Search size={15} />
               <input
                 type="text"
@@ -431,11 +441,12 @@ const MenuCatalog = () => {
             </div>
 
             <div className="segmented">
-              {['All', 'Vegetarian', 'Spicy'].map((f) => (
+              {['All', 'Available', 'Unavailable'].map((f) => (
                 <button
                   key={f}
                   className={activeFilter === f ? 'on' : ''}
                   onClick={() => setActiveFilter(f)}
+                  title={f === 'Unavailable' ? 'Items currently 86’d' : undefined}
                 >
                   {f}
                 </button>
@@ -542,7 +553,8 @@ const MenuCatalog = () => {
           )}
         </div>
 
-        {/* Current order */}
+        {/* Current order — only while taking an order */}
+        {isOrdering && (
         <div className="card menu-order">
           <div className="card__head">
             <div style={{ flex: 1 }}>
@@ -591,6 +603,7 @@ const MenuCatalog = () => {
             </button>
           </div>
         </div>
+        )}
       </div>
 
       {modal?.type === 'addCategory' && (
@@ -649,6 +662,15 @@ const MenuCatalog = () => {
           grid-template-columns: 200px minmax(0, 1fr) 340px;
           gap: 20px;
           align-items: start;
+        }
+
+        /* No basket on screen — give the whole width to the dishes. */
+        .menu-layout--catalog { grid-template-columns: 200px minmax(0, 1fr); }
+
+        .menu-search {
+          flex: 1 1 280px;
+          min-width: 240px;
+          max-width: 460px;
         }
 
         /* ---- category rail ---- */

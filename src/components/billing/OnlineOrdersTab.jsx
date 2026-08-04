@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Printer } from 'lucide-react';
 
-const ORDERS = [
+const SEED_ORDERS = [
   {
     id: '#SW-9082',
     source: 'Swiggy',
@@ -29,6 +29,40 @@ const ORDERS = [
 ];
 
 export default function OnlineOrdersTab() {
+  // Aggregator webhooks aren't connected yet, so this feed is seeded locally.
+  // The controls still drive real state so the flow can be walked end to end.
+  const [orders, setOrders] = useState(SEED_ORDERS);
+
+  const setStatus = (id, status, statusTone, actions) => {
+    setOrders((prev) => prev.map((o) => (
+      o.id === id ? { ...o, status, statusTone, actions } : o
+    )));
+  };
+
+  const handleReject = (o) => {
+    if (!window.confirm(`Reject ${o.id} from ${o.source}?`)) return;
+    setStatus(o.id, 'Rejected', 'tone-red', 'none');
+  };
+
+  const handleReady = (o) => setStatus(o.id, 'Out for delivery', 'tone-blue', 'print');
+
+  const handlePrint = (o) => {
+    const win = window.open('', '_blank');
+    if (!win) { alert('Please allow pop-ups to print the ticket.'); return; }
+    win.document.write(`<!DOCTYPE html><html><head><title>${o.id}</title>
+      <style>body{font-family:'Courier New',monospace;width:280px;margin:0 auto;padding:12px;font-size:13px}
+      h2{text-align:center;margin:0 0 2px;font-size:17px}.sub{text-align:center;font-size:11px;color:#555;margin-bottom:8px}
+      hr{border:none;border-top:1px dashed #333;margin:6px 0}</style></head><body>
+      <h2>${o.source.toUpperCase()}</h2><div class="sub">Online order ticket</div><hr/>
+      <div><strong>Order:</strong> ${o.id}</div>
+      <div><strong>Customer:</strong> ${o.customer}</div>
+      <div><strong>Phone:</strong> ${o.phone}</div><hr/>
+      <div>${o.items}</div><hr/>
+      <div><strong>Total:</strong> ${o.amount}</div>
+      <script>window.print();window.close();<\/script></body></html>`);
+    win.document.close();
+  };
+
   return (
     <div className="oo">
       <div className="oo-head">
@@ -48,7 +82,7 @@ export default function OnlineOrdersTab() {
           <div className="oo-c-actions">Actions</div>
         </div>
 
-        {ORDERS.map((o) => (
+        {orders.map((o) => (
           <div key={o.id} className="table-row oo-row">
             <div className="oo-c-id strong">{o.id}</div>
             <div className="oo-c-source">
@@ -64,14 +98,18 @@ export default function OnlineOrdersTab() {
               <span className={`pill pill--sm ${o.statusTone}`}>{o.status}</span>
             </div>
             <div className="oo-c-actions">
-              {o.actions === 'live' ? (
+              {o.actions === 'live' && (
                 <>
-                  <button className="btn btn--danger btn--sm">Reject</button>
-                  <button className="btn btn--primary btn--sm">Ready</button>
+                  <button className="btn btn--danger btn--sm" onClick={() => handleReject(o)}>Reject</button>
+                  <button className="btn btn--primary btn--sm" onClick={() => handleReady(o)}>Ready</button>
                 </>
-              ) : (
-                <button className="btn btn--ghost btn--sm"><Printer size={13} /> Print</button>
               )}
+              {o.actions === 'print' && (
+                <button className="btn btn--ghost btn--sm" onClick={() => handlePrint(o)}>
+                  <Printer size={13} /> Print
+                </button>
+              )}
+              {o.actions === 'none' && <span className="oo-done">No action</span>}
             </div>
           </div>
         ))}
@@ -92,6 +130,7 @@ export default function OnlineOrdersTab() {
         .oo-c-actions { width: 150px; display: flex; gap: 8px; justify-content: flex-end; }
 
         .oo-phone { font-size: 12px; }
+        .oo-done { font-size: 12.5px; color: var(--color-text-faint); }
       `}</style>
     </div>
   );

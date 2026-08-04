@@ -125,13 +125,17 @@ export default function Customers() {
     );
   }
 
-  const regulars = customers.filter((c) => c.visitCount >= REGULAR_VISITS).length;
-  const totalSpend = customers.reduce((sum, c) => sum + (c.totalSpent || 0), 0);
+  // "New" here matches the row tag, so the metric and the table always agree.
+  const newCustomers = customers.filter((c) => c.visitCount < REGULAR_VISITS).length;
+  const returning = customers.filter((c) => c.visitCount > 1).length;
+  const repeatRate = customers.length
+    ? Math.round((returning / customers.length) * 100)
+    : 0;
 
   const metrics = [
     { label: 'Total customers', value: customers.length },
-    { label: 'Regulars', value: regulars },
-    { label: 'Lifetime spend', value: formatCurrency(totalSpend) },
+    { label: 'New customers', value: newCustomers },
+    { label: 'Repeat rate', value: `${repeatRate}%` },
   ];
 
   return (

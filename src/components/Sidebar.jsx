@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -14,6 +14,9 @@ import {
   Palette,
   Settings,
   ShieldCheck,
+  HelpCircle,
+  LogOut,
+  ChevronUp,
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
@@ -58,7 +61,8 @@ function NavRow({ to, label, Icon, active }) {
 const Sidebar = () => {
   const location = useLocation();
   const { logoUrl } = useTheme();
-  const { isPlatformAdmin } = useAuth();
+  const { isPlatformAdmin, signOut, user } = useAuth();
+  const [accountOpen, setAccountOpen] = useState(false);
 
   const isActive = (item) =>
     item.matches
@@ -91,12 +95,34 @@ const Sidebar = () => {
         ))}
       </nav>
 
-      <div className="user-card">
-        <div className="user-avatar">AR</div>
-        <div className="user-meta">
-          <div className="user-name">Alex Rivera</div>
-          <div className="user-role">Manager</div>
-        </div>
+      <div className="account">
+        {accountOpen && (
+          <>
+            <div className="account__backdrop" onClick={() => setAccountOpen(false)} />
+            <div className="account__menu">
+              <a className="account__item" href="mailto:support@spiceos.com">
+                <HelpCircle size={15} /> Support
+              </a>
+              <button className="account__item account__item--danger" onClick={signOut}>
+                <LogOut size={15} /> Sign out
+              </button>
+              {user?.email && <div className="account__who">{user.email}</div>}
+            </div>
+          </>
+        )}
+
+        <button
+          className="user-card"
+          onClick={() => setAccountOpen(!accountOpen)}
+          title="Account"
+        >
+          <div className="user-avatar">AR</div>
+          <div className="user-meta">
+            <div className="user-name">Alex Rivera</div>
+            <div className="user-role">Manager</div>
+          </div>
+          <ChevronUp size={15} className={`user-chev ${accountOpen ? 'is-open' : ''}`} />
+        </button>
       </div>
 
       <div className="sidebar-credit">Powered by Spice OS</div>
@@ -206,16 +232,75 @@ const Sidebar = () => {
           flex-shrink: 0;
         }
 
+        .account { position: relative; margin-top: 12px; }
+
+        .account__backdrop { position: fixed; inset: 0; z-index: 30; }
+
+        .account__menu {
+          position: absolute;
+          bottom: calc(100% + 8px);
+          left: 0;
+          right: 0;
+          background: var(--color-surface);
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-md);
+          box-shadow: 0 12px 32px rgba(22, 24, 29, 0.14);
+          padding: 6px;
+          z-index: 31;
+        }
+
+        .account__item {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          width: 100%;
+          padding: 10px 12px;
+          border: none;
+          background: none;
+          border-radius: 8px;
+          font-size: 13px;
+          font-weight: 600;
+          color: var(--color-text);
+          text-align: left;
+          text-decoration: none;
+        }
+
+        .account__item:hover { background: var(--color-canvas); }
+        .account__item--danger { color: var(--color-danger); }
+        .account__item--danger:hover { background: var(--color-danger-soft); }
+
+        .account__who {
+          padding: 8px 12px 4px;
+          margin-top: 4px;
+          border-top: 1px solid var(--color-border-soft);
+          font-size: 11.5px;
+          color: var(--color-text-faint);
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
         .user-card {
           display: flex;
           align-items: center;
           gap: 12px;
+          width: 100%;
           padding: 12px;
           border-radius: var(--radius-md);
           background: var(--color-canvas);
           border: 1px solid var(--color-border);
-          margin-top: 12px;
+          text-align: left;
         }
+
+        .user-card:hover { background: var(--color-well); }
+
+        .user-chev {
+          margin-left: auto;
+          flex-shrink: 0;
+          color: var(--color-text-faint);
+          transition: var(--transition-smooth);
+        }
+
+        .user-chev.is-open { transform: rotate(180deg); }
 
         .user-avatar {
           width: 36px;

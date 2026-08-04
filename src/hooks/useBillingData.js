@@ -830,6 +830,40 @@ export function useBillingData() {
       const win = window.open('', '_blank');
       if (!win) { window.print(); return; }
 
+      // A kitchen ticket carries what to cook, never money.
+      if (type === 'kot') {
+        let kotRows = '';
+        for (const item of items) {
+          kotRows += `<tr><td class="qty">${item.qty}</td><td>${item.name}</td></tr>`;
+        }
+        win.document.write(`<!DOCTYPE html><html><head><title>KOT - ${billId}</title>
+        <style>
+          body { font-family: 'Courier New', monospace; width: 280px; margin: 0 auto; padding: 0.75rem; font-size: 13px; }
+          h2 { text-align: center; font-size: 18px; margin: 0 0 2px 0; letter-spacing: 2px; }
+          .sub { text-align: center; font-size: 11px; color: #555; margin: 0 0 8px 0; }
+          hr { border: none; border-top: 1px dashed #333; margin: 6px 0; }
+          table { width: 100%; border-collapse: collapse; font-size: 14px; }
+          td { padding: 5px 0; vertical-align: top; }
+          .qty { width: 34px; font-weight: bold; font-size: 16px; }
+          .meta { font-size: 12px; }
+          @media print { body { margin: 0; padding: 0.5rem; } @page { margin: 0; } }
+        </style></head><body>
+        <h2>KOT</h2>
+        <div class="sub">Kitchen Order Ticket</div>
+        <hr/>
+        <div class="meta"><strong>Table:</strong> T-${tableNumber} &nbsp; <strong>Bill #:</strong> ${billId}</div>
+        <div class="meta"><strong>Guests:</strong> ${sess.guest_count || '—'}</div>
+        <div class="meta"><strong>Time:</strong> ${new Date().toLocaleString('en-IN')}</div>
+        <hr/>
+        <table>${kotRows}</table>
+        <hr/>
+        <div class="sub">${items.length} line${items.length === 1 ? '' : 's'}</div>
+        <script>window.print();window.close();</script>
+        </body></html>`);
+        win.document.close();
+        return;
+      }
+
       let itemRows = '';
       for (const item of items) {
         itemRows += `<tr><td>${item.name}</td><td class="center">${item.qty}</td><td class="right">${formatCurrency(item.price)}</td><td class="right">${formatCurrency(item.price * item.qty)}</td></tr>`;

@@ -417,6 +417,7 @@ export default function Billing() {
           onSelectPayment={setPaymentMethod}
           onSettle={handleMarkAsPaid}
           onPrint={() => handlePrint('bill')}
+          onPrintKot={() => handlePrint('kot')}
           onMoveTable={handleOpenMoveTable}
           onMergeBill={handleOpenMergeOrder}
           onSplit={onSplitBill}
