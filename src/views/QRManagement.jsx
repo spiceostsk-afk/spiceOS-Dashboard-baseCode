@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { QrCode, RefreshCw, Printer, Download, Edit3, Trash2, X } from 'lucide-react';
+import { QrCode, RefreshCw, Printer, Download, Edit3, Trash2, X, Plus, LayoutGrid } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 const QR_SIZE = 180;
@@ -23,23 +23,45 @@ const STATUS_DOT = {
 
 const EMPTY_FORM = { table_number: '', capacity: 2, section_id: '' };
 
-function TableFormModal({ editingTable, sections, onSave, onClose }) {
+function TableFormModal({ editingTable, sections, onSave, onCreateSection, onClose }) {
   const [form, setForm] = useState(
     editingTable
       ? { table_number: editingTable.table_number, capacity: editingTable.capacity, section_id: editingTable.section_id || '' }
       : EMPTY_FORM,
   );
   const [saving, setSaving] = useState(false);
+  // Sections start out empty for a new restaurant, so the table form lets you
+  // create one inline rather than dead-ending on an empty dropdown.
+  const [newSection, setNewSection] = useState('');
+  const [creatingSection, setCreatingSection] = useState(false);
+
+  const handleAddSection = async () => {
+    setCreatingSection(true);
+    try {
+      const created = await onCreateSection(newSection);
+      setForm((f) => ({ ...f, section_id: created.id }));
+      setNewSection('');
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setCreatingSection(false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.table_number || !form.section_id) {
-      alert('Table number and section are required.');
+    if (!form.table_number) {
+      alert('Table number is required.');
       return;
     }
     setSaving(true);
     try {
-      await onSave({ ...form, table_number: Number(form.table_number), capacity: Number(form.capacity) }, editingTable?.id);
+      await onSave({
+        ...form,
+        table_number: Number(form.table_number),
+        capacity: Number(form.capacity),
+        section_id: form.section_id || null,
+      }, editingTable?.id);
       onClose();
     } catch (err) {
       alert(err.message);
@@ -83,15 +105,37 @@ function TableFormModal({ editingTable, sections, onSave, onClose }) {
           </div>
 
           <div className="field">
-            <label>Section</label>
+            <label>Section <span className="field__hint">optional</span></label>
             <select
               value={form.section_id}
               onChange={(e) => setForm({ ...form, section_id: e.target.value })}
-              required
             >
-              <option value="">Select section…</option>
+              <option value="">
+                {sections.length === 0 ? 'No sections yet — add one below' : 'No section'}
+              </option>
               {sections.map((s) => <option key={s.id} value={s.id}>{s.section_name}</option>)}
             </select>
+
+            <div className="section-add">
+              <input
+                type="text"
+                value={newSection}
+                onChange={(e) => setNewSection(e.target.value)}
+                onKeyDown={(e) => {
+                  // Enter inside a nested input would submit the table form.
+                  if (e.key === 'Enter') { e.preventDefault(); if (newSection.trim()) handleAddSection(); }
+                }}
+                placeholder="New section name, e.g. Ground Floor"
+              />
+              <button
+                type="button"
+                className="btn btn--ghost"
+                onClick={handleAddSection}
+                disabled={creatingSection || !newSection.trim()}
+              >
+                <Plus size={14} /> {creatingSection ? 'Adding…' : 'Add'}
+              </button>
+            </div>
           </div>
 
           <div className="modal__actions">
@@ -101,6 +145,148 @@ function TableFormModal({ editingTable, sections, onSave, onClose }) {
             </button>
           </div>
         </form>
+
+        <style>{`
+          .field__hint {
+            font-weight: 500;
+            color: var(--color-text-faint);
+            text-transform: none;
+            letter-spacing: 0;
+          }
+          .section-add { display: flex; gap: 8px; margin-top: 8px; }
+          .section-add input { flex: 1; }
+          .section-add .btn { flex-shrink: 0; }
+        `}</style>
+      </div>
+    </div>
+  );
+}
+
+// Standalone section manager — reachable from the page header so sections can be
+// created/renamed/removed without going through the table form.
+function SectionsModal({ sections, tables, onCreate, onRename, onDelete, onClose }) {
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const run = async (fn) => {
+    setBusy(true);
+    try {
+      await fn();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleAdd = (e) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    run(async () => {
+      await onCreate(name);
+      setName('');
+    });
+  };
+
+  const handleRename = (section) => {
+    const next = prompt('Rename section', section.section_name);
+    if (next === null || !next.trim() || next.trim() === section.section_name) return;
+    run(() => onRename(section.id, next.trim()));
+  };
+
+  const handleDelete = (section) => {
+    const used = tables.filter((t) => t.section_id === section.id).length;
+    if (used > 0) {
+      alert(`“${section.section_name}” still has ${used} table${used === 1 ? '' : 's'}. Move them to another section first.`);
+      return;
+    }
+    if (!confirm(`Delete section “${section.section_name}”?`)) return;
+    run(() => onDelete(section.id));
+  };
+
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal__head">
+          <div className="modal__title">Sections</div>
+          <button className="modal__close" onClick={onClose}><X size={17} /></button>
+        </div>
+
+        <div className="modal__body">
+          <form onSubmit={handleAdd} className="section-add">
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Section name, e.g. Rooftop"
+            />
+            <button type="submit" className="btn btn--primary" disabled={busy || !name.trim()}>
+              <Plus size={14} /> Add
+            </button>
+          </form>
+
+          {sections.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state__sub">
+                No sections yet. Sections are optional — they just group tables on this page.
+              </div>
+            </div>
+          ) : (
+            <div className="section-list">
+              {sections.map((s) => {
+                const count = tables.filter((t) => t.section_id === s.id).length;
+                return (
+                  <div key={s.id} className="section-row">
+                    <span className="section-row__name">{s.section_name}</span>
+                    <span className="section-row__count">{count} table{count === 1 ? '' : 's'}</span>
+                    <button onClick={() => handleRename(s)} disabled={busy} title="Rename section">
+                      <Edit3 size={13} />
+                    </button>
+                    <button className="is-danger" onClick={() => handleDelete(s)} disabled={busy} title="Delete section">
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="modal__actions">
+            <button type="button" className="btn btn--ghost" onClick={onClose}>Done</button>
+          </div>
+        </div>
+
+        <style>{`
+          .section-add { display: flex; gap: 8px; }
+          .section-add input { flex: 1; }
+          .section-add .btn { flex-shrink: 0; }
+
+          .section-list { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
+
+          .section-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-sm);
+          }
+          .section-row__name { flex: 1; font-size: 13.5px; font-weight: 600; }
+          .section-row__count { font-size: 12px; color: var(--color-text-muted); }
+          .section-row button {
+            width: 24px;
+            height: 24px;
+            border: 1px solid var(--color-border);
+            border-radius: 7px;
+            background: var(--color-surface);
+            color: var(--color-text-muted);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+          }
+          .section-row button:hover { color: var(--color-text); background: var(--color-canvas); }
+          .section-row .is-danger:hover { color: var(--color-danger); border-color: var(--color-danger-border); }
+        `}</style>
       </div>
     </div>
   );
@@ -112,6 +298,7 @@ export default function QRManagement() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showModal, setShowModal] = useState(false);
+  const [showSections, setShowSections] = useState(false);
   const [editingTable, setEditingTable] = useState(null);
 
   const fetchData = async () => {
@@ -120,7 +307,7 @@ export default function QRManagement() {
     try {
       const [tablesRes, sectionsRes] = await Promise.all([
         supabase.from('restaurant_tables').select('id, table_number, capacity, section_id, status, public_token').order('table_number'),
-        supabase.from('restaurant_sections').select('id, section_name'),
+        supabase.from('restaurant_sections').select('id, section_name').order('section_name'),
       ]);
       if (tablesRes.error) throw tablesRes.error;
       if (sectionsRes.error) throw sectionsRes.error;
@@ -150,6 +337,36 @@ export default function QRManagement() {
         .insert([{ table_number: formData.table_number, capacity: formData.capacity, section_id: formData.section_id, status: 'available' }]);
       if (e) throw e;
     }
+    await fetchData();
+  };
+
+  // restaurant_id is filled in by the column default (current_restaurant_id()),
+  // same as menu_categories — never send it from the client.
+  const handleCreateSection = async (rawName) => {
+    const section_name = (rawName || '').trim();
+    if (!section_name) throw new Error('Section name is required.');
+    const { data, error: e } = await supabase
+      .from('restaurant_sections')
+      .insert([{ section_name }])
+      .select('id, section_name')
+      .single();
+    if (e) throw new Error(e.code === '23505' ? `“${section_name}” already exists.` : e.message);
+    setSections((prev) => [...prev, data].sort((a, b) => a.section_name.localeCompare(b.section_name)));
+    return data;
+  };
+
+  const handleRenameSection = async (sectionId, section_name) => {
+    const { error: e } = await supabase
+      .from('restaurant_sections')
+      .update({ section_name })
+      .eq('id', sectionId);
+    if (e) throw new Error(e.code === '23505' ? `“${section_name}” already exists.` : e.message);
+    await fetchData();
+  };
+
+  const handleDeleteSection = async (sectionId) => {
+    const { error: e } = await supabase.from('restaurant_sections').delete().eq('id', sectionId);
+    if (e) throw e;
     await fetchData();
   };
 
@@ -241,6 +458,9 @@ export default function QRManagement() {
         <button className="btn btn--ghost" onClick={handlePrintAll}>
           <Printer size={14} /> Print all
         </button>
+        <button className="btn btn--ghost" onClick={() => setShowSections(true)}>
+          <LayoutGrid size={14} /> Sections
+        </button>
         <button
           className="btn btn--primary"
           onClick={() => { setEditingTable(null); setShowModal(true); }}
@@ -322,7 +542,19 @@ export default function QRManagement() {
           editingTable={editingTable}
           sections={sections}
           onSave={handleSave}
+          onCreateSection={handleCreateSection}
           onClose={() => setShowModal(false)}
+        />
+      )}
+
+      {showSections && (
+        <SectionsModal
+          sections={sections}
+          tables={tables}
+          onCreate={handleCreateSection}
+          onRename={handleRenameSection}
+          onDelete={handleDeleteSection}
+          onClose={() => setShowSections(false)}
         />
       )}
 
