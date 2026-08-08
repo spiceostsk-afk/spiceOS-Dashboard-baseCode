@@ -24,6 +24,43 @@ function flattenOrderItems(sessionData) {
   );
 }
 
+// Freeing a table must also end whatever meal was on it. resolve-table decides
+// the diner's mode purely from "does this table have an active session", so a
+// session left open outlives the meal and the next QR scan rejoins the previous
+// diner's bill. Anything not already settled is closed out here.
+const OPEN_SESSION_STATUSES = [
+  SESSION_STATUS.active,
+  SESSION_STATUS.billing,
+  SESSION_STATUS.hold,
+];
+
+async function closeSessionsForTables(tableIds, { online }) {
+  if (!tableIds || tableIds.length === 0) return;
+  const ended_at = new Date().toISOString();
+
+  if (online) {
+    const { error } = await supabase
+      .from('customer_sessions')
+      .update({ session_status: SESSION_STATUS.completed, ended_at })
+      .in('table_id', tableIds)
+      .in('session_status', OPEN_SESSION_STATUSES);
+    if (error) throw error;
+    return;
+  }
+
+  const sessions = await db.getAll('sessions');
+  for (const session of sessions) {
+    if (!tableIds.includes(session.table_id)) continue;
+    if (!OPEN_SESSION_STATUSES.includes(session.session_status)) continue;
+    await db.put('sessions', { ...session, session_status: SESSION_STATUS.completed, ended_at });
+    await db.enqueueSync({
+      action: 'update',
+      table: 'customer_sessions',
+      data: { id: session.id, session_status: SESSION_STATUS.completed, ended_at },
+    });
+  }
+}
+
 function buildItemAssignments(items) {
   const assignments = {};
   items.forEach((item) => {
@@ -402,7 +439,8 @@ export function useBillingData() {
       if (cleanupTimerRef.current) clearTimeout(cleanupTimerRef.current);
       cleanupTimerRef.current = setTimeout(async () => {
         try {
-          if (navigator.onLine) {
+          const online = navigator.onLine;
+          if (online) {
             await supabase.from('restaurant_tables').update({ status: TABLE_STATUS.available }).eq('id', tableId);
           } else {
             const tables = await db.getAll('tables');
@@ -415,6 +453,9 @@ export function useBillingData() {
               });
             }
           }
+          // Belt-and-braces: the settle path already completed the session, but
+          // the table must never go available with a live session behind it.
+          await closeSessionsForTables([tableId], { online });
           await fetchWorkspaceData();
         } catch (err) {
           // auto-cleanup failed silently; Free All button handles leftovers
@@ -1048,8 +1089,9 @@ export function useBillingData() {
 
     setLoadingAction(true);
     try {
-      if (navigator.onLine) {
-        const ids = cleaningTables.map((t) => t.id);
+      const online = navigator.onLine;
+      const ids = cleaningTables.map((t) => t.id);
+      if (online) {
         await supabase.from('restaurant_tables').update({ status: TABLE_STATUS.available }).in('id', ids);
       } else {
         const tables = await db.getAll('tables');
@@ -1064,6 +1106,7 @@ export function useBillingData() {
           }
         }
       }
+      await closeSessionsForTables(ids, { online });
       await fetchWorkspaceData();
       alert(`${cleaningTables.length} table${cleaningTables.length > 1 ? 's' : ''} freed successfully.`);
     } catch (err) {
@@ -1076,7 +1119,8 @@ export function useBillingData() {
   const handleFreeTable = useCallback(async (tableId) => {
     setLoadingAction(true);
     try {
-      if (navigator.onLine) {
+      const online = navigator.onLine;
+      if (online) {
         await supabase.from('restaurant_tables').update({ status: TABLE_STATUS.available }).eq('id', tableId);
       } else {
         const tables = await db.getAll('tables');
@@ -1089,6 +1133,7 @@ export function useBillingData() {
           });
         }
       }
+      await closeSessionsForTables([tableId], { online });
       await fetchWorkspaceData();
     } catch (err) {
       alert('Error freeing table: ' + err.message);
