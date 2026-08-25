@@ -179,6 +179,7 @@ import Staff from '../views/Staff';
 import Settings from '../views/Settings';
 import Branding from '../views/Branding';
 import Inventory from '../views/Inventory';
+import Recipes from '../views/Recipes';
 
 const VIEWS = [
   ['Dashboard', Dashboard],
@@ -216,9 +217,23 @@ describe('View render smoke tests', () => {
     expect(screen.getByText('All running smoothly')).toBeInTheDocument();
   });
 
-  it('Inventory shows its empty state while unconnected', () => {
+  // Inventory and Recipes read Supabase directly, so both settle a tick after
+  // mount — findByText waits out the loading row the stub resolves through.
+  it('Inventory shows its empty state once the fetch settles', async () => {
     render(<MemoryRouter><Inventory /></MemoryRouter>);
-    expect(screen.getByText('No items tracked yet')).toBeInTheDocument();
+    expect(await screen.findByText('No items tracked yet')).toBeInTheDocument();
+  });
+
+  it('Recipes shows its empty state once the fetch settles', async () => {
+    render(<MemoryRouter><Recipes /></MemoryRouter>);
+    expect(await screen.findByText('No dishes on the menu yet')).toBeInTheDocument();
+  });
+
+  it('Recipes renders its four metric cards', async () => {
+    render(<MemoryRouter><Recipes /></MemoryRouter>);
+    expect(await screen.findByText('Recipes set')).toBeInTheDocument();
+    expect(screen.getByText('Running low')).toBeInTheDocument();
+    expect(screen.getByText('Cannot make')).toBeInTheDocument();
   });
 
   it('Payments renders its three metric cards', () => {

@@ -1,126 +1,167 @@
 import { useCallback, useEffect, useState } from 'react';
+import { supabase } from '../lib/supabase';
 
 /**
- * Inventory data source.
+ * Inventory data source, backed by `inventory_items` + `stock_movements`
+ * (see db/migrate_recipes_inventory.sql).
  *
- * There is no `inventory_items` table yet, so this keeps the roster in
- * localStorage. Everything the screen does — add, adjust, the movement log —
- * works against this shim, and the shape below is the contract the view is
- * built on: swapping this body for Supabase queries (plus a `stock_movements`
- * audit table) needs no changes in the view.
+ * This used to be a localStorage shim. It had to move server-side for recipes
+ * to work: a dish ordered on a diner's phone deducts its ingredients through a
+ * database trigger, and that can only touch stock that actually lives in the
+ * database. The view's contract is unchanged.
  */
 
-const ITEMS_KEY = 'spiceos_inventory_items';
-const LOG_KEY = 'spiceos_inventory_log';
-
-const read = (key) => {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-};
-
-const write = (key, value) => {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    /* storage full or unavailable — the in-memory state still holds */
-  }
-};
-
-const nowLabel = () =>
-  new Date().toLocaleString('en-IN', {
+const nowLabel = (iso) =>
+  new Date(iso || Date.now()).toLocaleString('en-IN', {
     day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
   });
+
+/** Trim the float dust that repeated 0.5-step arithmetic leaves behind. */
+const round = (n) => Math.round(Number(n || 0) * 1000) / 1000;
+
+const mapItem = (row) => ({
+  id: row.id,
+  name: row.item_name,
+  category: row.category || 'Uncategorised',
+  stock: round(row.stock),
+  unit: row.unit || 'units',
+  reorderAt: round(row.reorder_at),
+  updatedAt: nowLabel(row.updated_at),
+});
+
+const mapMovement = (row) => ({
+  id: row.id,
+  item: row.item_name || 'Item',
+  delta: round(row.delta),
+  reason: row.reason,
+  at: nowLabel(row.created_at),
+});
 
 export function useInventoryData() {
   const [items, setItems] = useState([]);
   const [log, setLog] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error] = useState(null);
+  const [error, setError] = useState(null);
 
-  useEffect(() => {
-    setItems(read(ITEMS_KEY));
-    setLog(read(LOG_KEY));
-    setLoading(false);
-  }, []);
+  const refresh = useCallback(async () => {
+    try {
+      const [itemsRes, logRes] = await Promise.all([
+        supabase
+          .from('inventory_items')
+          .select('*')
+          .eq('is_active', true)
+          .order('item_name'),
+        supabase
+          .from('stock_movements')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(200),
+      ]);
 
-  const persist = useCallback((nextItems, nextLog) => {
-    setItems(nextItems);
-    write(ITEMS_KEY, nextItems);
-    if (nextLog) {
-      setLog(nextLog);
-      write(LOG_KEY, nextLog);
+      if (itemsRes.error) throw itemsRes.error;
+      if (logRes.error) throw logRes.error;
+
+      setItems((itemsRes.data || []).map(mapItem));
+      setLog((logRes.data || []).map(mapMovement));
+      setError(null);
+    } catch (err) {
+      console.error('Error loading inventory:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
     }
   }, []);
 
-  const refresh = useCallback(async () => {
-    setItems(read(ITEMS_KEY));
-    setLog(read(LOG_KEY));
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  /** Movements the app makes itself; the order trigger logs its own. */
+  const logMovement = useCallback(async (item, delta, reason, balanceAfter) => {
+    await supabase.from('stock_movements').insert([{
+      inventory_item_id: item.id,
+      item_name: item.name ?? item.item_name,
+      delta,
+      balance_after: balanceAfter,
+      reason,
+    }]);
   }, []);
 
   const addItem = useCallback(async (draft) => {
     const name = (draft.name || '').trim();
     if (!name) return { success: false, error: 'An item name is required.' };
 
-    const item = {
-      id: `inv-${Date.now()}`,
-      name,
-      category: (draft.category || '').trim() || 'Uncategorised',
-      stock: Number(draft.stock) || 0,
-      unit: (draft.unit || '').trim() || 'units',
-      reorderAt: Number(draft.reorderAt) || 0,
-      updatedAt: nowLabel(),
-    };
+    const opening = Number(draft.stock) || 0;
 
-    const nextItems = [...read(ITEMS_KEY), item];
-    const nextLog = [
-      { id: `log-${Date.now()}`, item: item.name, delta: item.stock, reason: 'Item added', at: nowLabel() },
-      ...read(LOG_KEY),
-    ].slice(0, 200);
+    const { data, error: insertError } = await supabase
+      .from('inventory_items')
+      .insert([{
+        item_name: name,
+        category: (draft.category || '').trim() || 'Uncategorised',
+        unit: (draft.unit || '').trim() || 'units',
+        stock: opening,
+        reorder_at: Number(draft.reorderAt) || 0,
+      }])
+      .select()
+      .single();
 
-    persist(nextItems, nextLog);
+    if (insertError) {
+      const duplicate = insertError.code === '23505';
+      return {
+        success: false,
+        error: duplicate ? `"${name}" is already in your inventory.` : insertError.message,
+      };
+    }
+
+    await logMovement(mapItem(data), opening, 'Item added', opening);
+    await refresh();
     return { success: true };
-  }, [persist]);
+  }, [logMovement, refresh]);
 
   /** delta is signed: -1 consumes a unit, +1 receives one. */
   const adjust = useCallback(async (id, delta) => {
-    const current = read(ITEMS_KEY);
-    const target = current.find((i) => i.id === id);
+    const target = items.find((i) => i.id === id);
     if (!target) return { success: false, error: 'Item not found.' };
 
-    const nextStock = Math.max(0, Number(target.stock || 0) + delta);
-    const nextItems = current.map((i) => (
-      i.id === id ? { ...i, stock: nextStock, updatedAt: nowLabel() } : i
-    ));
-    const nextLog = [
-      {
-        id: `log-${Date.now()}`,
-        item: target.name,
-        delta,
-        reason: delta > 0 ? 'Stock in' : 'Stock out',
-        at: nowLabel(),
-      },
-      ...read(LOG_KEY),
-    ].slice(0, 200);
+    // Manual clicks floor at zero — going below is a miscount, not a real
+    // event. Recipe depletion is free to go negative; that reflects what the
+    // kitchen actually used.
+    const nextStock = round(Math.max(0, target.stock + delta));
+    if (nextStock === target.stock) return { success: true };
 
-    persist(nextItems, nextLog);
+    const { error: updateError } = await supabase
+      .from('inventory_items')
+      .update({ stock: nextStock })
+      .eq('id', id);
+
+    if (updateError) return { success: false, error: updateError.message };
+
+    await logMovement(
+      target,
+      round(nextStock - target.stock),
+      delta > 0 ? 'Stock in' : 'Stock out',
+      nextStock,
+    );
+    await refresh();
     return { success: true };
-  }, [persist]);
+  }, [items, logMovement, refresh]);
 
   const removeItem = useCallback(async (id) => {
-    const current = read(ITEMS_KEY);
-    const target = current.find((i) => i.id === id);
-    const nextItems = current.filter((i) => i.id !== id);
-    const nextLog = [
-      { id: `log-${Date.now()}`, item: target?.name || 'Item', delta: 0, reason: 'Item removed', at: nowLabel() },
-      ...read(LOG_KEY),
-    ].slice(0, 200);
-    persist(nextItems, nextLog);
+    const target = items.find((i) => i.id === id);
+
+    // Soft delete: recipes and the movement log still point here, and a hard
+    // delete would cascade away the history behind them.
+    const { error: updateError } = await supabase
+      .from('inventory_items')
+      .update({ is_active: false })
+      .eq('id', id);
+
+    if (updateError) return { success: false, error: updateError.message };
+
+    if (target) await logMovement(target, 0, 'Item removed', target.stock);
+    await refresh();
     return { success: true };
-  }, [persist]);
+  }, [items, logMovement, refresh]);
 
   const metrics = items.reduce((acc, item) => {
     acc.tracked += 1;
@@ -132,6 +173,6 @@ export function useInventoryData() {
   return {
     items, log, metrics, loading, error,
     refresh, addItem, adjust, removeItem,
-    connected: false,
+    connected: true,
   };
 }

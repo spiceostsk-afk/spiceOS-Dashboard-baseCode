@@ -6,6 +6,7 @@ import {
   CreditCard,
   Utensils,
   Package,
+  ChefHat,
   BarChart3,
   History,
   Users,
@@ -22,7 +23,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 
 /**
- * Flat 12-item rail. "Live Orders" owns the whole /billing surface — its Online
+ * Flat 13-item rail. "Live Orders" owns the whole /billing surface — its Online
  * Orders and Store Actions siblings live as tabs inside that screen rather than
  * as nested nav rows, so every destination is still one click away.
  */
@@ -32,6 +33,7 @@ const NAV_ITEMS = [
   { to: '/payments', label: 'Payments', Icon: CreditCard },
   { to: '/menu', label: 'Menu Catalog', Icon: Utensils },
   { to: '/inventory', label: 'Inventory', Icon: Package },
+  { to: '/recipes', label: 'Recipes', Icon: ChefHat },
   { to: '/reports', label: 'Reports', Icon: BarChart3 },
   { to: '/orders', label: 'Order History', Icon: History },
   { to: '/customers', label: 'Customers', Icon: Users },

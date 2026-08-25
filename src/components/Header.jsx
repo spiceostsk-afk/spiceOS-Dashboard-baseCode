@@ -12,6 +12,7 @@ const TITLES = {
   '/payments': 'Payments',
   '/menu': 'Menu Catalog',
   '/inventory': 'Inventory',
+  '/recipes': 'Recipes',
   '/reports': 'Reports',
   '/orders': 'Order History',
   '/customers': 'Customers',
