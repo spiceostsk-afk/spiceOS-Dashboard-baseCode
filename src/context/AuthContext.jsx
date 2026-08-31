@@ -21,8 +21,14 @@ const DEFAULT_CTX = {
   role: null,
   isPlatformAdmin: false,
   loading: false,
+  restaurants: [],
+  restaurantsLoading: false,
+  switching: false,
   signIn: async () => {},
   signOut: async () => {},
+  switchRestaurant: async () => ({ success: false }),
+  createRestaurant: async () => ({ success: false }),
+  refreshRestaurants: async () => {},
 };
 
 /** Decode the payload of a JWT without verifying it (claims are for UI only). */
@@ -89,6 +95,82 @@ export function AuthProvider({ children }) {
     window.location.assign('/');
   }, []);
 
+  /**
+   * Every restaurant this login is a member of — the header's switcher.
+   *
+   * my_restaurants() is SECURITY DEFINER and scoped to auth.uid(), so this
+   * names restaurants the caller belongs to without the restaurants_read
+   * policy having to be widened. One membership is the common case and the
+   * switcher hides itself then.
+   */
+  const [restaurants, setRestaurants] = useState([]);
+  const [restaurantsLoading, setRestaurantsLoading] = useState(false);
+  const [switching, setSwitching] = useState(false);
+
+  const refreshRestaurants = useCallback(async () => {
+    if (!session) { setRestaurants([]); return; }
+    setRestaurantsLoading(true);
+    try {
+      const { data, error } = await supabase.rpc('my_restaurants');
+      if (error) throw error;
+      setRestaurants(data || []);
+    } catch (err) {
+      // A database that has not had migrate_owner_restaurants.sql run yet has
+      // no such function. That is not fatal — the app simply shows no switcher.
+      console.warn('Could not load restaurants:', err.message);
+      setRestaurants([]);
+    } finally {
+      setRestaurantsLoading(false);
+    }
+  }, [session]);
+
+  useEffect(() => { refreshRestaurants(); }, [refreshRestaurants]);
+
+  /**
+   * Switch the tenant this login is working in.
+   *
+   * The restaurant_id lives in the JWT, so switching means re-minting the
+   * token: write the selection, refresh the session (which re-runs the access
+   * token hook), then reload. The reload is deliberate rather than lazy —
+   * the IndexedDB offline cache is namespaced per tenant and every data hook
+   * holds rows fetched under the old claim, so tearing the page down is the
+   * only way to guarantee nothing from the previous restaurant survives.
+   */
+  const switchRestaurant = useCallback(async (restaurantId) => {
+    if (!restaurantId) return { success: false, error: 'No restaurant given.' };
+    setSwitching(true);
+    try {
+      const { error: rpcError } = await supabase.rpc('set_active_restaurant', {
+        p_restaurant_id: restaurantId,
+      });
+      if (rpcError) throw rpcError;
+
+      const { error: refreshError } = await supabase.auth.refreshSession();
+      if (refreshError) throw refreshError;
+
+      window.location.assign('/');
+      return { success: true };
+    } catch (err) {
+      setSwitching(false);
+      return { success: false, error: err.message };
+    }
+  }, []);
+
+  /** Open another restaurant on this same login. */
+  const createRestaurant = useCallback(async (name, slug) => {
+    try {
+      const { data, error } = await supabase.rpc('create_restaurant', {
+        p_name: name,
+        p_slug: slug || null,
+      });
+      if (error) throw error;
+      await refreshRestaurants();
+      return { success: true, id: data };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }, [refreshRestaurants]);
+
   // Platform-admin status (RLS on platform_admins returns a row only to admins).
   useEffect(() => {
     if (!session) { setIsPlatformAdmin(false); return; }
@@ -110,8 +192,14 @@ export function AuthProvider({ children }) {
     role: claims.user_role ?? null,
     isPlatformAdmin,
     loading,
+    restaurants,
+    restaurantsLoading,
+    switching,
     signIn,
     signOut,
+    switchRestaurant,
+    createRestaurant,
+    refreshRestaurants,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

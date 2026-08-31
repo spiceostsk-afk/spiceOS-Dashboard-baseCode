@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -18,6 +18,7 @@ import {
   HelpCircle,
   LogOut,
   ChevronUp,
+  ChevronRight,
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
@@ -32,7 +33,24 @@ const NAV_ITEMS = [
   { to: '/billing', label: 'Live Orders', Icon: Activity, matches: ['/billing'] },
   { to: '/payments', label: 'Payments', Icon: CreditCard },
   { to: '/menu', label: 'Menu Catalog', Icon: Utensils },
-  { to: '/inventory', label: 'Inventory', Icon: Package },
+  {
+    to: '/inventory',
+    label: 'Inventory',
+    Icon: Package,
+    matches: ['/inventory'],
+    // Stock control is a module, not a page. Its children stay tucked under
+    // one rail row so the sidebar does not grow to twenty flat destinations.
+    children: [
+      { to: '/inventory', label: 'Raw Materials' },
+      { to: '/inventory/available-stock', label: 'Available Stock' },
+      { to: '/inventory/closing-stock', label: 'Closing Stock' },
+      { to: '/inventory/purchase', label: 'Purchase' },
+      { to: '/inventory/wastage', label: 'Wastage' },
+      { to: '/inventory/transfer', label: 'Transfer' },
+      { to: '/inventory/vendors', label: 'Vendors' },
+      { to: '/inventory/summary', label: 'Stock Summary' },
+    ],
+  },
   { to: '/recipes', label: 'Recipes', Icon: ChefHat },
   { to: '/reports', label: 'Reports', Icon: BarChart3 },
   { to: '/orders', label: 'Order History', Icon: History },
@@ -57,6 +75,53 @@ function NavRow({ to, label, Icon, active }) {
       <span className="nav-icon"><Icon size={16} strokeWidth={2} /></span>
       {label}
     </NavLink>
+  );
+}
+
+/**
+ * A rail row that owns a set of sub-pages. It opens on its own when one of its
+ * children is the current route, so landing on Closing Stock from anywhere
+ * still shows where you are in the tree.
+ */
+function NavGroup({ item, active, pathname }) {
+  const [open, setOpen] = useState(active);
+
+  useEffect(() => {
+    if (active) setOpen(true);
+  }, [active]);
+
+  const { Icon } = item;
+
+  return (
+    <div className="nav-group">
+      <button
+        type="button"
+        className={`nav-item nav-item--group ${active ? 'active' : ''}`}
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        <span className="nav-icon"><Icon size={16} strokeWidth={2} /></span>
+        {item.label}
+        <ChevronRight size={14} className={`nav-chev ${open ? 'is-open' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="nav-sub">
+          {item.children.map((child) => (
+            <NavLink
+              key={child.to}
+              to={child.to}
+              end={child.to === item.to}
+              className={() =>
+                `nav-subitem ${pathname === child.to ? 'active' : ''}`
+              }
+            >
+              {child.label}
+            </NavLink>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -85,7 +150,16 @@ const Sidebar = () => {
 
       <nav className="sidebar-nav">
         {NAV_ITEMS.map((item) => (
-          <NavRow key={item.to} {...item} active={isActive(item)} />
+          item.children
+            ? (
+              <NavGroup
+                key={item.to}
+                item={item}
+                active={isActive(item)}
+                pathname={location.pathname}
+              />
+            )
+            : <NavRow key={item.to} {...item} active={isActive(item)} />
         ))}
 
         {isPlatformAdmin && (
@@ -194,6 +268,45 @@ const Sidebar = () => {
           padding-top: 14px;
           flex: 1;
         }
+
+        .nav-group { display: contents; }
+
+        .nav-item--group {
+          width: 100%;
+          border: none;
+          cursor: pointer;
+          font-family: inherit;
+          text-align: left;
+        }
+
+        .nav-chev {
+          margin-left: auto;
+          flex-shrink: 0;
+          transition: var(--transition-smooth);
+          opacity: 0.6;
+        }
+        .nav-chev.is-open { transform: rotate(90deg); }
+
+        .nav-sub {
+          display: flex;
+          flex-direction: column;
+          gap: 1px;
+          margin: 1px 0 4px 27px;
+          padding-left: 11px;
+          border-left: 1px solid var(--color-border);
+        }
+
+        .nav-subitem {
+          padding: 7px 12px;
+          border-radius: var(--radius-sm);
+          font-size: 12.5px;
+          font-weight: 500;
+          color: var(--color-text-muted);
+          text-decoration: none;
+          transition: var(--transition-smooth);
+        }
+        .nav-subitem:hover { background: var(--color-canvas); color: var(--color-text); }
+        .nav-subitem.active { color: var(--color-primary); font-weight: 700; }
 
         .nav-item {
           display: flex;

@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { useOutlet } from '../context/OutletContext';
 
 /**
- * Inventory data source, backed by `inventory_items` + `stock_movements`
- * (see db/migrate_recipes_inventory.sql).
+ * The raw-material master, backed by `inventory_items` + `inventory_stock`.
  *
- * This used to be a localStorage shim. It had to move server-side for recipes
- * to work: a dish ordered on a diner's phone deducts its ingredients through a
- * database trigger, and that can only touch stock that actually lives in the
- * database. The view's contract is unchanged.
+ * `inventory_items.stock` is the roll-up across every outlet; `inventory_stock`
+ * holds the per-branch detail. Both are maintained by the database's
+ * post_stock_movement function, so this hook never writes a balance directly —
+ * it asks for a movement and reads the result back. That is the only way the
+ * ledger and the balances can be guaranteed to agree.
  */
 
 const nowLabel = (iso) =>
@@ -19,13 +20,21 @@ const nowLabel = (iso) =>
 /** Trim the float dust that repeated 0.5-step arithmetic leaves behind. */
 const round = (n) => Math.round(Number(n || 0) * 1000) / 1000;
 
-const mapItem = (row) => ({
+const mapItem = (row, outletQty) => ({
   id: row.id,
   name: row.item_name,
-  category: row.category || 'Uncategorised',
+  category: row.inventory_categories?.name || row.category || 'Uncategorised',
+  categoryId: row.category_id || null,
   stock: round(row.stock),
+  outletStock: outletQty === undefined ? null : round(outletQty),
   unit: row.unit || 'units',
+  purchaseUnit: row.purchase_unit || row.unit || 'units',
+  conversion: Number(row.conversion_factor) || 1,
+  barcode: row.barcode || '',
   reorderAt: round(row.reorder_at),
+  lastRate: row.last_purchase_rate,
+  itemType: row.item_type || 'raw',
+  isFavourite: !!row.is_favourite,
   updatedAt: nowLabel(row.updated_at),
 });
 
@@ -34,21 +43,25 @@ const mapMovement = (row) => ({
   item: row.item_name || 'Item',
   delta: round(row.delta),
   reason: row.reason,
+  type: row.movement_type || 'adjustment',
   at: nowLabel(row.created_at),
 });
 
 export function useInventoryData() {
+  const { outletId } = useOutlet();
+
   const [items, setItems] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [log, setLog] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   const refresh = useCallback(async () => {
     try {
-      const [itemsRes, logRes] = await Promise.all([
+      const [itemsRes, logRes, catRes, stockRes] = await Promise.all([
         supabase
           .from('inventory_items')
-          .select('*')
+          .select('*, inventory_categories ( name )')
           .eq('is_active', true)
           .order('item_name'),
         supabase
@@ -56,12 +69,25 @@ export function useInventoryData() {
           .select('*')
           .order('created_at', { ascending: false })
           .limit(200),
+        supabase
+          .from('inventory_categories')
+          .select('id, name')
+          .eq('is_active', true)
+          .order('sort_order').order('name'),
+        outletId
+          ? supabase.from('inventory_stock').select('inventory_item_id, qty').eq('outlet_id', outletId)
+          : Promise.resolve({ data: [], error: null }),
       ]);
 
       if (itemsRes.error) throw itemsRes.error;
       if (logRes.error) throw logRes.error;
+      if (catRes.error) throw catRes.error;
+      if (stockRes.error) throw stockRes.error;
 
-      setItems((itemsRes.data || []).map(mapItem));
+      const byOutlet = new Map((stockRes.data || []).map((r) => [r.inventory_item_id, Number(r.qty)]));
+
+      setItems((itemsRes.data || []).map((row) => mapItem(row, byOutlet.get(row.id))));
+      setCategories(catRes.data || []);
       setLog((logRes.data || []).map(mapMovement));
       setError(null);
     } catch (err) {
@@ -70,37 +96,67 @@ export function useInventoryData() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [outletId]);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
 
-  /** Movements the app makes itself; the order trigger logs its own. */
-  const logMovement = useCallback(async (item, delta, reason, balanceAfter) => {
-    await supabase.from('stock_movements').insert([{
-      inventory_item_id: item.id,
-      item_name: item.name ?? item.item_name,
-      delta,
-      balance_after: balanceAfter,
-      reason,
-    }]);
-  }, []);
+  const addCategory = useCallback(async (name) => {
+    const trimmed = (name || '').trim();
+    if (!trimmed) return { success: false, error: 'A category name is required.' };
+
+    const { data, error: insertError } = await supabase
+      .from('inventory_categories')
+      .insert([{ name: trimmed }])
+      .select()
+      .single();
+
+    if (insertError) {
+      return {
+        success: false,
+        error: insertError.code === '23505'
+          ? `"${trimmed}" already exists.`
+          : insertError.message,
+      };
+    }
+    await refresh();
+    return { success: true, id: data.id };
+  }, [refresh]);
 
   const addItem = useCallback(async (draft) => {
     const name = (draft.name || '').trim();
     if (!name) return { success: false, error: 'An item name is required.' };
 
+    const unit = (draft.unit || '').trim() || 'units';
+    const purchaseUnit = (draft.purchaseUnit || '').trim() || unit;
+    const conversion = Number(draft.conversion) || 1;
+
+    if (purchaseUnit !== unit && conversion <= 0) {
+      return { success: false, error: 'The conversion factor must be greater than zero.' };
+    }
+
     const opening = Number(draft.stock) || 0;
+
+    const categoryName = draft.categoryId
+      ? (categories.find((c) => c.id === draft.categoryId)?.name || 'Uncategorised')
+      : 'Uncategorised';
 
     const { data, error: insertError } = await supabase
       .from('inventory_items')
       .insert([{
         item_name: name,
-        category: (draft.category || '').trim() || 'Uncategorised',
-        unit: (draft.unit || '').trim() || 'units',
-        stock: opening,
+        category: categoryName,
+        category_id: draft.categoryId || null,
+        unit,
+        purchase_unit: purchaseUnit,
+        conversion_factor: conversion,
+        barcode: (draft.barcode || '').trim() || null,
+        stock: 0,          // the opening balance arrives as a movement, below
         reorder_at: Number(draft.reorderAt) || 0,
+        last_purchase_rate: draft.rate === '' || draft.rate === undefined
+          ? null : Number(draft.rate),
+        item_type: draft.itemType || 'raw',
       }])
       .select()
       .single();
@@ -113,42 +169,94 @@ export function useInventoryData() {
       };
     }
 
-    await logMovement(mapItem(data), opening, 'Item added', opening);
+    // Opening stock goes in as a real movement so the Stock Summary report can
+    // see where the first number came from.
+    if (opening !== 0) {
+      const { error: rpcError } = await supabase.rpc('adjust_stock', {
+        p_outlet_id: outletId,
+        p_item_id: data.id,
+        p_delta: opening,
+        p_reason: 'Opening stock',
+        p_note: null,
+      });
+      if (rpcError) {
+        await refresh();
+        return { success: false, error: `Item added, but the opening stock failed: ${rpcError.message}` };
+      }
+    }
+
     await refresh();
     return { success: true };
-  }, [logMovement, refresh]);
+  }, [categories, outletId, refresh]);
 
-  /** delta is signed: -1 consumes a unit, +1 receives one. */
+  const updateItem = useCallback(async (id, draft) => {
+    const name = (draft.name || '').trim();
+    if (!name) return { success: false, error: 'An item name is required.' };
+
+    const unit = (draft.unit || '').trim() || 'units';
+    const purchaseUnit = (draft.purchaseUnit || '').trim() || unit;
+
+    const categoryName = draft.categoryId
+      ? (categories.find((c) => c.id === draft.categoryId)?.name || 'Uncategorised')
+      : 'Uncategorised';
+
+    const { error: updateError } = await supabase
+      .from('inventory_items')
+      .update({
+        item_name: name,
+        category: categoryName,
+        category_id: draft.categoryId || null,
+        unit,
+        purchase_unit: purchaseUnit,
+        conversion_factor: Number(draft.conversion) || 1,
+        barcode: (draft.barcode || '').trim() || null,
+        reorder_at: Number(draft.reorderAt) || 0,
+        item_type: draft.itemType || 'raw',
+      })
+      .eq('id', id);
+
+    if (updateError) {
+      return {
+        success: false,
+        error: updateError.code === '23505'
+          ? `"${name}" is already in your inventory.`
+          : updateError.message,
+      };
+    }
+    await refresh();
+    return { success: true };
+  }, [categories, refresh]);
+
+  /**
+   * delta is signed: -1 consumes a unit, +1 receives one.
+   *
+   * Manual clicks floor at zero — going below by hand is a miscount, not a real
+   * event. Recipe depletion is free to go negative; that reflects what the
+   * kitchen actually used.
+   */
   const adjust = useCallback(async (id, delta) => {
     const target = items.find((i) => i.id === id);
     if (!target) return { success: false, error: 'Item not found.' };
 
-    // Manual clicks floor at zero — going below is a miscount, not a real
-    // event. Recipe depletion is free to go negative; that reflects what the
-    // kitchen actually used.
-    const nextStock = round(Math.max(0, target.stock + delta));
-    if (nextStock === target.stock) return { success: true };
+    const current = target.outletStock ?? target.stock;
+    const applied = round(Math.max(0, current + delta) - current);
+    if (applied === 0) return { success: true };
 
-    const { error: updateError } = await supabase
-      .from('inventory_items')
-      .update({ stock: nextStock })
-      .eq('id', id);
+    const { error: rpcError } = await supabase.rpc('adjust_stock', {
+      p_outlet_id: outletId,
+      p_item_id: id,
+      p_delta: applied,
+      p_reason: applied > 0 ? 'Stock in' : 'Stock out',
+      p_note: null,
+    });
 
-    if (updateError) return { success: false, error: updateError.message };
+    if (rpcError) return { success: false, error: rpcError.message };
 
-    await logMovement(
-      target,
-      round(nextStock - target.stock),
-      delta > 0 ? 'Stock in' : 'Stock out',
-      nextStock,
-    );
     await refresh();
     return { success: true };
-  }, [items, logMovement, refresh]);
+  }, [items, outletId, refresh]);
 
   const removeItem = useCallback(async (id) => {
-    const target = items.find((i) => i.id === id);
-
     // Soft delete: recipes and the movement log still point here, and a hard
     // delete would cascade away the history behind them.
     const { error: updateError } = await supabase
@@ -158,21 +266,22 @@ export function useInventoryData() {
 
     if (updateError) return { success: false, error: updateError.message };
 
-    if (target) await logMovement(target, 0, 'Item removed', target.stock);
     await refresh();
     return { success: true };
-  }, [items, logMovement, refresh]);
+  }, [refresh]);
 
   const metrics = items.reduce((acc, item) => {
+    const level = item.outletStock ?? item.stock;
     acc.tracked += 1;
-    if (item.stock <= 0) acc.out += 1;
-    else if (item.stock <= item.reorderAt) acc.low += 1;
+    if (level <= 0) acc.out += 1;
+    else if (level <= item.reorderAt) acc.low += 1;
+    acc.value += level * (Number(item.lastRate) || 0);
     return acc;
-  }, { tracked: 0, low: 0, out: 0 });
+  }, { tracked: 0, low: 0, out: 0, value: 0 });
 
   return {
-    items, log, metrics, loading, error,
-    refresh, addItem, adjust, removeItem,
+    items, categories, log, metrics, loading, error,
+    refresh, addItem, updateItem, adjust, removeItem, addCategory,
     connected: true,
   };
 }

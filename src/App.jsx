@@ -7,6 +7,7 @@ import Signup from './components/Signup';
 import NoTenant from './components/NoTenant';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
+import { OutletProvider } from './context/OutletContext';
 import { setDbTenant } from './lib/db';
 import Dashboard from './views/Dashboard';
 import Branding from './views/Branding';
@@ -22,6 +23,13 @@ import Staff from './views/Staff';
 import Orders from './views/Orders';
 import Inventory from './views/Inventory';
 import Recipes from './views/Recipes';
+import ClosingStock from './views/inventory/ClosingStock';
+import AvailableStock from './views/inventory/AvailableStock';
+import Purchase from './views/inventory/Purchase';
+import Wastage from './views/inventory/Wastage';
+import Transfer from './views/inventory/Transfer';
+import Vendors from './views/inventory/Vendors';
+import StockSummary from './views/inventory/StockSummary';
 
 function SuspendedScreen() {
   const { signOut } = useAuth();
@@ -62,6 +70,13 @@ function AppShell() {
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/menu" element={<MenuCatalog />} />
               <Route path="/inventory" element={<Inventory />} />
+              <Route path="/inventory/available-stock" element={<AvailableStock />} />
+              <Route path="/inventory/closing-stock" element={<ClosingStock />} />
+              <Route path="/inventory/purchase" element={<Purchase />} />
+              <Route path="/inventory/wastage" element={<Wastage />} />
+              <Route path="/inventory/transfer" element={<Transfer />} />
+              <Route path="/inventory/vendors" element={<Vendors />} />
+              <Route path="/inventory/summary" element={<StockSummary />} />
               <Route path="/recipes" element={<Recipes />} />
               <Route path="/billing" element={<Billing />} />
               <Route path="/payments" element={<Payments />} />
@@ -115,7 +130,9 @@ function Gate() {
   setDbTenant(restaurantId);
   return (
     <ThemeProvider>
-      <AppShell />
+      <OutletProvider>
+        <AppShell />
+      </OutletProvider>
     </ThemeProvider>
   );
 }

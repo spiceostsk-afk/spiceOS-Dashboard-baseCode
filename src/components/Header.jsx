@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Search, Bell, Plus, X, ArrowRight, ChevronDown, LogOut, Check } from 'lucide-react';
+import { Search, Bell, Plus, X, ArrowRight, ChevronDown, LogOut, Check, Store } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useOutlet } from '../context/OutletContext';
+import { useAuth } from '../context/AuthContext';
 
 const SHIFT_KEY = 'lumiere_shift_active';
 
@@ -12,6 +14,13 @@ const TITLES = {
   '/payments': 'Payments',
   '/menu': 'Menu Catalog',
   '/inventory': 'Inventory',
+  '/inventory/available-stock': 'Available Stock',
+  '/inventory/closing-stock': 'Closing Stock',
+  '/inventory/purchase': 'Purchase',
+  '/inventory/wastage': 'Wastage',
+  '/inventory/transfer': 'Transfer',
+  '/inventory/vendors': 'Vendors',
+  '/inventory/summary': 'Stock Summary',
   '/recipes': 'Recipes',
   '/reports': 'Reports',
   '/orders': 'Order History',
@@ -23,6 +32,96 @@ const TITLES = {
   '/admin': 'Platform Admin',
 };
 
+/**
+ * Opening another restaurant on the same login.
+ *
+ * The slug is the tenant's public address (QR routing, subdomain), so it is
+ * shown rather than silently derived — an owner who later wants a nice URL
+ * should see what they are getting while they can still change it.
+ */
+function AddRestaurantModal({ onClose, onCreate, onSwitch }) {
+  const [name, setName] = useState('');
+  const [slug, setSlug] = useState('');
+  const [touchedSlug, setTouchedSlug] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const derive = (v) =>
+    v.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
+  const effectiveSlug = touchedSlug ? derive(slug) : derive(name);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    setError('');
+    const res = await onCreate(name, effectiveSlug);
+    if (!res.success) {
+      setSaving(false);
+      setError(res.error || 'Could not create the restaurant.');
+      return;
+    }
+    // Land the owner inside what they just made; this reloads the app.
+    await onSwitch(res.id);
+  };
+
+  return (
+    <div className="overlay" onClick={onClose}>
+      <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
+        <div className="modal__head">
+          <div className="modal__title">Add restaurant</div>
+          <button type="button" className="modal__close" onClick={onClose}><X size={17} /></button>
+        </div>
+
+        <div className="modal__body">
+          {error && <div className="hdr-error">{error}</div>}
+
+          <div className="field">
+            <label>Restaurant name</label>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Baba Foods Andheri"
+              required
+              autoFocus
+            />
+          </div>
+
+          <div className="field">
+            <label>Address (used in QR links)</label>
+            <input
+              value={touchedSlug ? slug : effectiveSlug}
+              onChange={(e) => { setTouchedSlug(true); setSlug(e.target.value); }}
+              placeholder="baba-foods-andheri"
+            />
+          </div>
+
+          <div className="hdr-hint">
+            This creates a separate restaurant with its own menu, staff and stock.
+            You will be switched into it.
+          </div>
+        </div>
+
+        <div className="modal__actions">
+          <button type="button" className="btn btn--ghost" onClick={onClose}>Cancel</button>
+          <button type="submit" className="btn btn--primary" disabled={saving || !name.trim()}>
+            {saving ? 'Creating…' : 'Create restaurant'}
+          </button>
+        </div>
+
+        <style>{`
+          .hdr-error {
+            padding: 12px 14px; border-radius: var(--radius-md);
+            background: var(--color-danger-soft); color: var(--color-danger);
+            font-size: 13px; font-weight: 600;
+          }
+          .hdr-hint { font-size: 12.5px; color: var(--color-text-muted); }
+        `}</style>
+      </form>
+    </div>
+  );
+}
+
 const Header = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -30,8 +129,13 @@ const Header = () => {
   const [showShiftMenu, setShowShiftMenu] = useState(false);
 
   const [showOutletMenu, setShowOutletMenu] = useState(false);
+  const { outlets, outlet, selectOutlet } = useOutlet();
+  const { restaurants, switchRestaurant, createRestaurant, switching } = useAuth();
+  const [showRestaurantMenu, setShowRestaurantMenu] = useState(false);
+  const [showAddRestaurant, setShowAddRestaurant] = useState(false);
+
+  const activeRestaurant = restaurants.find((r) => r.is_active) || null;
   const [showAlerts, setShowAlerts] = useState(false);
-  const [outlets, setOutlets] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [alertsLoading, setAlertsLoading] = useState(false);
 
@@ -67,14 +171,11 @@ const Header = () => {
 
   const getTitle = () => TITLES[location.pathname] || 'Spice OS';
 
-  /** Outlets this account can see. RLS scopes it to the current tenant. */
-  const openOutletMenu = async () => {
-    const next = !showOutletMenu;
-    setShowOutletMenu(next);
-    if (!next || outlets.length > 0) return;
-    const { data } = await supabase.from('restaurants').select('id, name').order('name');
-    setOutlets(data || []);
-  };
+  /**
+   * Outlets come from OutletContext, which is also what every stock screen
+   * reads. Switching here switches the branch the whole app is looking at.
+   */
+  const openOutletMenu = () => setShowOutletMenu((v) => !v);
 
   /** Anything on the floor that needs a manager's eyes right now. */
   const openAlerts = async () => {
@@ -179,9 +280,53 @@ const Header = () => {
 
       <div className="header-spacer" />
 
+      {restaurants.length > 1 && (
+        <div className="pop-wrapper">
+          <button
+            className="ghost-btn"
+            onClick={() => setShowRestaurantMenu((v) => !v)}
+            disabled={switching}
+          >
+            <Store size={14} />
+            {switching ? 'Switching…' : (activeRestaurant?.name || 'Restaurant')}
+            <ChevronDown size={13} className="chev" />
+          </button>
+          {showRestaurantMenu && (
+            <>
+              <div className="pop-backdrop" onClick={() => setShowRestaurantMenu(false)} />
+              <div className="pop">
+                <div className="pop__label">Your restaurants</div>
+                {restaurants.map((r) => (
+                  <button
+                    key={r.id}
+                    className="pop__item"
+                    disabled={r.is_active}
+                    onClick={() => { setShowRestaurantMenu(false); switchRestaurant(r.id); }}
+                  >
+                    <span>
+                      {r.name}
+                      {r.status !== 'active' && r.status !== 'trial' && (
+                        <em className="pop__flag"> · {r.status}</em>
+                      )}
+                    </span>
+                    {r.is_active && <Check size={14} />}
+                  </button>
+                ))}
+                <button
+                  className="pop__item pop__item--add"
+                  onClick={() => { setShowRestaurantMenu(false); setShowAddRestaurant(true); }}
+                >
+                  <Plus size={14} /> <span>Add restaurant</span>
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       <div className="pop-wrapper">
         <button className="ghost-btn" onClick={openOutletMenu}>
-          Main Outlet <ChevronDown size={13} className="chev" />
+          {outlet?.name || 'Main Outlet'} <ChevronDown size={13} className="chev" />
         </button>
         {showOutletMenu && (
           <>
@@ -189,16 +334,28 @@ const Header = () => {
             <div className="pop pop--sm">
               <div className="pop__label">Outlet</div>
               {outlets.length === 0 && <div className="pop__empty">Main Outlet</div>}
-              {outlets.map((o, i) => (
-                <button key={o.id} className="pop__item" onClick={() => setShowOutletMenu(false)}>
+              {outlets.map((o) => (
+                <button
+                  key={o.id}
+                  className="pop__item"
+                  onClick={() => { selectOutlet(o.id); setShowOutletMenu(false); }}
+                >
                   <span>{o.name}</span>
-                  {i === 0 && <Check size={14} />}
+                  {o.id === outlet?.id && <Check size={14} />}
                 </button>
               ))}
             </div>
           </>
         )}
       </div>
+
+      {showAddRestaurant && (
+        <AddRestaurantModal
+          onClose={() => setShowAddRestaurant(false)}
+          onCreate={createRestaurant}
+          onSwitch={switchRestaurant}
+        />
+      )}
 
       <div className="date-chip">{currentDate}</div>
 
@@ -510,6 +667,16 @@ const Header = () => {
         }
 
         .pop--sm { min-width: 200px; }
+
+        .pop__item:disabled { opacity: 1; cursor: default; }
+        .pop__item--add {
+          margin-top: 4px;
+          padding-top: 12px;
+          border-top: 1px solid var(--color-border);
+          border-radius: 0 0 8px 8px;
+          color: var(--color-primary);
+        }
+        .pop__flag { font-style: normal; color: var(--color-text-muted); font-weight: 500; }
 
         .pop__label {
           padding: 8px 12px 6px;
