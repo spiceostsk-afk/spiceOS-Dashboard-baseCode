@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { useStockCount, useStockCountHistory } from '../../hooks/useStockCount';
 import { useOutlet } from '../../context/OutletContext';
+import ClosingStockHistory from './ClosingStockHistory';
 
 /**
  * Counting stock, for both the end-of-day close and a mid-service spot check.
@@ -455,6 +456,9 @@ export default function StockCountWorkspace({ mode = 'closing' }) {
         <button className={tab === 'import' ? 'on' : ''} onClick={() => setTab('import')}>
           Import Via Excel
         </button>
+        <button className={tab === 'history' ? 'on' : ''} onClick={() => setTab('history')}>
+          History
+        </button>
       </div>
 
       {toast && (
@@ -462,6 +466,13 @@ export default function StockCountWorkspace({ mode = 'closing' }) {
       )}
 
       {tab === 'import' && <ImportPanel rows={sheet.rows} onApply={applyImport} />}
+
+      {tab === 'history' && (
+        <ClosingStockHistory
+          type={mode}
+          onEdit={(d) => { sheet.setDate(d); setTab('add'); }}
+        />
+      )}
 
       {tab === 'add' && reviewing && (
         <ReviewPanel

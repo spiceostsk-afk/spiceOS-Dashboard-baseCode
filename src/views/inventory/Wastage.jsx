@@ -1,9 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import { Plus, X, Trash2, ChevronDown } from 'lucide-react';
+import { Plus, X, Trash2, Eye, Pencil } from 'lucide-react';
 import { useWastageData, WASTAGE_REASONS } from '../../hooks/useStockOps';
 import {
   useLines, ItemSelect, UnitSelect, AddLineButton, RemoveLineButton, LineEditorStyles,
 } from './lineEditor';
+import { ConfirmDelete, DetailDrawer } from '../masters/masterDialogs';
+import { MastersStyles } from '../masters/mastersUi';
 
 /**
  * Wastage — stock that left without being sold.
@@ -21,9 +23,24 @@ const dateLabel = (iso) =>
     day: '2-digit', month: 'short', year: 'numeric',
   });
 
-function WastageForm({ items, onClose, onSave }) {
-  const { lines, addLine, updateLine, removeLine } = useLines();
-  const [head, setHead] = useState({ wastedOn: today(), note: '' });
+function WastageForm({ items, existing, onClose, onSave }) {
+  const { lines, addLine, updateLine, removeLine, setLines } = useLines();
+  const [head, setHead] = useState(() => (existing
+    ? { wastedOn: existing.wasted_on, note: existing.note || '' }
+    : { wastedOn: today(), note: '' }));
+
+  React.useEffect(() => {
+    if (!existing) return;
+    const rows = (existing.stock_wastage_items || []).map((l, i) => ({
+      key: `e${i}`,
+      inventoryItemId: l.inventory_item_id,
+      qty: String(l.qty_base),
+      entryUnit: 'base',
+      rate: '', taxPct: '',
+      reason: l.reason || 'Spoilage',
+    }));
+    if (rows.length) setLines(rows);
+  }, [existing, setLines]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -52,7 +69,7 @@ function WastageForm({ items, onClose, onSave }) {
     <div className="overlay" onClick={onClose}>
       <form className="modal modal--wide" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
         <div className="modal__head">
-          <div className="modal__title">Record wastage</div>
+          <div className="modal__title">{existing ? 'Edit wastage' : 'Record wastage'}</div>
           <button type="button" className="modal__close" onClick={onClose}><X size={17} /></button>
         </div>
 
@@ -152,7 +169,7 @@ function WastageForm({ items, onClose, onSave }) {
         <div className="modal__actions">
           <button type="button" className="btn btn--ghost" onClick={onClose}>Cancel</button>
           <button type="submit" className="btn btn--primary" disabled={saving}>
-            {saving ? 'Recording…' : 'Record wastage'}
+            {saving ? 'Saving…' : existing ? 'Save changes' : 'Record wastage'}
           </button>
         </div>
 
@@ -179,9 +196,30 @@ function WastageForm({ items, onClose, onSave }) {
 }
 
 export default function Wastage() {
-  const { entries, items, loading, error, saveWastage } = useWastageData();
+  const {
+    entries, items, loading, error, saveWastage, updateWastage, deleteWastage,
+  } = useWastageData();
   const [showForm, setShowForm] = useState(false);
-  const [expanded, setExpanded] = useState(null);
+  const [editing, setEditing] = useState(null);
+  const [viewing, setViewing] = useState(null);
+  const [deleting, setDeleting] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [delError, setDelError] = useState('');
+  const [notice, setNotice] = useState(null);
+
+  const flash = (msg, tone = 'ok') => {
+    setNotice({ msg, tone });
+    setTimeout(() => setNotice(null), 3600);
+  };
+
+  const confirmDelete = async () => {
+    setBusy(true);
+    setDelError('');
+    const res = await deleteWastage(deleting.id);
+    setBusy(false);
+    if (res.success) { flash('Wastage entry deleted.'); setDeleting(null); }
+    else setDelError(res.error);
+  };
 
   const totals = entries.reduce((acc, e) => {
     if (e.status === 'posted') {
@@ -216,6 +254,7 @@ export default function Wastage() {
         </button>
       </div>
 
+      {notice && <div className={`mst-note ${notice.tone === 'bad' ? 'bad' : ''}`}>{notice.msg}</div>}
       {error && <div className="wa-error">{error}</div>}
 
       <div className="table-card table-card--padded">
@@ -245,7 +284,6 @@ export default function Wastage() {
 
         {!loading && entries.map((e) => {
           const lines = e.stock_wastage_items || [];
-          const open = expanded === e.id;
           return (
             <React.Fragment key={e.id}>
               <div className="table-row wa-row">
@@ -254,27 +292,22 @@ export default function Wastage() {
                 <div className="wc-note muted">{e.note || '—'}</div>
                 <div className="wc-value amount">{money(e.total_value)}</div>
                 <div className="wc-act">
+                  <button className="mini" onClick={() => setViewing(e)} title="View">
+                    <Eye size={14} />
+                  </button>
+                  <button className="mini" onClick={() => setEditing(e)} title="Edit">
+                    <Pencil size={13} />
+                  </button>
                   <button
-                    className={`mini ${open ? 'on' : ''}`}
-                    onClick={() => setExpanded(open ? null : e.id)}
-                    title="Show items"
+                    className="mini mini--danger"
+                    onClick={() => { setDelError(''); setDeleting(e); }}
+                    title="Delete"
                   >
-                    <ChevronDown size={14} />
+                    <Trash2 size={13} />
                   </button>
                 </div>
               </div>
 
-              {open && (
-                <div className="wa-detail">
-                  {lines.map((ln) => (
-                    <div key={ln.id} className="wa-detail__row">
-                      <span className="strong">{ln.inventory_items?.item_name || 'Item'}</span>
-                      <span className="muted">{ln.qty_base} {ln.inventory_items?.unit}</span>
-                      <span className="pill tone-amber pill--sm">{ln.reason}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
             </React.Fragment>
           );
         })}
@@ -284,6 +317,56 @@ export default function Wastage() {
         <WastageForm items={items} onClose={() => setShowForm(false)} onSave={saveWastage} />
       )}
 
+      {editing && (
+        <WastageForm
+          items={items}
+          existing={editing}
+          onClose={() => setEditing(null)}
+          onSave={(draft) => updateWastage(editing.id, draft)}
+        />
+      )}
+
+      {viewing && (
+        <DetailDrawer
+          title={`Wastage — ${dateLabel(viewing.wasted_on)}`}
+          subtitle={viewing.note || 'No note'}
+          meta={[
+            { label: 'Status', value: viewing.status },
+            { label: 'Items', value: (viewing.stock_wastage_items || []).length },
+            { label: 'Value lost', value: money(viewing.total_value) },
+          ]}
+          lines={viewing.stock_wastage_items || []}
+          columns={[
+            { key: 'name', label: 'Raw material', flex: 2,
+              render: (l) => l.inventory_items?.item_name || 'Item' },
+            { key: 'qty', label: 'Quantity', align: 'right',
+              render: (l) => `${l.qty_base} ${l.inventory_items?.unit || ''}` },
+            { key: 'reason', label: 'Reason', flex: 1.2,
+              render: (l) => <span className="pill tone-amber pill--sm">{l.reason}</span> },
+          ]}
+          footer={<><span>Value lost</span><strong>{money(viewing.total_value)}</strong></>}
+          onClose={() => setViewing(null)}
+        />
+      )}
+
+      {deleting && (
+        <ConfirmDelete
+          title="Delete wastage entry"
+          subject={`Wastage — ${dateLabel(deleting.wasted_on)}, ${money(deleting.total_value)}`}
+          permanent
+          busy={busy}
+          error={delError}
+          consequences={[
+            `All ${(deleting.stock_wastage_items || []).length} written-off line${(deleting.stock_wastage_items || []).length === 1 ? '' : 's'} are removed.`,
+            'The stock this entry wrote off is PUT BACK, and the affected balances are rebuilt from the ledger.',
+            'The Stock Summary for its date will report differently afterwards.',
+          ]}
+          onCancel={() => setDeleting(null)}
+          onConfirm={confirmDelete}
+        />
+      )}
+
+      <MastersStyles />
       <style>{`
         .wa-top { display: flex; align-items: flex-start; gap: 16px; }
         .wa-error {

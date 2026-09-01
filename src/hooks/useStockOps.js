@@ -117,7 +117,67 @@ export function useWastageData() {
     }
   }, [items, outletId, refresh]);
 
-  return { entries, items, loading, error, refresh, saveWastage };
+  /**
+   * Edit a wastage entry that has already taken stock out.
+   *
+   * Lines are replaced and the database re-posts the document, keeping the
+   * original wastage date on the movements rather than today's.
+   */
+  const updateWastage = useCallback(async (id, draft) => {
+    const lines = (draft.lines || []).filter((l) => l.inventoryItemId && Number(l.qty) > 0);
+    if (lines.length === 0) return { success: false, error: 'A wastage entry needs at least one item.' };
+
+    const itemById = new Map(items.map((i) => [i.id, i]));
+    try {
+      const { error: headError } = await supabase
+        .from('stock_wastage')
+        .update({ wasted_on: draft.wastedOn, note: (draft.note || '').trim() || null })
+        .eq('id', id);
+      if (headError) throw headError;
+
+      const { error: delError } = await supabase
+        .from('stock_wastage_items').delete().eq('wastage_id', id);
+      if (delError) throw delError;
+
+      const { error: lineError } = await supabase.from('stock_wastage_items').insert(
+        lines.map((l) => {
+          const item = itemById.get(l.inventoryItemId);
+          return {
+            wastage_id: id,
+            inventory_item_id: l.inventoryItemId,
+            qty_base: toBase(l, item),
+            reason: l.reason || 'Spoilage',
+            rate: item?.last_purchase_rate ?? null,
+          };
+        }),
+      );
+      if (lineError) throw lineError;
+
+      const { error: rpcError } = await supabase.rpc('repost_wastage', { p_wastage_id: id });
+      if (rpcError) throw rpcError;
+
+      await refresh();
+      return { success: true };
+    } catch (err) {
+      console.error('Error updating wastage:', err);
+      return { success: false, error: err.message };
+    }
+  }, [items, refresh]);
+
+  /** Remove the entry and put the wasted stock back. */
+  const deleteWastage = useCallback(async (id) => {
+    const { error: rpcError } = await supabase.rpc('delete_stock_document', {
+      p_kind: 'wastage', p_id: id,
+    });
+    if (rpcError) return { success: false, error: rpcError.message };
+    await refresh();
+    return { success: true };
+  }, [refresh]);
+
+  return {
+    entries, items, loading, error, refresh, saveWastage,
+    updateWastage, deleteWastage,
+  };
 }
 
 /* ---------------------------------------------------------------- Transfers */
@@ -274,8 +334,69 @@ export function useTransferData() {
     [outlets],
   );
 
+  /** Edit a transfer, re-posting it on its own date. */
+  const updateTransfer = useCallback(async (id, draft) => {
+    const lines = (draft.lines || []).filter((l) => l.inventoryItemId && Number(l.qty) > 0);
+    if (lines.length === 0) return { success: false, error: 'A transfer needs at least one item.' };
+    if (draft.fromOutletId === draft.toOutletId) {
+      return { success: false, error: 'Source and destination must be different outlets.' };
+    }
+
+    const itemById = new Map(items.map((i) => [i.id, i]));
+    try {
+      const { error: headError } = await supabase
+        .from('stock_transfers')
+        .update({
+          from_outlet_id: draft.fromOutletId,
+          to_outlet_id: draft.toOutletId,
+          transfer_date: draft.transferDate,
+          reference_no: (draft.referenceNo || '').trim() || null,
+          note: (draft.note || '').trim() || null,
+        })
+        .eq('id', id);
+      if (headError) throw headError;
+
+      const { error: delError } = await supabase
+        .from('stock_transfer_items').delete().eq('transfer_id', id);
+      if (delError) throw delError;
+
+      const { error: lineError } = await supabase.from('stock_transfer_items').insert(
+        lines.map((l) => {
+          const item = itemById.get(l.inventoryItemId);
+          return {
+            transfer_id: id,
+            inventory_item_id: l.inventoryItemId,
+            qty_base: toBase(l, item),
+            rate: item?.last_purchase_rate ?? null,
+          };
+        }),
+      );
+      if (lineError) throw lineError;
+
+      const { error: rpcError } = await supabase.rpc('repost_transfer', { p_transfer_id: id });
+      if (rpcError) throw rpcError;
+
+      await refresh();
+      return { success: true };
+    } catch (err) {
+      console.error('Error updating transfer:', err);
+      return { success: false, error: err.message };
+    }
+  }, [items, refresh]);
+
+  /** Remove the transfer and undo its effect at both outlets. */
+  const deleteTransfer = useCallback(async (id) => {
+    const { error: rpcError } = await supabase.rpc('delete_stock_document', {
+      p_kind: 'transfer', p_id: id,
+    });
+    if (rpcError) return { success: false, error: rpcError.message };
+    await refresh();
+    return { success: true };
+  }, [refresh]);
+
   return {
     transfers, items, loading, error, sourceStock, outletId,
     refresh, saveTransfer, sendTransfer, receiveTransfer, loadSourceStock, outletName,
+    updateTransfer, deleteTransfer,
   };
 }

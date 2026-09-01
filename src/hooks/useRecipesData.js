@@ -17,22 +17,26 @@ export function useRecipesData() {
   const [categories, setCategories] = useState([]);
   const [inventory, setInventory] = useState([]);
   const [ingredients, setIngredients] = useState([]);
+  const [autoConsume, setAutoConsume] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   const refresh = useCallback(async () => {
     try {
-      const [dishRes, catRes, invRes, recipeRes] = await Promise.all([
+      const [dishRes, catRes, invRes, recipeRes, settingRes] = await Promise.all([
         supabase.from('menu_items').select('*').order('item_name'),
         supabase.from('menu_categories').select('*').order('category_name'),
         supabase.from('inventory_items').select('*').eq('is_active', true).order('item_name'),
         supabase.from('recipe_ingredients').select('*'),
+        supabase.from('restaurant_settings')
+          .select('value').eq('key', 'inventory').maybeSingle(),
       ]);
 
       for (const res of [dishRes, catRes, invRes, recipeRes]) {
         if (res.error) throw res.error;
       }
 
+      setAutoConsume(settingRes?.data?.value?.auto_consumption !== false);
       setDishes(dishRes.data || []);
       setCategories(catRes.data || []);
       setInventory(invRes.data || []);
@@ -154,8 +158,87 @@ export function useRecipesData() {
     return { success: true };
   }, [refresh]);
 
+  /**
+   * Auto Consumption: whether an order deducts its recipe from stock.
+   *
+   * The switch is enforced in the database (apply_recipe_stock checks it), not
+   * here — a client-side gate would be bypassed by any order placed from the
+   * captain panel or a diner's phone. This only reads and writes the setting.
+   */
+  const setAutoConsumption = useCallback(async (enabled) => {
+    setAutoConsume(enabled);                    // optimistic: the switch must feel instant
+    const { error: writeError } = await supabase
+      .from('restaurant_settings')
+      .upsert(
+        { key: 'inventory', value: { auto_consumption: enabled }, updated_at: new Date().toISOString() },
+        { onConflict: 'restaurant_id,key' },
+      );
+
+    if (writeError) {
+      setAutoConsume(!enabled);                 // put the switch back
+      return { success: false, error: writeError.message };
+    }
+    return { success: true };
+  }, []);
+
+  /** Drop a dish's recipe entirely, leaving the dish itself alone. */
+  const clearRecipe = useCallback(async (menuItemId) => {
+    const { error: delError } = await supabase
+      .from('recipe_ingredients')
+      .delete()
+      .eq('menu_item_id', menuItemId);
+    if (delError) return { success: false, error: delError.message };
+    await refresh();
+    return { success: true };
+  }, [refresh]);
+
+  /** Clear several at once, for the bulk action menu. */
+  const clearRecipes = useCallback(async (menuItemIds) => {
+    if (!menuItemIds?.length) return { success: true };
+    const { error: delError } = await supabase
+      .from('recipe_ingredients')
+      .delete()
+      .in('menu_item_id', menuItemIds);
+    if (delError) return { success: false, error: delError.message };
+    await refresh();
+    return { success: true };
+  }, [refresh]);
+
+  /**
+   * Copy one dish's recipe onto another. Replaces the target's recipe rather
+   * than merging: "copy" should leave the two identical, and a silent merge
+   * would double an ingredient that appears in both.
+   */
+  const copyRecipe = useCallback(async (fromMenuItemId, toMenuItemId) => {
+    if (!toMenuItemId || fromMenuItemId === toMenuItemId) {
+      return { success: false, error: 'Choose a different dish to copy into.' };
+    }
+
+    const source = (ingredients || []).filter((l) => l.menu_item_id === fromMenuItemId);
+    if (source.length === 0) return { success: false, error: 'That dish has no recipe to copy.' };
+
+    const { error: delError } = await supabase
+      .from('recipe_ingredients')
+      .delete()
+      .eq('menu_item_id', toMenuItemId);
+    if (delError) return { success: false, error: delError.message };
+
+    const { error: insError } = await supabase.from('recipe_ingredients').insert(
+      source.map((l) => ({
+        menu_item_id: toMenuItemId,
+        inventory_item_id: l.inventory_item_id,
+        quantity: l.quantity,
+      })),
+    );
+    if (insError) return { success: false, error: insError.message };
+
+    await refresh();
+    return { success: true, copied: source.length };
+  }, [ingredients, refresh]);
+
   return {
     recipes, inventory, categories, metrics, loading, error,
-    refresh, saveRecipe,
+    refresh, saveRecipe, autoConsume, setAutoConsumption,
+    clearRecipe, clearRecipes, copyRecipe,
   };
 }

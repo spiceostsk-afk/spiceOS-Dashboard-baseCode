@@ -66,12 +66,14 @@ export function OutletProvider({ children }) {
     const name = (draft.name || '').trim();
     if (!name) return { success: false, error: 'An outlet name is required.' };
 
-    const { error } = await supabase.from('outlets').insert([{
+    // Return the new id so a caller that created this outlet mid-form (the
+    // transfer screen) can select it straight away.
+    const { data, error } = await supabase.from('outlets').insert([{
       name,
       code: (draft.code || '').trim() || null,
       address: (draft.address || '').trim() || null,
       phone: (draft.phone || '').trim() || null,
-    }]);
+    }]).select('id').single();
 
     if (error) {
       return {
@@ -82,7 +84,7 @@ export function OutletProvider({ children }) {
       };
     }
     await load();
-    return { success: true };
+    return { success: true, id: data?.id };
   }, [load]);
 
   const outlet = outlets.find((o) => o.id === outletId) || null;

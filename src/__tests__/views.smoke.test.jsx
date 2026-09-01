@@ -178,7 +178,7 @@ import Customers from '../views/Customers';
 import Staff from '../views/Staff';
 import Settings from '../views/Settings';
 import Branding from '../views/Branding';
-import Inventory from '../views/Inventory';
+import Inventory from '../views/masters/RawMaterials';
 import Recipes from '../views/Recipes';
 
 const VIEWS = [
@@ -221,7 +221,7 @@ describe('View render smoke tests', () => {
   // mount — findByText waits out the loading row the stub resolves through.
   it('Inventory shows its empty state once the fetch settles', async () => {
     render(<MemoryRouter><Inventory /></MemoryRouter>);
-    expect(await screen.findByText('No items tracked yet')).toBeInTheDocument();
+    expect(await screen.findByText('No raw materials yet')).toBeInTheDocument();
   });
 
   it('Recipes shows its empty state once the fetch settles', async () => {

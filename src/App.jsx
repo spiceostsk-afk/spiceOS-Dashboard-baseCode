@@ -21,7 +21,7 @@ import Customers from './views/Customers';
 import QRManagement from './views/QRManagement';
 import Staff from './views/Staff';
 import Orders from './views/Orders';
-import Inventory from './views/Inventory';
+import RawMaterials from './views/masters/RawMaterials';
 import Recipes from './views/Recipes';
 import ClosingStock from './views/inventory/ClosingStock';
 import AvailableStock from './views/inventory/AvailableStock';
@@ -30,6 +30,9 @@ import Wastage from './views/inventory/Wastage';
 import Transfer from './views/inventory/Transfer';
 import Vendors from './views/inventory/Vendors';
 import StockSummary from './views/inventory/StockSummary';
+import OpeningStock from './views/inventory/OpeningStock';
+import UnitMaster from './views/masters/UnitMaster';
+import CategoryMaster from './views/masters/CategoryMaster';
 
 function SuspendedScreen() {
   const { signOut } = useAuth();
@@ -69,14 +72,17 @@ function AppShell() {
               <Route path="/" element={<Navigate to="/dashboard" />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/menu" element={<MenuCatalog />} />
-              <Route path="/inventory" element={<Inventory />} />
+              <Route path="/inventory" element={<RawMaterials />} />
               <Route path="/inventory/available-stock" element={<AvailableStock />} />
+              <Route path="/inventory/opening-stock" element={<OpeningStock />} />
               <Route path="/inventory/closing-stock" element={<ClosingStock />} />
               <Route path="/inventory/purchase" element={<Purchase />} />
               <Route path="/inventory/wastage" element={<Wastage />} />
               <Route path="/inventory/transfer" element={<Transfer />} />
               <Route path="/inventory/vendors" element={<Vendors />} />
               <Route path="/inventory/summary" element={<StockSummary />} />
+              <Route path="/inventory/units" element={<UnitMaster />} />
+              <Route path="/inventory/categories" element={<CategoryMaster />} />
               <Route path="/recipes" element={<Recipes />} />
               <Route path="/billing" element={<Billing />} />
               <Route path="/payments" element={<Payments />} />

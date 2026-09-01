@@ -1,10 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Plus, X, ArrowLeftRight, ChevronDown, Send, PackageCheck } from 'lucide-react';
+import {
+  Plus, X, ArrowLeftRight, ArrowRight, Send, PackageCheck, Eye, Pencil, Trash2,
+} from 'lucide-react';
 import { useTransferData } from '../../hooks/useStockOps';
 import { useOutlet } from '../../context/OutletContext';
 import {
   useLines, ItemSelect, UnitSelect, AddLineButton, RemoveLineButton, LineEditorStyles,
 } from './lineEditor';
+import { ConfirmDelete, DetailDrawer, NameModal } from '../masters/masterDialogs';
+import { MastersStyles } from '../masters/mastersUi';
 
 /**
  * Stock moving between branches.
@@ -27,15 +31,37 @@ const STATUS_TONE = {
   draft: 'tone-neutral', sent: 'tone-blue', received: 'tone-green', cancelled: 'tone-neutral',
 };
 
-function TransferForm({ items, outlets, defaultFrom, sourceStock, loadSourceStock, onClose, onSave }) {
-  const { lines, addLine, updateLine, removeLine } = useLines();
-  const [head, setHead] = useState({
+function TransferForm({
+  items, outlets, defaultFrom, sourceStock, loadSourceStock,
+  existing, onAddOutlet, onClose, onSave,
+}) {
+  const { lines, addLine, updateLine, removeLine, setLines } = useLines();
+  const [head, setHead] = useState(() => (existing ? {
+    fromOutletId: existing.from_outlet_id,
+    toOutletId: existing.to_outlet_id,
+    transferDate: existing.transfer_date,
+    referenceNo: existing.reference_no || '',
+    note: existing.note || '',
+  } : {
     fromOutletId: defaultFrom || '',
     toOutletId: '',
     transferDate: today(),
     referenceNo: '',
     note: '',
-  });
+  }));
+  const [addingOutlet, setAddingOutlet] = useState(null);
+
+  React.useEffect(() => {
+    if (!existing) return;
+    const rows = (existing.stock_transfer_items || []).map((l, i) => ({
+      key: 'e' + i,
+      inventoryItemId: l.inventory_item_id,
+      qty: String(l.qty_base),
+      entryUnit: 'base',
+      rate: '', taxPct: '', reason: 'Spoilage',
+    }));
+    if (rows.length) setLines(rows);
+  }, [existing, setLines]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -57,36 +83,51 @@ function TransferForm({ items, outlets, defaultFrom, sourceStock, loadSourceStoc
     <div className="overlay" onClick={onClose}>
       <div className="modal modal--wide" onClick={(e) => e.stopPropagation()}>
         <div className="modal__head">
-          <div className="modal__title">New transfer</div>
+          <div className="modal__title">{existing ? 'Edit transfer' : 'New transfer'}</div>
           <button type="button" className="modal__close" onClick={onClose}><X size={17} /></button>
         </div>
 
         <div className="modal__body">
           {error && <div className="tf-error">{error}</div>}
 
-          <div className="tf-head">
-            <div className="field">
-              <label>From outlet</label>
+          {/* FROM -> TO reads as a route, because that is what a transfer is. */}
+          <div className="tf-route">
+            <div className="tf-box">
+              <div className="tf-box__label">From</div>
               <select
+                className="tf-box__select"
                 value={head.fromOutletId}
                 onChange={(e) => setHead({ ...head, fromOutletId: e.target.value })}
               >
-                <option value="">Select…</option>
+                <option value="">Select outlet...</option>
                 {outlets.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
               </select>
+              <button type="button" className="tf-box__add" onClick={() => setAddingOutlet('from')}>
+                <Plus size={12} /> New outlet
+              </button>
             </div>
-            <div className="field">
-              <label>To outlet</label>
+
+            <div className="tf-arrow"><ArrowRight size={20} /></div>
+
+            <div className="tf-box">
+              <div className="tf-box__label">To</div>
               <select
+                className="tf-box__select"
                 value={head.toOutletId}
                 onChange={(e) => setHead({ ...head, toOutletId: e.target.value })}
               >
-                <option value="">Select…</option>
+                <option value="">Select outlet...</option>
                 {outlets
                   .filter((o) => o.id !== head.fromOutletId)
                   .map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
               </select>
+              <button type="button" className="tf-box__add" onClick={() => setAddingOutlet('to')}>
+                <Plus size={12} /> New outlet
+              </button>
             </div>
+          </div>
+
+          <div className="tf-head">
             <div className="field">
               <label>Date</label>
               <input
@@ -104,6 +145,25 @@ function TransferForm({ items, outlets, defaultFrom, sourceStock, loadSourceStoc
               />
             </div>
           </div>
+
+          {addingOutlet && (
+            <NameModal
+              title="Add outlet"
+              label="Outlet name"
+              extra={[{ key: 'code', label: 'Code', placeholder: 'Optional' }]}
+              onClose={() => setAddingOutlet(null)}
+              onSave={async (name, extras) => {
+                const res = await onAddOutlet({ name, code: extras.code });
+                if (res.success && res.id) {
+                  setHead((h) => ({
+                    ...h,
+                    [addingOutlet === 'from' ? 'fromOutletId' : 'toOutletId']: res.id,
+                  }));
+                }
+                return res;
+              }}
+            />
+          )}
 
           <div className="ln-table">
             <div className="ln-head">
@@ -175,11 +235,15 @@ function TransferForm({ items, outlets, defaultFrom, sourceStock, loadSourceStoc
 
         <div className="modal__actions">
           <button className="btn btn--ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn--ghost" onClick={() => submit(false)} disabled={saving}>
-            Save as draft
-          </button>
+          {!existing && (
+            <button className="btn btn--ghost" onClick={() => submit(false)} disabled={saving}>
+              Save as draft
+            </button>
+          )}
           <button className="btn btn--primary" onClick={() => submit(true)} disabled={saving}>
-            {saving ? 'Sending…' : <><Send size={15} /> Save &amp; send</>}
+            {saving ? 'Saving...' : existing
+              ? 'Save changes'
+              : <><Send size={15} /> Save &amp; send</>}
           </button>
         </div>
 
@@ -190,7 +254,33 @@ function TransferForm({ items, outlets, defaultFrom, sourceStock, loadSourceStoc
             background: var(--color-danger-soft); color: var(--color-danger);
             font-size: 13px; font-weight: 600;
           }
-          .tf-head { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+          .tf-head { display: grid; grid-template-columns: 200px 1fr; gap: 14px; }
+          .tf-route {
+            display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px;
+            align-items: start; padding: 16px; border-radius: var(--radius-lg);
+            background: var(--color-canvas); border: 1px solid var(--color-border);
+          }
+          .tf-box { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+          .tf-box__label {
+            font-size: 11px; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 0.05em; color: var(--color-text-muted);
+          }
+          .tf-box__select {
+            height: 42px; padding: 0 11px; font: inherit; font-size: 14px;
+            font-weight: 600; border: 1px solid var(--color-border);
+            border-radius: var(--radius-md); background: var(--color-surface);
+          }
+          .tf-box__add {
+            align-self: flex-start; display: inline-flex; align-items: center; gap: 4px;
+            border: none; background: none; padding: 0; cursor: pointer;
+            font: inherit; font-size: 11.5px; font-weight: 600;
+            color: var(--color-primary);
+          }
+          .tf-arrow { color: var(--color-text-muted); display: flex; padding-top: 30px; }
+          @media (max-width: 720px) {
+            .tf-route { grid-template-columns: 1fr; }
+            .tf-arrow { transform: rotate(90deg); padding: 0; justify-content: center; }
+          }
           .tf-avail { font-size: 12.5px; color: var(--color-text-muted); font-weight: 600; }
           @media (max-width: 880px) { .tf-head { grid-template-columns: 1fr 1fr; } }
         `}</style>
@@ -280,17 +370,31 @@ export default function Transfer() {
   const {
     transfers, items, loading, error, sourceStock, outletId,
     saveTransfer, sendTransfer, receiveTransfer, loadSourceStock, outletName,
+    updateTransfer, deleteTransfer,
   } = useTransferData();
-  const { outlets, isMultiOutlet } = useOutlet();
+  const { outlets, isMultiOutlet, addOutlet } = useOutlet();
 
   const [showForm, setShowForm] = useState(false);
   const [receiving, setReceiving] = useState(null);
-  const [expanded, setExpanded] = useState(null);
+  const [editing, setEditing] = useState(null);
+  const [viewing, setViewing] = useState(null);
+  const [deleting, setDeleting] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [delError, setDelError] = useState('');
   const [notice, setNotice] = useState(null);
 
   const flash = (msg, bad = false) => {
     setNotice({ msg, bad });
     setTimeout(() => setNotice(null), 3200);
+  };
+
+  const confirmDelete = async () => {
+    setBusy(true);
+    setDelError('');
+    const res = await deleteTransfer(deleting.id);
+    setBusy(false);
+    if (res.success) { flash('Transfer deleted.'); setDeleting(null); }
+    else setDelError(res.error);
   };
 
   const handleSend = async (t) => {
@@ -354,7 +458,6 @@ export default function Transfer() {
 
         {!loading && transfers.map((t) => {
           const lines = t.stock_transfer_items || [];
-          const open = expanded === t.id;
           const canReceive = t.status === 'sent' && t.to_outlet_id === outletId;
 
           return (
@@ -382,35 +485,22 @@ export default function Transfer() {
                       <PackageCheck size={14} />
                     </button>
                   )}
-                  {t.status === 'sent' && !canReceive && (
-                    <span className="tr-await">Awaiting {outletName(t.to_outlet_id)}</span>
-                  )}
+                  <button className="mini" onClick={() => setViewing(t)} title="View">
+                    <Eye size={14} />
+                  </button>
+                  <button className="mini" onClick={() => setEditing(t)} title="Edit">
+                    <Pencil size={13} />
+                  </button>
                   <button
-                    className={`mini ${open ? 'on' : ''}`}
-                    onClick={() => setExpanded(open ? null : t.id)}
-                    title="Show items"
+                    className="mini mini--danger"
+                    onClick={() => { setDelError(''); setDeleting(t); }}
+                    title="Delete"
                   >
-                    <ChevronDown size={14} />
+                    <Trash2 size={13} />
                   </button>
                 </div>
               </div>
 
-              {open && (
-                <div className="tr-detail">
-                  {lines.map((ln) => (
-                    <div key={ln.id} className="tr-detail__row">
-                      <span className="strong">{ln.inventory_items?.item_name || 'Item'}</span>
-                      <span className="muted">Sent {ln.qty_base} {ln.inventory_items?.unit}</span>
-                      <span className="muted">
-                        {ln.received_qty_base === null || ln.received_qty_base === undefined
-                          ? 'Not received'
-                          : `Received ${ln.received_qty_base} ${ln.inventory_items?.unit}`}
-                      </span>
-                    </div>
-                  ))}
-                  {t.note && <div className="tr-detail__note">{t.note}</div>}
-                </div>
-              )}
             </React.Fragment>
           );
         })}
@@ -423,8 +513,67 @@ export default function Transfer() {
           defaultFrom={outletId}
           sourceStock={sourceStock}
           loadSourceStock={loadSourceStock}
+          onAddOutlet={addOutlet}
           onClose={() => setShowForm(false)}
           onSave={saveTransfer}
+        />
+      )}
+
+      {editing && (
+        <TransferForm
+          items={items}
+          outlets={outlets}
+          defaultFrom={editing.from_outlet_id}
+          sourceStock={sourceStock}
+          loadSourceStock={loadSourceStock}
+          existing={editing}
+          onAddOutlet={addOutlet}
+          onClose={() => setEditing(null)}
+          onSave={(draft) => updateTransfer(editing.id, draft)}
+        />
+      )}
+
+      {viewing && (
+        <DetailDrawer
+          title={viewing.reference_no || 'Transfer'}
+          subtitle={`${outletName(viewing.from_outlet_id)} to ${outletName(viewing.to_outlet_id)}`}
+          meta={[
+            { label: 'Date', value: dateLabel(viewing.transfer_date) },
+            { label: 'Status', value: viewing.status },
+            { label: 'Items', value: (viewing.stock_transfer_items || []).length },
+            { label: 'Note', value: viewing.note || 'None' },
+          ]}
+          lines={viewing.stock_transfer_items || []}
+          columns={[
+            { key: 'name', label: 'Raw material', flex: 2,
+              render: (l) => l.inventory_items?.item_name || 'Item' },
+            { key: 'sent', label: 'Sent', align: 'right',
+              render: (l) => `${l.qty_base} ${l.inventory_items?.unit || ''}` },
+            { key: 'recv', label: 'Received', align: 'right',
+              render: (l) => (l.received_qty_base === null || l.received_qty_base === undefined
+                ? <span className="muted">Not yet</span>
+                : `${l.received_qty_base} ${l.inventory_items?.unit || ''}`) },
+          ]}
+          onClose={() => setViewing(null)}
+        />
+      )}
+
+      {deleting && (
+        <ConfirmDelete
+          title="Delete transfer"
+          subject={`${deleting.reference_no || 'Transfer'} — ${outletName(deleting.from_outlet_id)} to ${outletName(deleting.to_outlet_id)}`}
+          permanent
+          busy={busy}
+          error={delError}
+          consequences={[
+            `All ${(deleting.stock_transfer_items || []).length} line${(deleting.stock_transfer_items || []).length === 1 ? '' : 's'} on this transfer are removed.`,
+            deleting.status === 'draft'
+              ? 'This transfer was never sent, so no stock changes.'
+              : 'Stock is returned to the sending outlet and taken back off the receiving one. Both balances are rebuilt from the ledger.',
+            'The Stock Summary for its date will report differently afterwards.',
+          ]}
+          onCancel={() => setDeleting(null)}
+          onConfirm={confirmDelete}
         />
       )}
 
@@ -437,6 +586,7 @@ export default function Transfer() {
         />
       )}
 
+      <MastersStyles />
       <style>{`
         .tr-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
         .tr-title { font-size: 20px; font-weight: 800; margin: 0; }

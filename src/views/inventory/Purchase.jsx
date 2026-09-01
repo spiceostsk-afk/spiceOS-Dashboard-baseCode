@@ -1,9 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import { Plus, X, ShoppingCart, Ban, CheckCircle2, ChevronDown } from 'lucide-react';
+import { Plus, X, ShoppingCart, Eye, Pencil, Trash2, CheckCircle2 } from 'lucide-react';
 import { usePurchaseData, lineTotals } from '../../hooks/usePurchaseData';
 import {
   useLines, ItemSelect, UnitSelect, AddLineButton, RemoveLineButton, LineEditorStyles,
 } from './lineEditor';
+import { ConfirmDelete, DetailDrawer } from '../masters/masterDialogs';
+import { MastersStyles } from '../masters/mastersUi';
 
 /**
  * Purchase entry — the vendor invoice that puts stock on the shelf.
@@ -23,11 +25,32 @@ const dateLabel = (iso) =>
 
 const STATUS_TONE = { posted: 'tone-green', draft: 'tone-amber', cancelled: 'tone-neutral' };
 
-function PurchaseForm({ items, vendors, onClose, onSave }) {
-  const { lines, addLine, updateLine, removeLine } = useLines();
-  const [head, setHead] = useState({
+function PurchaseForm({ items, vendors, existing, onClose, onSave }) {
+  const { lines, addLine, updateLine, removeLine, setLines } = useLines();
+  const [head, setHead] = useState(() => (existing ? {
+    vendorId: existing.vendors?.id || '',
+    invoiceNo: existing.invoice_no || '',
+    invoiceDate: existing.invoice_date,
+    note: existing.note || '',
+    discount: existing.discount || '',
+  } : {
     vendorId: '', invoiceNo: '', invoiceDate: today(), note: '', discount: '',
-  });
+  }));
+
+  // Load the invoice's own lines into the editor when editing.
+  React.useEffect(() => {
+    if (!existing) return;
+    const rows = (existing.purchase_items || []).map((l, i) => ({
+      key: `e${i}`,
+      inventoryItemId: l.inventory_item_id,
+      qty: String(l.qty),
+      entryUnit: l.entry_unit || 'base',
+      rate: String(l.rate ?? ''),
+      taxPct: String(l.tax_pct ?? ''),
+      reason: 'Spoilage',
+    }));
+    if (rows.length) setLines(rows);
+  }, [existing, setLines]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -51,7 +74,7 @@ function PurchaseForm({ items, vendors, onClose, onSave }) {
     <div className="overlay" onClick={onClose}>
       <div className="modal modal--wide" onClick={(e) => e.stopPropagation()}>
         <div className="modal__head">
-          <div className="modal__title">New purchase</div>
+          <div className="modal__title">{existing ? `Edit ${existing.invoice_no || 'purchase'}` : 'New purchase'}</div>
           <button type="button" className="modal__close" onClick={onClose}><X size={17} /></button>
         </div>
 
@@ -191,11 +214,13 @@ function PurchaseForm({ items, vendors, onClose, onSave }) {
 
         <div className="modal__actions">
           <button className="btn btn--ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn--ghost" onClick={() => submit(false)} disabled={saving}>
-            Save as draft
-          </button>
+          {!existing && (
+            <button className="btn btn--ghost" onClick={() => submit(false)} disabled={saving}>
+              Save as draft
+            </button>
+          )}
           <button className="btn btn--primary" onClick={() => submit(true)} disabled={saving}>
-            {saving ? 'Saving…' : 'Save & add to stock'}
+            {saving ? 'Saving…' : existing ? 'Save changes' : 'Save & add to stock'}
           </button>
         </div>
 
@@ -240,10 +265,14 @@ function PurchaseFormStyles() {
 export default function Purchase() {
   const {
     purchases, vendors, items, loading, error,
-    savePurchase, postPurchase, cancelPurchase,
+    savePurchase, postPurchase, updatePurchase, deletePurchase,
   } = usePurchaseData();
   const [showForm, setShowForm] = useState(false);
-  const [expanded, setExpanded] = useState(null);
+  const [editing, setEditing] = useState(null);
+  const [viewing, setViewing] = useState(null);
+  const [deleting, setDeleting] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [delError, setDelError] = useState('');
   const [notice, setNotice] = useState(null);
 
   const flash = (msg, bad = false) => {
@@ -259,14 +288,13 @@ export default function Purchase() {
     return acc;
   }, { value: 0, count: 0 });
 
-  const handleCancel = async (p) => {
-    if (!window.confirm(
-      p.status === 'posted'
-        ? 'Cancelling takes this stock back off the shelf. Continue?'
-        : 'Cancel this draft purchase?',
-    )) return;
-    const res = await cancelPurchase(p.id);
-    flash(res.success ? 'Purchase cancelled.' : res.error, !res.success);
+  const confirmDelete = async () => {
+    setBusy(true);
+    setDelError('');
+    const res = await deletePurchase(deleting.id);
+    setBusy(false);
+    if (res.success) { flash('Purchase deleted.'); setDeleting(null); }
+    else setDelError(res.error);
   };
 
   const handlePost = async (p) => {
@@ -330,7 +358,6 @@ export default function Purchase() {
 
         {!loading && purchases.map((p) => {
           const lines = p.purchase_items || [];
-          const open = expanded === p.id;
           return (
             <React.Fragment key={p.id}>
               <div className="table-row pu-row">
@@ -350,41 +377,22 @@ export default function Purchase() {
                       <CheckCircle2 size={14} />
                     </button>
                   )}
-                  {p.status !== 'cancelled' && (
-                    <button className="mini mini--danger" onClick={() => handleCancel(p)} title="Cancel">
-                      <Ban size={14} />
-                    </button>
-                  )}
+                  <button className="mini" onClick={() => setViewing(p)} title="View">
+                    <Eye size={14} />
+                  </button>
+                  <button className="mini" onClick={() => setEditing(p)} title="Edit">
+                    <Pencil size={13} />
+                  </button>
                   <button
-                    className={`mini ${open ? 'on' : ''}`}
-                    onClick={() => setExpanded(open ? null : p.id)}
-                    title="Show items"
+                    className="mini mini--danger"
+                    onClick={() => { setDelError(''); setDeleting(p); }}
+                    title="Delete"
                   >
-                    <ChevronDown size={14} />
+                    <Trash2 size={13} />
                   </button>
                 </div>
               </div>
 
-              {open && (
-                <div className="pu-detail">
-                  {lines.map((ln) => (
-                    <div key={ln.id} className="pu-detail__row">
-                      <span className="strong">{ln.inventory_items?.item_name || 'Item'}</span>
-                      <span className="muted">
-                        {ln.qty} {ln.entry_unit === 'purchase'
-                          ? (ln.inventory_items?.purchase_unit || ln.inventory_items?.unit)
-                          : ln.inventory_items?.unit}
-                        {ln.entry_unit === 'purchase' && (
-                          <> → {ln.qty_base} {ln.inventory_items?.unit}</>
-                        )}
-                      </span>
-                      <span className="muted">@ {money(ln.rate)}</span>
-                      <span className="amount">{money(ln.amount)}</span>
-                    </div>
-                  ))}
-                  {p.note && <div className="pu-detail__note">{p.note}</div>}
-                </div>
-              )}
             </React.Fragment>
           );
         })}
@@ -399,6 +407,64 @@ export default function Purchase() {
         />
       )}
 
+      {editing && (
+        <PurchaseForm
+          items={items}
+          vendors={vendors}
+          existing={editing}
+          onClose={() => setEditing(null)}
+          onSave={(draft) => updatePurchase(editing.id, draft)}
+        />
+      )}
+
+      {viewing && (
+        <DetailDrawer
+          title={viewing.invoice_no || 'Purchase'}
+          subtitle={`${viewing.vendors?.name || 'No vendor'} · ${dateLabel(viewing.invoice_date)}`}
+          meta={[
+            { label: 'Status', value: viewing.status },
+            { label: 'Items', value: (viewing.purchase_items || []).length },
+            { label: 'Subtotal', value: money(viewing.subtotal) },
+            { label: 'Total', value: money(viewing.total) },
+          ]}
+          lines={viewing.purchase_items || []}
+          columns={[
+            { key: 'name', label: 'Raw material', flex: 2,
+              render: (l) => l.inventory_items?.item_name || 'Item' },
+            { key: 'qty', label: 'Qty', align: 'right',
+              render: (l) => `${l.qty} ${l.entry_unit === 'purchase'
+                ? (l.inventory_items?.purchase_unit || l.inventory_items?.unit)
+                : l.inventory_items?.unit}` },
+            { key: 'base', label: 'To stock', align: 'right',
+              render: (l) => `${l.qty_base} ${l.inventory_items?.unit || ''}` },
+            { key: 'amount', label: 'Amount', align: 'right',
+              render: (l) => money(l.amount) },
+          ]}
+          footer={<><span>Invoice total</span><strong>{money(viewing.total)}</strong></>}
+          onClose={() => setViewing(null)}
+        />
+      )}
+
+      {deleting && (
+        <ConfirmDelete
+          title="Delete purchase"
+          subject={`${deleting.invoice_no || 'Purchase'} — ${deleting.vendors?.name || 'no vendor'}, ${money(deleting.total)}`}
+          permanent
+          busy={busy}
+          error={delError}
+          consequences={[
+            `All ${(deleting.purchase_items || []).length} line${(deleting.purchase_items || []).length === 1 ? '' : 's'} on this invoice are removed.`,
+            deleting.status === 'posted'
+              ? 'The stock this invoice added is taken back off the shelf, and the affected balances are rebuilt from the ledger.'
+              : 'This invoice was never posted, so no stock changes.',
+            'The Stock Summary for its invoice date will report differently afterwards.',
+          ]}
+          onCancel={() => setDeleting(null)}
+          onConfirm={confirmDelete}
+        />
+      )}
+
+      <MastersStyles />
       <style>{`
         .pu-top { display: flex; align-items: flex-start; gap: 16px; }
         .pu-notice {

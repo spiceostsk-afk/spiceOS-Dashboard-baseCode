@@ -148,6 +148,82 @@ export function usePurchaseData() {
     }
   }, [items, outletId, refresh]);
 
+  /**
+   * Edit an invoice that has already moved stock.
+   *
+   * The lines are replaced wholesale and the database re-posts the document,
+   * which strips its old movements and writes fresh ones dated to the invoice,
+   * not to now. A report already run for that date will therefore report
+   * differently afterwards — that is inherent to editing in place rather than
+   * posting a correction.
+   */
+  const updatePurchase = useCallback(async (id, draft) => {
+    const lines = (draft.lines || []).filter((l) => l.inventoryItemId && Number(l.qty) > 0);
+    if (lines.length === 0) {
+      return { success: false, error: 'A purchase needs at least one item.' };
+    }
+
+    const itemById = new Map(items.map((i) => [i.id, i]));
+    const computed = lines.map((l) => ({ line: l, ...lineTotals(l, itemById.get(l.inventoryItemId)) }));
+    const subtotal = round(computed.reduce(
+      (s2, c) => s2 + (Number(c.line.qty) || 0) * (Number(c.line.rate) || 0), 0));
+    const gross = round(computed.reduce((s2, c) => s2 + c.amount, 0));
+
+    try {
+      const { error: headError } = await supabase
+        .from('purchases')
+        .update({
+          vendor_id: draft.vendorId || null,
+          invoice_no: (draft.invoiceNo || '').trim() || null,
+          invoice_date: draft.invoiceDate,
+          note: (draft.note || '').trim() || null,
+          subtotal,
+          tax_amount: round(gross - subtotal),
+          discount: Number(draft.discount) || 0,
+          total: round(gross - (Number(draft.discount) || 0)),
+        })
+        .eq('id', id);
+      if (headError) throw headError;
+
+      const { error: delError } = await supabase
+        .from('purchase_items').delete().eq('purchase_id', id);
+      if (delError) throw delError;
+
+      const { error: lineError } = await supabase.from('purchase_items').insert(
+        computed.map((c) => ({
+          purchase_id: id,
+          inventory_item_id: c.line.inventoryItemId,
+          qty: Number(c.line.qty),
+          entry_unit: c.line.entryUnit || 'base',
+          qty_base: c.qtyBase,
+          rate: Number(c.line.rate) || 0,
+          tax_pct: Number(c.line.taxPct) || 0,
+          amount: c.amount,
+        })),
+      );
+      if (lineError) throw lineError;
+
+      const { error: rpcError } = await supabase.rpc('repost_purchase', { p_purchase_id: id });
+      if (rpcError) throw rpcError;
+
+      await refresh();
+      return { success: true };
+    } catch (err) {
+      console.error('Error updating purchase:', err);
+      return { success: false, error: err.message };
+    }
+  }, [items, refresh]);
+
+  /** Remove the invoice and the stock it added. */
+  const deletePurchase = useCallback(async (id) => {
+    const { error: rpcError } = await supabase.rpc('delete_stock_document', {
+      p_kind: 'purchase', p_id: id,
+    });
+    if (rpcError) return { success: false, error: rpcError.message };
+    await refresh();
+    return { success: true };
+  }, [refresh]);
+
   const postPurchase = useCallback(async (id) => {
     const { error: rpcError } = await supabase.rpc('post_purchase', { p_purchase_id: id });
     if (rpcError) return { success: false, error: rpcError.message };
@@ -202,5 +278,6 @@ export function usePurchaseData() {
   return {
     purchases, vendors, items, loading, error,
     refresh, savePurchase, postPurchase, cancelPurchase, saveVendor, removeVendor,
+    updatePurchase, deletePurchase,
   };
 }

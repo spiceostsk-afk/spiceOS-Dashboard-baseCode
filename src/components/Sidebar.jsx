@@ -41,14 +41,20 @@ const NAV_ITEMS = [
     // Stock control is a module, not a page. Its children stay tucked under
     // one rail row so the sidebar does not grow to twenty flat destinations.
     children: [
-      { to: '/inventory', label: 'Raw Materials' },
       { to: '/inventory/available-stock', label: 'Available Stock' },
+      // Opening sits above Closing on purpose: a day opens before it closes,
+      // and the two are the same number a day apart.
+      { to: '/inventory/opening-stock', label: 'Opening Stock' },
       { to: '/inventory/closing-stock', label: 'Closing Stock' },
       { to: '/inventory/purchase', label: 'Purchase' },
       { to: '/inventory/wastage', label: 'Wastage' },
       { to: '/inventory/transfer', label: 'Transfer' },
-      { to: '/inventory/vendors', label: 'Vendors' },
       { to: '/inventory/summary', label: 'Stock Summary' },
+      { heading: 'Masters' },
+      { to: '/inventory', label: 'Raw Materials' },
+      { to: '/inventory/units', label: 'Unit Master' },
+      { to: '/inventory/categories', label: 'Category Master' },
+      { to: '/inventory/vendors', label: 'Suppliers' },
     ],
   },
   { to: '/recipes', label: 'Recipes', Icon: ChefHat },
@@ -107,7 +113,9 @@ function NavGroup({ item, active, pathname }) {
 
       {open && (
         <div className="nav-sub">
-          {item.children.map((child) => (
+          {item.children.map((child) => (child.heading ? (
+            <div key={child.heading} className="nav-subhead">{child.heading}</div>
+          ) : (
             <NavLink
               key={child.to}
               to={child.to}
@@ -118,7 +126,7 @@ function NavGroup({ item, active, pathname }) {
             >
               {child.label}
             </NavLink>
-          ))}
+          )))}
         </div>
       )}
     </div>
@@ -294,6 +302,15 @@ const Sidebar = () => {
           margin: 1px 0 4px 27px;
           padding-left: 11px;
           border-left: 1px solid var(--color-border);
+        }
+
+        .nav-subhead {
+          padding: 10px 12px 4px;
+          font-size: 10px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.07em;
+          color: var(--color-text-faint);
         }
 
         .nav-subitem {
