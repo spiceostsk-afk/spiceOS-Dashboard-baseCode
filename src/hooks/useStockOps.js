@@ -197,7 +197,8 @@ export function useTransferData() {
           .from('stock_transfers')
           .select(`
             id, transfer_date, reference_no, status, note,
-            from_outlet_id, to_outlet_id, sent_at, received_at,
+            from_outlet_id, to_outlet_id, from_label, to_label,
+            sent_at, received_at,
             stock_transfer_items ( id, inventory_item_id, qty_base,
                                    received_qty_base, rate,
                                    inventory_items ( item_name, unit ) )
@@ -225,30 +226,35 @@ export function useTransferData() {
     }
   }, []);
 
-  useEffect(() => { refresh(); }, [refresh]);
-
-  /** Stock on hand at the sending outlet, so the form can warn before it goes. */
+  /** Stock on hand at this outlet, so the form can warn before it goes. */
   const [sourceStock, setSourceStock] = useState({});
 
-  const loadSourceStock = useCallback(async (fromOutletId) => {
-    if (!fromOutletId) { setSourceStock({}); return; }
+  const loadSourceStock = useCallback(async () => {
+    if (!outletId) { setSourceStock({}); return; }
     const { data } = await supabase
       .from('inventory_stock')
       .select('inventory_item_id, qty')
-      .eq('outlet_id', fromOutletId);
+      .eq('outlet_id', outletId);
     setSourceStock(Object.fromEntries((data || []).map((r) => [r.inventory_item_id, Number(r.qty)])));
-  }, []);
+  }, [outletId]);
 
+  useEffect(() => { refresh(); loadSourceStock(); }, [refresh, loadSourceStock]);
+
+  /**
+   * FROM and TO are free text. The stock still leaves this outlet — the goods
+   * went somewhere — so from_outlet_id is the outlet in the header, and the
+   * typed names are stored alongside as labels.
+   *
+   * to_outlet_id stays null: a typed name is not a place the system holds a
+   * balance for, so nothing arrives anywhere and there is no receive step.
+   */
   const saveTransfer = useCallback(async (draft, { sendNow = true } = {}) => {
     const lines = (draft.lines || []).filter((l) => l.inventoryItemId && Number(l.qty) > 0);
     if (lines.length === 0) {
       return { success: false, error: 'Add at least one item with a quantity.' };
     }
-    if (!draft.fromOutletId || !draft.toOutletId) {
-      return { success: false, error: 'Choose both a source and a destination outlet.' };
-    }
-    if (draft.fromOutletId === draft.toOutletId) {
-      return { success: false, error: 'Source and destination must be different outlets.' };
+    if (!(draft.toLabel || '').trim()) {
+      return { success: false, error: 'Say where the stock is going.' };
     }
 
     const itemById = new Map(items.map((i) => [i.id, i]));
@@ -257,8 +263,10 @@ export function useTransferData() {
       const { data: header, error: headError } = await supabase
         .from('stock_transfers')
         .insert([{
-          from_outlet_id: draft.fromOutletId,
-          to_outlet_id: draft.toOutletId,
+          from_outlet_id: outletId,
+          to_outlet_id: null,
+          from_label: (draft.fromLabel || '').trim() || null,
+          to_label: (draft.toLabel || '').trim(),
           transfer_date: draft.transferDate,
           reference_no: (draft.referenceNo || '').trim() || null,
           note: (draft.note || '').trim() || null,
@@ -295,7 +303,7 @@ export function useTransferData() {
       console.error('Error saving transfer:', err);
       return { success: false, error: err.message };
     }
-  }, [items, refresh]);
+  }, [items, outletId, refresh]);
 
   const sendTransfer = useCallback(async (id) => {
     const { error: rpcError } = await supabase.rpc('send_transfer', { p_transfer_id: id });
@@ -338,8 +346,8 @@ export function useTransferData() {
   const updateTransfer = useCallback(async (id, draft) => {
     const lines = (draft.lines || []).filter((l) => l.inventoryItemId && Number(l.qty) > 0);
     if (lines.length === 0) return { success: false, error: 'A transfer needs at least one item.' };
-    if (draft.fromOutletId === draft.toOutletId) {
-      return { success: false, error: 'Source and destination must be different outlets.' };
+    if (!(draft.toLabel || '').trim()) {
+      return { success: false, error: 'Say where the stock is going.' };
     }
 
     const itemById = new Map(items.map((i) => [i.id, i]));
@@ -347,8 +355,8 @@ export function useTransferData() {
       const { error: headError } = await supabase
         .from('stock_transfers')
         .update({
-          from_outlet_id: draft.fromOutletId,
-          to_outlet_id: draft.toOutletId,
+          from_label: (draft.fromLabel || '').trim() || null,
+          to_label: (draft.toLabel || '').trim(),
           transfer_date: draft.transferDate,
           reference_no: (draft.referenceNo || '').trim() || null,
           note: (draft.note || '').trim() || null,

@@ -347,14 +347,20 @@ describe('Inventory module render smoke tests', () => {
     });
   });
 
-  it('Transfer explains itself instead of erroring on a single-outlet account', async () => {
+  // Transfers used to demand two real outlets, which made the screen useless
+  // for a single-outlet restaurant. FROM and TO are free text now, so it has
+  // to work with one outlet — the stock simply leaves and does not arrive.
+  it('Transfer is usable on a single-outlet account', async () => {
     const mod = await import('../context/OutletContext');
     const spy = vi.spyOn(mod, 'useOutlet').mockReturnValue({
       outlets: [OUTLETS[0]], outlet: OUTLETS[0], outletId: 'o1', loading: false,
       selectOutlet: vi.fn(), addOutlet: vi.fn(), refresh: vi.fn(), isMultiOutlet: false,
     });
     render(<MemoryRouter><Transfer /></MemoryRouter>);
-    expect(screen.getByText('Only one outlet')).toBeInTheDocument();
+
+    expect(screen.queryByText('Only one outlet')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /New transfer/i })).toBeEnabled();
+    expect(screen.getByText(/Stock leaving Main Kitchen/i)).toBeInTheDocument();
     spy.mockRestore();
   });
 });

@@ -7,7 +7,7 @@ import { useOutlet } from '../../context/OutletContext';
 import {
   useLines, ItemSelect, UnitSelect, AddLineButton, RemoveLineButton, LineEditorStyles,
 } from './lineEditor';
-import { ConfirmDelete, DetailDrawer, NameModal } from '../masters/masterDialogs';
+import { ConfirmDelete, DetailDrawer } from '../masters/masterDialogs';
 import { MastersStyles } from '../masters/mastersUi';
 
 /**
@@ -32,24 +32,23 @@ const STATUS_TONE = {
 };
 
 function TransferForm({
-  items, outlets, defaultFrom, sourceStock, loadSourceStock,
-  existing, onAddOutlet, onClose, onSave,
+  items, outlets, defaultFromName, sourceStock,
+  existing, onClose, onSave,
 }) {
   const { lines, addLine, updateLine, removeLine, setLines } = useLines();
   const [head, setHead] = useState(() => (existing ? {
-    fromOutletId: existing.from_outlet_id,
-    toOutletId: existing.to_outlet_id,
+    fromLabel: existing.from_label || '',
+    toLabel: existing.to_label || '',
     transferDate: existing.transfer_date,
     referenceNo: existing.reference_no || '',
     note: existing.note || '',
   } : {
-    fromOutletId: defaultFrom || '',
-    toOutletId: '',
+    fromLabel: defaultFromName || '',
+    toLabel: '',
     transferDate: today(),
     referenceNo: '',
     note: '',
   }));
-  const [addingOutlet, setAddingOutlet] = useState(null);
 
   React.useEffect(() => {
     if (!existing) return;
@@ -65,7 +64,6 @@ function TransferForm({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => { loadSourceStock(head.fromOutletId); }, [head.fromOutletId, loadSourceStock]);
 
   const itemById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
   const chosen = lines.map((l) => l.inventoryItemId).filter(Boolean);
@@ -90,41 +88,39 @@ function TransferForm({
         <div className="modal__body">
           {error && <div className="tf-error">{error}</div>}
 
-          {/* FROM -> TO reads as a route, because that is what a transfer is. */}
+          {/* FROM -> TO reads as a route, because that is what a transfer is.
+              Both are free text: the stock leaves the current outlet either
+              way, and a typed destination is a label rather than a place the
+              system holds a balance for. */}
           <div className="tf-route">
             <div className="tf-box">
               <div className="tf-box__label">From</div>
-              <select
+              <input
                 className="tf-box__select"
-                value={head.fromOutletId}
-                onChange={(e) => setHead({ ...head, fromOutletId: e.target.value })}
-              >
-                <option value="">Select outlet...</option>
-                {outlets.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-              </select>
-              <button type="button" className="tf-box__add" onClick={() => setAddingOutlet('from')}>
-                <Plus size={12} /> New outlet
-              </button>
+                value={head.fromLabel}
+                onChange={(e) => setHead({ ...head, fromLabel: e.target.value })}
+                placeholder="e.g. Main Kitchen"
+                list="tf-places"
+              />
             </div>
 
             <div className="tf-arrow"><ArrowRight size={20} /></div>
 
             <div className="tf-box">
               <div className="tf-box__label">To</div>
-              <select
+              <input
                 className="tf-box__select"
-                value={head.toOutletId}
-                onChange={(e) => setHead({ ...head, toOutletId: e.target.value })}
-              >
-                <option value="">Select outlet...</option>
-                {outlets
-                  .filter((o) => o.id !== head.fromOutletId)
-                  .map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-              </select>
-              <button type="button" className="tf-box__add" onClick={() => setAddingOutlet('to')}>
-                <Plus size={12} /> New outlet
-              </button>
+                value={head.toLabel}
+                onChange={(e) => setHead({ ...head, toLabel: e.target.value })}
+                placeholder="e.g. Andheri Branch"
+                list="tf-places"
+              />
             </div>
+
+            {/* Suggestions only — anything can be typed. */}
+            <datalist id="tf-places">
+              {outlets.map((o) => <option key={o.id} value={o.name} />)}
+            </datalist>
           </div>
 
           <div className="tf-head">
@@ -145,25 +141,6 @@ function TransferForm({
               />
             </div>
           </div>
-
-          {addingOutlet && (
-            <NameModal
-              title="Add outlet"
-              label="Outlet name"
-              extra={[{ key: 'code', label: 'Code', placeholder: 'Optional' }]}
-              onClose={() => setAddingOutlet(null)}
-              onSave={async (name, extras) => {
-                const res = await onAddOutlet({ name, code: extras.code });
-                if (res.success && res.id) {
-                  setHead((h) => ({
-                    ...h,
-                    [addingOutlet === 'from' ? 'fromOutletId' : 'toOutletId']: res.id,
-                  }));
-                }
-                return res;
-              }}
-            />
-          )}
 
           <div className="ln-table">
             <div className="ln-head">
@@ -369,10 +346,10 @@ function ReceiveModal({ transfer, outletName, onClose, onConfirm }) {
 export default function Transfer() {
   const {
     transfers, items, loading, error, sourceStock, outletId,
-    saveTransfer, sendTransfer, receiveTransfer, loadSourceStock, outletName,
+    saveTransfer, sendTransfer, receiveTransfer, outletName,
     updateTransfer, deleteTransfer,
   } = useTransferData();
-  const { outlets, isMultiOutlet, addOutlet } = useOutlet();
+  const { outlets, outlet } = useOutlet();
 
   const [showForm, setShowForm] = useState(false);
   const [receiving, setReceiving] = useState(null);
@@ -402,29 +379,14 @@ export default function Transfer() {
     flash(res.success ? 'Transfer sent — stock has left the source outlet.' : res.error, !res.success);
   };
 
-  if (!isMultiOutlet) {
-    return (
-      <div className="page">
-        <div className="card">
-          <div className="empty-state">
-            <span className="empty-state__mark"><ArrowLeftRight size={22} /></span>
-            <div className="empty-state__title">Only one outlet</div>
-            <div className="empty-state__sub">
-              Transfers move stock between branches. Add a second outlet in Settings and
-              this screen becomes available.
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="page">
       <div className="tr-top">
         <div>
           <h2 className="tr-title">Transfers</h2>
-          <div className="card__subtitle">Stock moving between your {outlets.length} outlets</div>
+          <div className="card__subtitle">
+            Stock leaving {outlet?.name || 'this outlet'} for somewhere else
+          </div>
         </div>
         <button className="btn btn--primary" onClick={() => setShowForm(true)}>
           <Plus size={15} /> New transfer
@@ -458,14 +420,17 @@ export default function Transfer() {
 
         {!loading && transfers.map((t) => {
           const lines = t.stock_transfer_items || [];
-          const canReceive = t.status === 'sent' && t.to_outlet_id === outletId;
+          // Only a real outlet can receive; a typed destination cannot.
+          const canReceive = t.status === 'sent'
+            && t.to_outlet_id && t.to_outlet_id === outletId;
 
           return (
             <React.Fragment key={t.id}>
               <div className="table-row tr-row">
                 <div className="tc-ref strong">{t.reference_no || '—'}</div>
                 <div className="tc-route muted">
-                  {outletName(t.from_outlet_id)} → {outletName(t.to_outlet_id)}
+                  {t.from_label || outletName(t.from_outlet_id)} →{' '}
+                  {t.to_label || outletName(t.to_outlet_id)}
                 </div>
                 <div className="tc-date muted">{dateLabel(t.transfer_date)}</div>
                 <div className="tc-items muted">{lines.length}</div>
@@ -510,10 +475,8 @@ export default function Transfer() {
         <TransferForm
           items={items}
           outlets={outlets}
-          defaultFrom={outletId}
+          defaultFromName={outlet?.name}
           sourceStock={sourceStock}
-          loadSourceStock={loadSourceStock}
-          onAddOutlet={addOutlet}
           onClose={() => setShowForm(false)}
           onSave={saveTransfer}
         />
@@ -523,11 +486,9 @@ export default function Transfer() {
         <TransferForm
           items={items}
           outlets={outlets}
-          defaultFrom={editing.from_outlet_id}
+          defaultFromName={outlet?.name}
           sourceStock={sourceStock}
-          loadSourceStock={loadSourceStock}
           existing={editing}
-          onAddOutlet={addOutlet}
           onClose={() => setEditing(null)}
           onSave={(draft) => updateTransfer(editing.id, draft)}
         />
@@ -536,7 +497,7 @@ export default function Transfer() {
       {viewing && (
         <DetailDrawer
           title={viewing.reference_no || 'Transfer'}
-          subtitle={`${outletName(viewing.from_outlet_id)} to ${outletName(viewing.to_outlet_id)}`}
+          subtitle={`${viewing.from_label || outletName(viewing.from_outlet_id)} to ${viewing.to_label || outletName(viewing.to_outlet_id)}`}
           meta={[
             { label: 'Date', value: dateLabel(viewing.transfer_date) },
             { label: 'Status', value: viewing.status },
@@ -561,7 +522,7 @@ export default function Transfer() {
       {deleting && (
         <ConfirmDelete
           title="Delete transfer"
-          subject={`${deleting.reference_no || 'Transfer'} — ${outletName(deleting.from_outlet_id)} to ${outletName(deleting.to_outlet_id)}`}
+          subject={`${deleting.reference_no || 'Transfer'} — ${deleting.from_label || outletName(deleting.from_outlet_id)} to ${deleting.to_label || outletName(deleting.to_outlet_id)}`}
           permanent
           busy={busy}
           error={delError}
@@ -569,7 +530,7 @@ export default function Transfer() {
             `All ${(deleting.stock_transfer_items || []).length} line${(deleting.stock_transfer_items || []).length === 1 ? '' : 's'} on this transfer are removed.`,
             deleting.status === 'draft'
               ? 'This transfer was never sent, so no stock changes.'
-              : 'Stock is returned to the sending outlet and taken back off the receiving one. Both balances are rebuilt from the ledger.',
+              : 'The stock this transfer sent out is returned to the sending outlet, and the balance is rebuilt from the ledger.',
             'The Stock Summary for its date will report differently afterwards.',
           ]}
           onCancel={() => setDeleting(null)}
