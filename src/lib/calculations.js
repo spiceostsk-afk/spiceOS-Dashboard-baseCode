@@ -31,7 +31,9 @@ export const FINISHED_ORDER_STATUSES = [ORDER_STATUS.completed, ORDER_STATUS.can
 export const TABLE_STATUS = {
   available: 'available',
   occupied: 'occupied',
-  billing: 'billing',
+  // The schema calls this state 'payment'. The code said 'billing', which
+  // matched nothing, so the billing badge silently counted zero for ever.
+  billing: 'payment',
   cleaning: 'cleaning',
 };
 

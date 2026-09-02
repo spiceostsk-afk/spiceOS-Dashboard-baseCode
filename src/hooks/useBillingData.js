@@ -505,10 +505,11 @@ export function useBillingData() {
             .eq('id', sessionState.session?.table_id);
           scheduleTableCleanup(sessionState.session?.table_id, TABLE_CLEANUP_DELAY_MS);
         } else {
-          await supabase
+          const { error: partialError } = await supabase
             .from('customer_sessions')
             .update({ session_status: SESSION_STATUS.billing })
             .eq('id', sessionId);
+          if (partialError) throw partialError;
         }
         setSessionState((prev) => ({ ...prev, isPaid: isFullyPaid }));
         alert(isFullyPaid ? 'Payment marked as successful!' : `Partial payment of ${FORMAT_CURRENCY.format(uiState.amountPaid || curTotal)} recorded.`);
@@ -979,7 +980,11 @@ export function useBillingData() {
     setLoadingAction(true);
     try {
       if (isOnline) {
-        await supabase.from('customer_sessions').update({ session_status: SESSION_STATUS.hold }).eq('id', sessionId);
+        const { error: holdError } = await supabase
+          .from('customer_sessions')
+          .update({ session_status: SESSION_STATUS.hold })
+          .eq('id', sessionId);
+        if (holdError) throw holdError;
         await supabase.from('restaurant_tables').update({ status: TABLE_STATUS.available }).eq('id', sessionState.session?.table_id);
       } else {
         if (sessionState.session) {
@@ -1061,10 +1066,24 @@ export function useBillingData() {
     setLoadingAction(true);
     try {
       if (isOnline) {
-        await supabase.from('customer_sessions').update({
+        const { error: voidError } = await supabase.from('customer_sessions').update({
           session_status: SESSION_STATUS.void,
           ended_at: new Date().toISOString(),
+          metadata: { ...(sessionState.session?.metadata || {}), voidReason: uiState.voidReason },
         }).eq('id', sessionId);
+        // Surface a refused write instead of carrying on as if it worked. The
+        // status used to be rejected by a check constraint, so voiding did
+        // nothing at all and the bill stayed on the floor.
+        if (voidError) throw voidError;
+
+        // Cancel the orders too, or they stay open and the dashboard keeps
+        // reporting the table as unbilled — the same way settling used to.
+        await supabase
+          .from('orders')
+          .update({ order_status: ORDER_STATUS.cancelled })
+          .eq('session_id', sessionId)
+          .neq('order_status', ORDER_STATUS.cancelled);
+
         await supabase.from('restaurant_tables').update({ status: TABLE_STATUS.available }).eq('id', sessionState.session?.table_id);
       } else {
         if (sessionState.session) {
@@ -1079,6 +1098,16 @@ export function useBillingData() {
             action: 'update', table: 'customer_sessions',
             data: { id: sessionId, session_status: SESSION_STATUS.void, ended_at: new Date().toISOString() },
           });
+          const voidedOrders = (await db.getAll('orders')) || [];
+          for (const o of voidedOrders.filter(
+            (x) => x.session_id === sessionId && x.order_status !== ORDER_STATUS.cancelled,
+          )) {
+            await db.put('orders', { ...o, order_status: ORDER_STATUS.cancelled });
+            await db.enqueueSync({
+              action: 'update', table: 'orders',
+              data: { id: o.id, order_status: ORDER_STATUS.cancelled },
+            });
+          }
           const tables = await db.getAll('tables');
           const targetTable = tables.find((t) => t.id === sessionState.session.table_id);
           if (targetTable) {
