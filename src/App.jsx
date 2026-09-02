@@ -31,6 +31,7 @@ import Transfer from './views/inventory/Transfer';
 import Vendors from './views/inventory/Vendors';
 import StockSummary from './views/inventory/StockSummary';
 import OpeningStock from './views/inventory/OpeningStock';
+import SalesEntry from './views/inventory/SalesEntry';
 import UnitMaster from './views/masters/UnitMaster';
 import CategoryMaster from './views/masters/CategoryMaster';
 
@@ -74,6 +75,7 @@ function AppShell() {
               <Route path="/menu" element={<MenuCatalog />} />
               <Route path="/inventory" element={<RawMaterials />} />
               <Route path="/inventory/available-stock" element={<AvailableStock />} />
+              <Route path="/inventory/sales-entry" element={<SalesEntry />} />
               <Route path="/inventory/opening-stock" element={<OpeningStock />} />
               <Route path="/inventory/closing-stock" element={<ClosingStock />} />
               <Route path="/inventory/purchase" element={<Purchase />} />

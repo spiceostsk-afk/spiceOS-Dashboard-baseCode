@@ -46,6 +46,7 @@ const NAV_ITEMS = [
       // and the two are the same number a day apart.
       { to: '/inventory/opening-stock', label: 'Opening Stock' },
       { to: '/inventory/closing-stock', label: 'Closing Stock' },
+      { to: '/inventory/sales-entry', label: 'Sales Entry' },
       { to: '/inventory/purchase', label: 'Purchase' },
       { to: '/inventory/wastage', label: 'Wastage' },
       { to: '/inventory/transfer', label: 'Transfer' },
