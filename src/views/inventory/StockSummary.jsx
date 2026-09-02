@@ -1,5 +1,7 @@
-import React from 'react';
-import { Download, Search, RefreshCw, BarChart3 } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import {
+  Download, Search, RefreshCw, BarChart3, ChevronUp, ChevronDown,
+} from 'lucide-react';
 import { useStockSummary } from '../../hooks/useStockSummary';
 import { useOutlet } from '../../context/OutletContext';
 
@@ -32,6 +34,65 @@ export default function StockSummary() {
     setFilter, search, clear, exportCsv,
   } = useStockSummary();
   const { outlets, outlet, isMultiOutlet } = useOutlet();
+
+  /**
+   * Sorting.
+   *
+   * Every column is worth ranking by — the point of this report is finding the
+   * biggest consumer, the worst variance, the heaviest wastage. First click
+   * sorts largest first, because that is what someone is looking for; a second
+   * click flips it.
+   *
+   * Nulls always sink. "Not counted" is the absence of a number, not a small
+   * one, and letting it sort as zero would bury the real values.
+   */
+  const [sort, setSort] = useState({ key: 'item_name', dir: 'asc' });
+
+  const sortBy = (key) => setSort((prev) => (
+    prev.key === key
+      ? { key, dir: prev.dir === 'desc' ? 'asc' : 'desc' }
+      : { key, dir: key === 'item_name' || key === 'category_name' ? 'asc' : 'desc' }
+  ));
+
+  const sorted = useMemo(() => {
+    const { key, dir } = sort;
+    const factor = dir === 'asc' ? 1 : -1;
+    return [...rows].sort((a, b) => {
+      const av = a[key];
+      const bv = b[key];
+
+      if (av === null || av === undefined) return 1;
+      if (bv === null || bv === undefined) return -1;
+
+      if (typeof av === 'string' && Number.isNaN(Number(av))) {
+        return av.localeCompare(bv) * factor;
+      }
+      return ((Number(av) || 0) - (Number(bv) || 0)) * factor;
+    });
+  }, [rows, sort]);
+
+  /** A header that says how it is sorted and can be clicked to change it. */
+  const Th = ({ col, label, sub, className = '' }) => {
+    const on = sort.key === col;
+    return (
+      <th
+        className={`${className} ss-th ${on ? 'on' : ''}`}
+        onClick={() => sortBy(col)}
+        title={`Sort by ${label}`}
+      >
+        <span className="ss-th__in">
+          <span>
+            {label}{sub && <><br /><span>{sub}</span></>}
+          </span>
+          <span className="ss-th__arrow">
+            {on
+              ? (sort.dir === 'desc' ? <ChevronDown size={13} /> : <ChevronUp size={13} />)
+              : <ChevronDown size={13} />}
+          </span>
+        </span>
+      </th>
+    );
+  };
 
   const cards = [
     { label: 'Items', value: totals.items },
@@ -158,18 +219,18 @@ export default function StockSummary() {
           <table className="ss-table">
             <thead>
               <tr>
-                <th className="sticky-col">Raw Material</th>
-                <th>Opening<br /><span>Stock</span></th>
-                <th>Purchase<br /><span>Stock</span></th>
-                <th className="grp">Total<br /><span>Stock</span></th>
-                <th>Consumption</th>
-                <th>Transfer<br /><span>In</span></th>
-                <th>Transfer<br /><span>Out</span></th>
-                <th>Wastage</th>
-                <th className="grp">Ideal<br /><span>Stock</span></th>
-                <th className="grp">Physical<br /><span>Stock</span></th>
-                <th>Variance</th>
-                <th className="ss-remark">Remark</th>
+                <Th col="item_name" label="Raw Material" className="sticky-col" />
+                <Th col="opening_stock" label="Opening" sub="Stock" />
+                <Th col="purchase_stock" label="Purchase" sub="Stock" />
+                <Th col="total_stock" label="Total" sub="Stock" className="grp" />
+                <Th col="consumption" label="Consumption" />
+                <Th col="transfer_in" label="Transfer" sub="In" />
+                <Th col="transfer_out" label="Transfer" sub="Out" />
+                <Th col="wastage" label="Wastage" />
+                <Th col="ideal_stock" label="Ideal" sub="Stock" className="grp" />
+                <Th col="physical_stock" label="Physical" sub="Stock" className="grp" />
+                <Th col="variance" label="Variance" />
+                <Th col="remark" label="Remark" className="ss-remark" />
               </tr>
             </thead>
             <tbody>
@@ -190,7 +251,7 @@ export default function StockSummary() {
                 </tr>
               )}
 
-              {!loading && rows.map((r) => {
+              {!loading && sorted.map((r) => {
                 const variance = r.variance === null ? null : Number(r.variance);
                 return (
                   <tr key={r.inventory_item_id}>
@@ -267,6 +328,18 @@ export default function StockSummary() {
           border-bottom: 1px solid var(--color-border);
         }
         .ss-table th span { font-weight: 600; opacity: 0.75; }
+
+        .ss-th { cursor: pointer; user-select: none; }
+        .ss-th:hover { color: var(--color-text); }
+        .ss-th.on { color: var(--color-info, #2563EB); }
+        .ss-th__in {
+          display: inline-flex; align-items: center; gap: 5px;
+          justify-content: flex-end; width: 100%;
+        }
+        .ss-th.sticky-col .ss-th__in { justify-content: flex-start; }
+        .ss-th__arrow { display: flex; opacity: 0; flex-shrink: 0; }
+        .ss-th:hover .ss-th__arrow { opacity: 0.55; }
+        .ss-th.on .ss-th__arrow { opacity: 1; }
         .ss-table td {
           padding: 12px 14px; text-align: right; white-space: nowrap;
           border-bottom: 1px solid var(--color-border-soft);

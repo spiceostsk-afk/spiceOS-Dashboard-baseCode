@@ -1,5 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { Calendar, Search, Package, Lock, Check, ArrowRight } from 'lucide-react';
+import {
+  Calendar, Search, Package, Check, ArrowRight, Pencil, Download, X, Lock,
+} from 'lucide-react';
 import { useOpeningStock } from '../../hooks/useMastersData';
 import { useOutlet } from '../../context/OutletContext';
 import { CategoryStrip, MastersStyles } from '../masters/mastersUi';
@@ -13,10 +15,11 @@ import { CategoryStrip, MastersStyles } from '../masters/mastersUi';
  * and cannot drift apart — there is nothing to reconcile because there is only
  * one number.
  *
- * A quantity can only be typed where nothing came before it: a brand new
- * material, or the day you started using the system. Everything else is locked,
- * because overwriting a derived opening would break the chain from one day to
- * the next and make the books stop tying together.
+ * A material with nothing before it gets a plain opening balance. One that
+ * already has history is CORRECTED instead: the difference is posted as an
+ * adjustment at the end of the previous day, so this date's opening and the
+ * previous date's closing both land on the new figure and stay equal. The two
+ * are one number, so they can only ever move together.
  */
 
 const fmt = (n) => {
@@ -36,13 +39,16 @@ const previousDay = (iso) => {
 };
 
 export default function OpeningStock() {
-  const { rows, date, setDate, loading, error, setOpening } = useOpeningStock();
+  const {
+    rows, date, setDate, loading, error, setOpening, correctOpening, exportCsv,
+  } = useOpeningStock();
   const { outlet, isMultiOutlet } = useOutlet();
 
   const [search, setSearch] = useState('');
   const [tab, setTab] = useState('all');
   const [drafts, setDrafts] = useState({});
   const [saving, setSaving] = useState(null);
+  const [editing, setEditing] = useState(null);   // itemId being corrected
   const [notice, setNotice] = useState(null);
 
   const flash = (msg, tone = 'ok') => {
@@ -71,17 +77,37 @@ export default function OpeningStock() {
 
   const openable = rows.filter((r) => !r.hasHistory).length;
 
+  /**
+   * A material with no history gets a plain opening balance. One that already
+   * has history gets a correction instead, which the database posts at the end
+   * of the previous day so the two days keep agreeing.
+   */
   const save = async (row) => {
     const qty = drafts[row.itemId];
     if (qty === '' || qty === undefined) return;
     setSaving(row.itemId);
-    const res = await setOpening(row.itemId, qty);
+
+    const res = row.hasHistory
+      ? await correctOpening(row.itemId, qty)
+      : await setOpening(row.itemId, qty);
+
     setSaving(null);
-    if (res.success) {
-      setDrafts((p) => { const n = { ...p }; delete n[row.itemId]; return n; });
-      flash(`Opening stock set for ${row.name}.`);
+    if (!res.success) { flash(res.error, 'bad'); return; }
+
+    setDrafts((p) => { const n = { ...p }; delete n[row.itemId]; return n; });
+    setEditing(null);
+
+    const r = res.result;
+    if (r && r.changed === false) {
+      flash(`${row.name} already opens at that figure — nothing changed.`);
+    } else if (r && r.changed) {
+      flash(
+        `${row.name} now opens at ${r.now} (was ${r.was}). `
+        + `A ${r.adjustment > 0 ? '+' : ''}${r.adjustment} correction was posted to the previous day, `
+        + 'so that day now closes at the same figure.',
+      );
     } else {
-      flash(res.error, 'bad');
+      flash(`Opening stock set for ${row.name}.`);
     }
   };
 
@@ -95,6 +121,9 @@ export default function OpeningStock() {
             {isMultiOutlet && outlet ? ` · ${outlet.name}` : ''}
           </div>
         </div>
+        <button className="btn btn--ghost" onClick={exportCsv} disabled={rows.length === 0}>
+          <Download size={15} /> Export CSV
+        </button>
         <label className="ghost-pill">
           <Calendar size={14} />
           <input
@@ -117,8 +146,9 @@ export default function OpeningStock() {
         </div>
         <p>
           These are the same number. Opening stock is everything that happened before
-          this date, so it always equals the previous day&apos;s closing — nothing is
-          stored separately and the two can never disagree.
+          this date, so it always equals the previous day&apos;s closing. Editing one
+          moves both: a correction is posted to the previous day, so they can never
+          disagree.
           {openable > 0 && (
             <>
               {' '}
@@ -187,8 +217,14 @@ export default function OpeningStock() {
               )}
             </div>
             <div className="os-set">
-              {r.hasHistory ? (
-                <span className="muted os-locked">Derived</span>
+              {r.hasHistory && editing !== r.itemId ? (
+                <button
+                  className="btn btn--ghost btn--sm"
+                  onClick={() => { setEditing(r.itemId); setDrafts({ ...drafts, [r.itemId]: String(r.opening) }); }}
+                  title="Correct this opening"
+                >
+                  <Pencil size={13} /> Edit
+                </button>
               ) : (
                 <div className="os-entry">
                   <input
@@ -208,6 +244,15 @@ export default function OpeningStock() {
                   >
                     {saving === r.itemId ? '…' : <Check size={14} />}
                   </button>
+                  {r.hasHistory && (
+                    <button
+                      className="step"
+                      onClick={() => { setEditing(null); setDrafts((p2) => { const n = { ...p2 }; delete n[r.itemId]; return n; }); }}
+                      title="Cancel"
+                    >
+                      <X size={13} />
+                    </button>
+                  )}
                 </div>
               )}
             </div>

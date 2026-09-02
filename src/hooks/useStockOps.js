@@ -196,7 +196,7 @@ export function useTransferData() {
         supabase
           .from('stock_transfers')
           .select(`
-            id, transfer_date, reference_no, status, note,
+            id, transfer_date, reference_no, status, note, direction,
             from_outlet_id, to_outlet_id, from_label, to_label,
             sent_at, received_at,
             stock_transfer_items ( id, inventory_item_id, qty_base,
@@ -253,7 +253,11 @@ export function useTransferData() {
     if (lines.length === 0) {
       return { success: false, error: 'Add at least one item with a quantity.' };
     }
-    if (!(draft.toLabel || '').trim()) {
+    if (draft.direction === 'in') {
+      if (!(draft.fromLabel || '').trim()) {
+        return { success: false, error: 'Say where the stock came from.' };
+      }
+    } else if (!(draft.toLabel || '').trim()) {
       return { success: false, error: 'Say where the stock is going.' };
     }
 
@@ -265,8 +269,9 @@ export function useTransferData() {
         .insert([{
           from_outlet_id: outletId,
           to_outlet_id: null,
+          direction: draft.direction === 'in' ? 'in' : 'out',
           from_label: (draft.fromLabel || '').trim() || null,
-          to_label: (draft.toLabel || '').trim(),
+          to_label: (draft.toLabel || '').trim() || null,
           transfer_date: draft.transferDate,
           reference_no: (draft.referenceNo || '').trim() || null,
           note: (draft.note || '').trim() || null,
@@ -346,7 +351,11 @@ export function useTransferData() {
   const updateTransfer = useCallback(async (id, draft) => {
     const lines = (draft.lines || []).filter((l) => l.inventoryItemId && Number(l.qty) > 0);
     if (lines.length === 0) return { success: false, error: 'A transfer needs at least one item.' };
-    if (!(draft.toLabel || '').trim()) {
+    if (draft.direction === 'in') {
+      if (!(draft.fromLabel || '').trim()) {
+        return { success: false, error: 'Say where the stock came from.' };
+      }
+    } else if (!(draft.toLabel || '').trim()) {
       return { success: false, error: 'Say where the stock is going.' };
     }
 
@@ -355,8 +364,9 @@ export function useTransferData() {
       const { error: headError } = await supabase
         .from('stock_transfers')
         .update({
+          direction: draft.direction === 'in' ? 'in' : 'out',
           from_label: (draft.fromLabel || '').trim() || null,
-          to_label: (draft.toLabel || '').trim(),
+          to_label: (draft.toLabel || '').trim() || null,
           transfer_date: draft.transferDate,
           reference_no: (draft.referenceNo || '').trim() || null,
           note: (draft.note || '').trim() || null,

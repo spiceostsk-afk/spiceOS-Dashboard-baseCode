@@ -218,5 +218,52 @@ export function useOpeningStock() {
     return { success: true };
   }, [outletId, date, refresh]);
 
-  return { rows, date, setDate, loading, error, refresh, setOpening };
+  /**
+   * Correct an opening that already has history behind it.
+   *
+   * The database posts the difference as an adjustment dated to the end of the
+   * previous day, so this date's opening AND the previous date's closing both
+   * land on the new figure. They are the same number, so they move together —
+   * the alternative would be letting one day close at 40 while the next opens
+   * at 50.
+   */
+  const correctOpening = useCallback(async (itemId, qty) => {
+    const { data, error: rpcError } = await supabase.rpc('adjust_opening_stock', {
+      p_outlet_id: outletId,
+      p_item_id: itemId,
+      p_qty: Number(qty),
+      p_on: date,
+    });
+    if (rpcError) return { success: false, error: rpcError.message };
+    await refresh();
+    return { success: true, result: data };
+  }, [outletId, date, refresh]);
+
+  /** The rows as they appear on screen, for Excel. */
+  const exportCsv = useCallback(() => {
+    const esc = (v) => {
+      const t = v === null || v === undefined ? '' : String(v);
+      return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+    };
+    const head = ['Raw Material', 'Category', 'Opening Stock', 'Unit',
+                  'Source', 'Last Movement'];
+    const body = rows.map((r) => [
+      r.name, r.category, r.opening, r.unit,
+      r.hasHistory ? 'Carried from previous activity' : 'No earlier activity',
+      r.lastMovement || '',
+    ].map(esc).join(','));
+
+    const url = URL.createObjectURL(
+      new Blob([[head.join(','), ...body].join('\n')], { type: 'text/csv;charset=utf-8;' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `opening-stock-${date}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [rows, date]);
+
+  return {
+    rows, date, setDate, loading, error, refresh,
+    setOpening, correctOpening, exportCsv,
+  };
 }

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Eye, Pencil, Trash2, ClipboardList } from 'lucide-react';
+import { Eye, Pencil, Trash2, ClipboardList, Download } from 'lucide-react';
 import { useStockCountHistoryDetail, useStockDocuments } from '../../hooks/useStockDocuments';
 import { ConfirmDelete, DetailDrawer } from '../masters/masterDialogs';
 import { MastersStyles } from '../masters/mastersUi';
@@ -35,6 +35,40 @@ export default function ClosingStockHistory({ type = 'closing', onEdit }) {
   const [delError, setDelError] = useState('');
   const [notice, setNotice] = useState(null);
 
+  /**
+   * One row per counted line across every posted sheet, so the file can be
+   * pivoted in Excel. A file of sheet totals would hide exactly the detail
+   * someone opens a spreadsheet to look at.
+   */
+  const exportCsv = () => {
+    const esc = (v) => {
+      const t = v === null || v === undefined ? '' : String(v);
+      return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+    };
+    const head = ['Date', 'Status', 'Cycle', 'Raw Material', 'Unit',
+                  'Ideal', 'Physical', 'Variance', 'Remark'];
+    const body = [];
+    counts.forEach((c) => {
+      if (c.lines.length === 0) {
+        body.push([c.date, c.status, c.cycle, '(nothing counted)', '', '', '', '', '']
+          .map(esc).join(','));
+        return;
+      }
+      c.lines.forEach((l) => {
+        body.push([c.date, c.status, c.cycle, l.name, l.unit,
+                   l.ideal, l.physical, l.variance, l.remark].map(esc).join(','));
+      });
+    });
+
+    const url = URL.createObjectURL(
+      new Blob([[head.join(','), ...body].join('\n')], { type: 'text/csv;charset=utf-8;' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${type}-stock-history-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const flash = (msg, tone = 'ok') => {
     setNotice({ msg, tone });
     setTimeout(() => setNotice(null), 4200);
@@ -62,6 +96,15 @@ export default function ClosingStockHistory({ type = 'closing', onEdit }) {
     <div className="csh">
       {notice && <div className={`mst-note ${notice.tone === 'bad' ? 'bad' : ''}`}>{notice.msg}</div>}
       {error && <div className="mst-note bad">{error}</div>}
+
+      <div className="csh-bar">
+        <span className="card__subtitle">
+          {counts.length} sheet{counts.length === 1 ? '' : 's'} on record
+        </span>
+        <button className="btn btn--ghost" onClick={exportCsv} disabled={counts.length === 0}>
+          <Download size={15} /> Export CSV
+        </button>
+      </div>
 
       <div className="table-card table-card--padded">
         <div className="table-head csh-head">
@@ -187,6 +230,7 @@ export default function ClosingStockHistory({ type = 'closing', onEdit }) {
       <MastersStyles />
       <style>{`
         .csh { display: flex; flex-direction: column; gap: 14px; }
+        .csh-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
         .csh-head, .csh-row { margin: 0 -24px; padding: 0 24px; }
         .csh-date   { width: 140px; }
         .csh-cycle  { width: 90px; text-transform: capitalize; }

@@ -37,18 +37,28 @@ function TransferForm({
 }) {
   const { lines, addLine, updateLine, removeLine, setLines } = useLines();
   const [head, setHead] = useState(() => (existing ? {
+    direction: existing.direction || 'out',
     fromLabel: existing.from_label || '',
     toLabel: existing.to_label || '',
     transferDate: existing.transfer_date,
     referenceNo: existing.reference_no || '',
     note: existing.note || '',
   } : {
+    direction: 'out',
     fromLabel: defaultFromName || '',
     toLabel: '',
     transferDate: today(),
     referenceNo: '',
     note: '',
   }));
+
+  // Our own outlet sits on whichever side we are: the destination when stock
+  // comes in, the source when it goes out. Only the other end is typed.
+  React.useEffect(() => {
+    setHead((h) => (h.direction === 'in'
+      ? { ...h, toLabel: defaultFromName || '' }
+      : { ...h, fromLabel: defaultFromName || '' }));
+  }, [defaultFromName]);
 
   React.useEffect(() => {
     if (!existing) return;
@@ -88,10 +98,32 @@ function TransferForm({
         <div className="modal__body">
           {error && <div className="tf-error">{error}</div>}
 
-          {/* FROM -> TO reads as a route, because that is what a transfer is.
-              Both are free text: the stock leaves the current outlet either
-              way, and a typed destination is a label rather than a place the
-              system holds a balance for. */}
+          {/* Which way the stock moved. Out deducts from this outlet, in adds
+              to it; the other end is a typed label either way, because it is
+              not a place the system holds a balance for. */}
+          <div className="segmented tf-dir">
+            <button
+              type="button"
+              className={head.direction === 'out' ? 'on' : ''}
+              onClick={() => setHead({ ...head, direction: 'out' })}
+            >
+              Transfer Out
+            </button>
+            <button
+              type="button"
+              className={head.direction === 'in' ? 'on' : ''}
+              onClick={() => setHead({ ...head, direction: 'in' })}
+            >
+              Transfer In
+            </button>
+          </div>
+
+          <div className="tf-hint">
+            {head.direction === 'in'
+              ? `Stock arrives here and is ADDED to ${defaultFromName || 'this outlet'}.`
+              : `Stock leaves ${defaultFromName || 'this outlet'} and is DEDUCTED from it.`}
+          </div>
+
           <div className="tf-route">
             <div className="tf-box">
               <div className="tf-box__label">From</div>
@@ -99,8 +131,9 @@ function TransferForm({
                 className="tf-box__select"
                 value={head.fromLabel}
                 onChange={(e) => setHead({ ...head, fromLabel: e.target.value })}
-                placeholder="e.g. Main Kitchen"
+                placeholder={head.direction === 'in' ? 'e.g. Central Kitchen' : 'e.g. Main Kitchen'}
                 list="tf-places"
+                readOnly={head.direction === 'out'}
               />
             </div>
 
@@ -112,8 +145,9 @@ function TransferForm({
                 className="tf-box__select"
                 value={head.toLabel}
                 onChange={(e) => setHead({ ...head, toLabel: e.target.value })}
-                placeholder="e.g. Andheri Branch"
+                placeholder={head.direction === 'in' ? 'e.g. Main Kitchen' : 'e.g. Andheri Branch'}
                 list="tf-places"
+                readOnly={head.direction === 'in'}
               />
             </div>
 
@@ -254,6 +288,11 @@ function TransferForm({
             color: var(--color-primary);
           }
           .tf-arrow { color: var(--color-text-muted); display: flex; padding-top: 30px; }
+          .tf-dir { align-self: flex-start; }
+          .tf-hint { font-size: 12.5px; color: var(--color-text-muted); margin-top: -4px; }
+          .tf-box__select[readonly] {
+            background: var(--color-well); color: var(--color-text-muted);
+          }
           @media (max-width: 720px) {
             .tf-route { grid-template-columns: 1fr; }
             .tf-arrow { transform: rotate(90deg); padding: 0; justify-content: center; }
@@ -398,6 +437,7 @@ export default function Transfer() {
 
       <div className="table-card table-card--padded">
         <div className="table-head">
+          <div className="tc-dir">Direction</div>
           <div className="tc-ref">Reference</div>
           <div className="tc-route">Route</div>
           <div className="tc-date">Date</div>
@@ -427,6 +467,11 @@ export default function Transfer() {
           return (
             <React.Fragment key={t.id}>
               <div className="table-row tr-row">
+                <div className="tc-dir">
+                  <span className={`pill pill--sm ${t.direction === 'in' ? 'tone-green' : 'tone-amber'}`}>
+                    {t.direction === 'in' ? 'In' : 'Out'}
+                  </span>
+                </div>
                 <div className="tc-ref strong">{t.reference_no || '—'}</div>
                 <div className="tc-route muted">
                   {t.from_label || outletName(t.from_outlet_id)} →{' '}
@@ -558,7 +603,8 @@ export default function Transfer() {
         .tr-notice.bad { background: var(--color-danger-soft); color: var(--color-danger); }
 
         .tr-row { margin: 0 -24px; padding: 0 24px; }
-        .tc-ref { width: 130px; }
+        .tc-dir { width: 90px; }
+        .tc-ref { width: 120px; }
         .tc-route { flex: 1.4; min-width: 0; }
         .tc-date { width: 120px; }
         .tc-items { width: 60px; text-align: center; }
