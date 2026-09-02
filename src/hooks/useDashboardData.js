@@ -7,9 +7,18 @@ TODAY_START.setHours(0, 0, 0, 0);
 const STATUS_FILTERS = {
   active: 'active',
   occupied: 'occupied',
-  delivered: 'delivered',
   cancelled: 'cancelled',
 };
+
+/**
+ * An order is finished when it is completed or cancelled.
+ *
+ * This used to test for 'delivered', which the schema does not allow, so it
+ * matched nothing and every paid order stayed "live". Together with settling
+ * not closing its orders, a table that had been paid and cleared still
+ * reported itself open and unbilled on the dashboard, for ever.
+ */
+const FINISHED_ORDER_STATUSES = ['completed', 'cancelled'];
 
 function parseOrders(orders) {
   if (!orders || orders.length === 0) return { totalSales: 0, netSales: 0, orderCount: 0 };
@@ -99,10 +108,7 @@ function buildRecentOrders(orders, limit = 5) {
 
 function buildLiveOrders(orders) {
   if (!orders || orders.length === 0) return [];
-  return orders.filter((o) => {
-    const s = o.order_status || '';
-    return s !== STATUS_FILTERS.delivered && s !== STATUS_FILTERS.cancelled;
-  });
+  return orders.filter((o) => !FINISHED_ORDER_STATUSES.includes(o.order_status || ''));
 }
 
 const STALE_ORDER_MINUTES = 45;

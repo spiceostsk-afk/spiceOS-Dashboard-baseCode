@@ -5,7 +5,7 @@ import { useOfflineSync } from './useOfflineSync';
 import * as db from '../lib/db';
 import {
   TAX_RATE, CGST_RATE, SGST_RATE, TABLE_CLEANUP_DELAY_MS,
-  SESSION_STATUS, TABLE_STATUS,
+  SESSION_STATUS, TABLE_STATUS, ORDER_STATUS,
   calcSubtotal, calcDiscountAmount, calcServiceCharge,
   calcTax, calcCgst, calcSgst, calcTotal,
   FORMAT_CURRENCY,
@@ -490,6 +490,15 @@ export function useBillingData() {
             .from('customer_sessions')
             .update({ session_status: SESSION_STATUS.completed, ended_at: new Date().toISOString() })
             .eq('id', sessionId);
+          // Close the orders as well. Settling used to end the session and
+          // leave its orders at 'preparing' for ever, so the dashboard went on
+          // counting them as live and reported the table as open and unbilled
+          // long after it had been paid and cleared.
+          await supabase
+            .from('orders')
+            .update({ order_status: ORDER_STATUS.completed })
+            .eq('session_id', sessionId)
+            .neq('order_status', ORDER_STATUS.cancelled);
           await supabase
             .from('restaurant_tables')
             .update({ status: TABLE_STATUS.cleaning })
@@ -537,6 +546,17 @@ export function useBillingData() {
             },
           });
           if (isFullyPaid) {
+            // The same closing of the orders as the online path, queued to sync.
+            const cachedOrders = (await db.getAll('orders')) || [];
+            for (const o of cachedOrders.filter(
+              (x) => x.session_id === sessionId && x.order_status !== ORDER_STATUS.cancelled,
+            )) {
+              await db.put('orders', { ...o, order_status: ORDER_STATUS.completed });
+              await db.enqueueSync({
+                action: 'update', table: 'orders',
+                data: { id: o.id, order_status: ORDER_STATUS.completed },
+              });
+            }
             const tables = await db.getAll('tables');
             const targetTable = tables.find((t) => t.id === sessionState.session.table_id);
             if (targetTable) {

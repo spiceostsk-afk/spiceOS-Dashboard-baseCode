@@ -11,6 +11,23 @@ export const SESSION_STATUS = {
   void: 'void',
 };
 
+/**
+ * The order statuses the schema's check constraint allows.
+ *
+ * Note there is no 'delivered'. The dashboard used to filter live orders on
+ * that value, so it matched nothing and every order stayed "live" for ever.
+ */
+export const ORDER_STATUS = {
+  pending: 'pending',
+  preparing: 'preparing',
+  served: 'served',
+  completed: 'completed',
+  cancelled: 'cancelled',
+};
+
+/** Terminal states: an order here is done and no longer on the floor. */
+export const FINISHED_ORDER_STATUSES = [ORDER_STATUS.completed, ORDER_STATUS.cancelled];
+
 export const TABLE_STATUS = {
   available: 'available',
   occupied: 'occupied',
