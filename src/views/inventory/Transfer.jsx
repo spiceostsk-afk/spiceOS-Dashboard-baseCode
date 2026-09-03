@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { useTransferData } from '../../hooks/useStockOps';
 import { useOutlet } from '../../context/OutletContext';
+import { useTransferLocations } from '../../hooks/useMastersData';
 import {
   useLines, ItemSelect, UnitSelect, AddLineButton, RemoveLineButton, LineEditorStyles,
 } from './lineEditor';
@@ -35,6 +36,10 @@ function TransferForm({
   items, outlets, defaultFromName, sourceStock,
   existing, onClose, onSave,
 }) {
+  const { locations, saveLocation } = useTransferLocations();
+  const [addingPlace, setAddingPlace] = useState(false);
+  const [newPlace, setNewPlace] = useState('');
+  const [placeError, setPlaceError] = useState('');
   const { lines, addLine, updateLine, removeLine, setLines } = useLines();
   const [head, setHead] = useState(() => (existing ? {
     direction: existing.direction || 'out',
@@ -127,35 +132,94 @@ function TransferForm({
           <div className="tf-route">
             <div className="tf-box">
               <div className="tf-box__label">From</div>
-              <input
-                className="tf-box__select"
-                value={head.fromLabel}
-                onChange={(e) => setHead({ ...head, fromLabel: e.target.value })}
-                placeholder={head.direction === 'in' ? 'e.g. Central Kitchen' : 'e.g. Main Kitchen'}
-                list="tf-places"
-                readOnly={head.direction === 'out'}
-              />
+              {head.direction === 'out' ? (
+                <input className="tf-box__select" value={head.fromLabel} readOnly />
+              ) : (
+                <select
+                  className="tf-box__select"
+                  value={head.fromLabel}
+                  onChange={(e) => setHead({ ...head, fromLabel: e.target.value })}
+                >
+                  <option value="">Select location…</option>
+                  {locations.filter((l) => l.is_active).map((l) => (
+                    <option key={l.id} value={l.name}>{l.name}</option>
+                  ))}
+                  {/* A place recorded before the list existed still shows,
+                      rather than silently emptying an old transfer. */}
+                  {head.fromLabel && !locations.some((l) => l.name === head.fromLabel) && (
+                    <option value={head.fromLabel}>{head.fromLabel}</option>
+                  )}
+                </select>
+              )}
             </div>
 
             <div className="tf-arrow"><ArrowRight size={20} /></div>
 
             <div className="tf-box">
               <div className="tf-box__label">To</div>
-              <input
-                className="tf-box__select"
-                value={head.toLabel}
-                onChange={(e) => setHead({ ...head, toLabel: e.target.value })}
-                placeholder={head.direction === 'in' ? 'e.g. Main Kitchen' : 'e.g. Andheri Branch'}
-                list="tf-places"
-                readOnly={head.direction === 'in'}
-              />
+              {head.direction === 'in' ? (
+                <input className="tf-box__select" value={head.toLabel} readOnly />
+              ) : (
+                <select
+                  className="tf-box__select"
+                  value={head.toLabel}
+                  onChange={(e) => setHead({ ...head, toLabel: e.target.value })}
+                >
+                  <option value="">Select location…</option>
+                  {locations.filter((l) => l.is_active).map((l) => (
+                    <option key={l.id} value={l.name}>{l.name}</option>
+                  ))}
+                  {head.toLabel && !locations.some((l) => l.name === head.toLabel) && (
+                    <option value={head.toLabel}>{head.toLabel}</option>
+                  )}
+                </select>
+              )}
             </div>
 
-            {/* Suggestions only — anything can be typed. */}
-            <datalist id="tf-places">
-              {outlets.map((o) => <option key={o.id} value={o.name} />)}
-            </datalist>
+            <button
+              type="button"
+              className="tf-addplace"
+              onClick={() => { setPlaceError(''); setAddingPlace(true); }}
+            >
+              <Plus size={12} /> New location
+            </button>
           </div>
+
+          {addingPlace && (
+            <div className="tf-newplace">
+              <input
+                value={newPlace}
+                onChange={(e) => setNewPlace(e.target.value)}
+                placeholder="e.g. Yashoda Nagar"
+                autoFocus
+              />
+              <button
+                type="button"
+                className="btn btn--primary btn--sm"
+                onClick={async () => {
+                  const res = await saveLocation(newPlace);
+                  if (!res.success) { setPlaceError(res.error); return; }
+                  // Drop it straight into whichever side is the other end.
+                  setHead((h) => ({
+                    ...h,
+                    [h.direction === 'in' ? 'fromLabel' : 'toLabel']: res.name,
+                  }));
+                  setNewPlace('');
+                  setAddingPlace(false);
+                }}
+              >
+                Add
+              </button>
+              <button
+                type="button"
+                className="btn btn--ghost btn--sm"
+                onClick={() => { setAddingPlace(false); setNewPlace(''); }}
+              >
+                Cancel
+              </button>
+              {placeError && <span className="tf-placeerr">{placeError}</span>}
+            </div>
+          )}
 
           <div className="tf-head">
             <div className="field">
@@ -288,6 +352,19 @@ function TransferForm({
             color: var(--color-primary);
           }
           .tf-arrow { color: var(--color-text-muted); display: flex; padding-top: 30px; }
+          .tf-addplace {
+            grid-column: 1 / -1; justify-self: start;
+            display: inline-flex; align-items: center; gap: 4px;
+            border: none; background: none; padding: 0; cursor: pointer;
+            font: inherit; font-size: 11.5px; font-weight: 600; color: var(--color-primary);
+          }
+          .tf-newplace { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+          .tf-newplace input {
+            flex: 1; min-width: 180px; height: 36px; padding: 0 10px;
+            border: 1px solid var(--color-border); border-radius: var(--radius-md);
+            font: inherit;
+          }
+          .tf-placeerr { font-size: 12px; color: var(--color-danger); }
           .tf-dir { align-self: flex-start; }
           .tf-hint { font-size: 12.5px; color: var(--color-text-muted); margin-top: -4px; }
           .tf-box__select[readonly] {

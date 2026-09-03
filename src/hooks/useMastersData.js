@@ -267,3 +267,70 @@ export function useOpeningStock() {
     setOpening, correctOpening, exportCsv,
   };
 }
+
+/* --------------------------------------------------- Transfer locations */
+/**
+ * Where stock goes when it leaves, and where it comes from when it arrives.
+ *
+ * These are the restaurant's own units — a factory, another branch — not
+ * suppliers. Typing them freehand is how "Southx", "South X" and "southx"
+ * become three destinations no report can add together, which is the same
+ * drift the Unit Master exists to prevent.
+ */
+export function useTransferLocations() {
+  const [locations, setLocations] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data, error: qErr } = await supabase
+        .from('transfer_locations')
+        .select('*')
+        .order('sort_order')
+        .order('name');
+      if (qErr) throw qErr;
+      setLocations(data || []);
+      setError(null);
+    } catch (err) {
+      // Before the migration runs there is no such table. That is not fatal —
+      // the transfer form falls back to accepting a typed name.
+      console.warn('Transfer locations unavailable:', err.message);
+      setLocations([]);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const saveLocation = useCallback(async (name, extras = {}, id = null) => {
+    const trimmed = (name || '').trim();
+    if (!trimmed) return { success: false, error: 'A location name is required.' };
+
+    const payload = { name: trimmed, note: (extras.note || '').trim() || null };
+    const { data, error: wErr } = id
+      ? await supabase.from('transfer_locations').update(payload).eq('id', id).select('id').single()
+      : await supabase.from('transfer_locations').insert([payload]).select('id').single();
+
+    if (wErr) {
+      return {
+        success: false,
+        error: wErr.code === '23505' ? `"${trimmed}" already exists.` : wErr.message,
+      };
+    }
+    await refresh();
+    return { success: true, id: data?.id, name: trimmed };
+  }, [refresh]);
+
+  const deleteLocation = useCallback(async (id) => {
+    const { error: dErr } = await supabase.from('transfer_locations').delete().eq('id', id);
+    if (dErr) return { success: false, error: dErr.message };
+    await refresh();
+    return { success: true };
+  }, [refresh]);
+
+  return { locations, loading, error, refresh, saveLocation, deleteLocation };
+}
