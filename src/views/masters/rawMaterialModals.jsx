@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, Trash2, History, Pencil, Plus } from 'lucide-react';
+import { useUnitMaster } from '../../hooks/useMastersData';
 
 /**
  * The full raw-material editor and the stock movement log.
@@ -36,6 +37,10 @@ const MOVEMENT_LABEL = {
 };
 
 export function ItemModal({ item, categories, onClose, onSave, onAddCategory }) {
+  // Units come from the Unit Master rather than being typed. Free text is how
+  // "Kg", "kg" and "KG" became three different units in the first place, and
+  // nothing could be totalled across them.
+  const { units } = useUnitMaster();
   const [draft, setDraft] = useState(item ? {
     name: item.name,
     categoryId: item.categoryId || '',
@@ -125,11 +130,21 @@ export function ItemModal({ item, categories, onClose, onSave, onAddCategory }) 
           <div className="field-grid">
             <div className="field">
               <label>Consumption unit</label>
-              <input value={draft.unit} onChange={set('unit')} placeholder="kg, pcs, litres" />
+              <select value={draft.unit} onChange={set('unit')}>
+                <option value="">Select unit…</option>
+                {units.filter((u) => u.is_active).map((u) => (
+                  <option key={u.id} value={u.symbol}>{u.symbol}</option>
+                ))}
+              </select>
             </div>
             <div className="field">
               <label>Purchase unit</label>
-              <input value={draft.purchaseUnit} onChange={set('purchaseUnit')} placeholder="Same as above" />
+              <select value={draft.purchaseUnit} onChange={set('purchaseUnit')}>
+                <option value="">Same as consumption unit</option>
+                {units.filter((u) => u.is_active).map((u) => (
+                  <option key={u.id} value={u.symbol}>{u.symbol}</option>
+                ))}
+              </select>
             </div>
 
             {dualUnit && (

@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ClipboardList, Search, RefreshCw, Printer } from 'lucide-react';
 import { useOrdersData } from '../hooks/useOrdersData';
+import { useOrderAdmin } from '../hooks/useOrderAdmin';
+import { EditOrderModal, VoidOrderModal, DeleteOrderModal } from './OrderAdminModals';
 
 const DATE_RANGES = [
   { key: 'today', label: 'Today' },
@@ -48,7 +50,7 @@ function buildTimeline(order) {
   return events;
 }
 
-function ExpandedRow({ order, formatCurrency, onPrintKot }) {
+function ExpandedRow({ order, formatCurrency, onPrintKot, admin, onAdminAction }) {
   const items = (order.orders || []).flatMap((o) =>
     (o.order_items || []).map((oi) => ({
       name: oi.menu_items?.item_name || 'Unknown item',
@@ -83,6 +85,49 @@ function ExpandedRow({ order, formatCurrency, onPrintKot }) {
         <button className="btn btn--ghost btn--sm" style={{ marginTop: 12 }} onClick={() => onPrintKot(order)}>
           <Printer size={13} /> Reprint KOT
         </button>
+
+        {/* Correcting a settled bill is owner-only. The buttons are hidden for
+            everyone else as a courtesy; the database is what actually refuses
+            a non-owner, because anyone can call an RPC. */}
+        {admin.canAdminister && (order.orders || []).length > 0 && (
+          <div className="oh-admin">
+            <div className="oh-admin__label">
+              <ShieldCheck size={13} /> Owner actions
+            </div>
+            {(order.orders || []).map((o, i) => (
+              <div key={o.id} className="oh-admin__row">
+                <span className="oh-admin__which">
+                  {(order.orders || []).length > 1 ? `Order ${i + 1} · ` : ''}
+                  {formatCurrency(o.total)}
+                  {o.order_status === 'cancelled' && <em> · already voided</em>}
+                </span>
+                <span className="oh-admin__acts">
+                  <button
+                    className="btn btn--ghost btn--sm"
+                    disabled={admin.busy || o.order_status === 'cancelled'}
+                    onClick={() => onAdminAction('edit', order, o)}
+                  >
+                    <Pencil size={13} /> Edit
+                  </button>
+                  <button
+                    className="btn btn--ghost btn--sm"
+                    disabled={admin.busy || o.order_status === 'cancelled'}
+                    onClick={() => onAdminAction('void', order, o)}
+                  >
+                    <Ban size={13} /> Void
+                  </button>
+                  <button
+                    className="btn btn--danger btn--sm"
+                    disabled={admin.busy}
+                    onClick={() => onAdminAction('delete', order, o)}
+                  >
+                    <Trash2 size={13} /> Delete
+                  </button>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div>
@@ -96,6 +141,24 @@ function ExpandedRow({ order, formatCurrency, onPrintKot }) {
       </div>
 
       <style>{`
+        .oh-admin {
+          margin-top: 16px; padding-top: 12px;
+          border-top: 1px dashed var(--color-border-strong);
+          display: flex; flex-direction: column; gap: 8px;
+        }
+        .oh-admin__label {
+          display: flex; align-items: center; gap: 6px;
+          font-size: 11px; font-weight: 700; text-transform: uppercase;
+          letter-spacing: 0.05em; color: var(--color-text-muted);
+        }
+        .oh-admin__row {
+          display: flex; align-items: center; justify-content: space-between;
+          gap: 12px; flex-wrap: wrap;
+        }
+        .oh-admin__which { font-size: 12.5px; font-weight: 600; }
+        .oh-admin__which em { font-style: normal; color: var(--color-danger); font-weight: 500; }
+        .oh-admin__acts { display: flex; gap: 6px; }
+
         .oh-expand {
           padding: 16px 20px;
           margin: 8px 0 12px 0;
@@ -139,6 +202,30 @@ export default function Orders() {
     selectedOrder, setSelectedOrder, refetch, formatCurrency,
     STATUS_FILTERS, handlePrintKot,
   } = useOrdersData();
+
+  const admin = useOrderAdmin(refetch);
+  // { kind, session, order } — which bill is being corrected, and how.
+  const [adminTarget, setAdminTarget] = useState(null);
+  const [notice, setNotice] = useState(null);
+
+  const flash = (msg, tone = 'ok') => {
+    setNotice({ msg, tone });
+    setTimeout(() => setNotice(null), 5000);
+  };
+
+  const openAdmin = (kind, session, order) => setAdminTarget({
+    kind,
+    id: order.id,
+    billNo: `#${session.billId}`,
+    amount: Number(order.total) || 0,
+    subtotal: Number(order.subtotal) || 0,
+    items: (order.order_items || []).length,
+    lines: (order.order_items || []).map((oi) => ({
+      menuItemId: oi.menu_items ? oi.menu_item_id : '',
+      qty: oi.quantity,
+      price: oi.item_price,
+    })),
+  });
 
   if (error && orders.length === 0) {
     return (
@@ -246,7 +333,13 @@ export default function Orders() {
               </div>
 
               {expanded && (
-                <ExpandedRow order={o} formatCurrency={formatCurrency} onPrintKot={handlePrintKot} />
+                <ExpandedRow
+                  order={o}
+                  formatCurrency={formatCurrency}
+                  onPrintKot={handlePrintKot}
+                  admin={admin}
+                  onAdminAction={openAdmin}
+                />
               )}
             </div>
           );

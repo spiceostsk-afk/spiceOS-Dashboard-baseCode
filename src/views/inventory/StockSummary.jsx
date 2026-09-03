@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { useStockSummary } from '../../hooks/useStockSummary';
 import { useOutlet } from '../../context/OutletContext';
+import MovementDetailDrawer from './MovementDetailDrawer';
 
 /**
  * Stock Summary — the eleven columns the client asked for, over a date range.
@@ -28,6 +29,21 @@ const fmt = (n) => {
 
 const money = (n) => `₹${(Number(n) || 0).toFixed(2)}`;
 
+/**
+ * A figure that can be opened.
+ *
+ * A zero still opens — "why is consumption zero" is as fair a question as
+ * "what made up 114.75", and the answer ("nothing was recorded") is worth
+ * being able to see rather than infer.
+ */
+function Cell({ v, cls = '', onOpen }) {
+  return (
+    <td className={cls}>
+      <button className="ss-cell" onClick={onOpen}>{fmt(v)}</button>
+    </td>
+  );
+}
+
 export default function StockSummary() {
   const {
     rows, categories, filters, totals, loading, error,
@@ -47,6 +63,17 @@ export default function StockSummary() {
    * one, and letting it sort as zero would bury the real values.
    */
   const [sort, setSort] = useState({ key: 'item_name', dir: 'asc' });
+
+  // The cell whose entries are open. Every figure here is a sum over the
+  // ledger, so any of them can be shown as the movements that produced it.
+  const [openCell, setOpenCell] = useState(null);
+
+  const openDetail = (row, column) => setOpenCell({
+    itemId: row.inventory_item_id,
+    itemName: row.item_name,
+    unit: row.unit,
+    column,
+  });
 
   const sortBy = (key) => setSort((prev) => (
     prev.key === key
@@ -259,28 +286,39 @@ export default function StockSummary() {
                       <div className="strong">{r.item_name}</div>
                       <div className="ss-sub">{r.category_name} · {r.unit}</div>
                     </td>
-                    <td>{fmt(r.opening_stock)}</td>
-                    <td>{fmt(r.purchase_stock)}</td>
-                    <td className="grp strong">{fmt(r.total_stock)}</td>
-                    <td>{fmt(r.consumption)}</td>
-                    <td>{fmt(r.transfer_in)}</td>
-                    <td>{fmt(r.transfer_out)}</td>
-                    <td className={Number(r.wastage) > 0 ? 'warn' : ''}>{fmt(r.wastage)}</td>
-                    <td className="grp strong">{fmt(r.ideal_stock)}</td>
+                    <Cell v={r.opening_stock} onOpen={() => openDetail(r, 'opening_stock')} />
+                    <Cell v={r.purchase_stock} onOpen={() => openDetail(r, 'purchase_stock')} />
+                    <Cell v={r.total_stock} cls="grp strong" onOpen={() => openDetail(r, 'total_stock')} />
+                    <Cell v={r.consumption} onOpen={() => openDetail(r, 'consumption')} />
+                    <Cell v={r.transfer_in} onOpen={() => openDetail(r, 'transfer_in')} />
+                    <Cell v={r.transfer_out} onOpen={() => openDetail(r, 'transfer_out')} />
+                    <Cell
+                      v={r.wastage}
+                      cls={Number(r.wastage) > 0 ? 'warn' : ''}
+                      onOpen={() => openDetail(r, 'wastage')}
+                    />
+                    <Cell v={r.ideal_stock} cls="grp strong" onOpen={() => openDetail(r, 'ideal_stock')} />
                     <td className="grp strong">
                       {r.physical_stock === null
                         ? <span className="ss-uncounted">Not counted</span>
-                        : fmt(r.physical_stock)}
+                        : (
+                          <button className="ss-cell" onClick={() => openDetail(r, 'physical_stock')}>
+                            {fmt(r.physical_stock)}
+                          </button>
+                        )}
                     </td>
                     <td>
-                      {variance === null ? <span className="muted">—</span>
-                        : variance === 0
-                          ? <span className="pill tone-green pill--sm">Match</span>
-                          : (
-                            <span className={`pill pill--sm ${variance > 0 ? 'tone-blue' : 'tone-red'}`}>
-                              {variance > 0 ? '+' : ''}{fmt(variance)}
-                            </span>
-                          )}
+                      {variance === null ? <span className="muted">—</span> : (
+                        <button className="ss-cell" onClick={() => openDetail(r, 'variance')}>
+                          {variance === 0
+                            ? <span className="pill tone-green pill--sm">Match</span>
+                            : (
+                              <span className={`pill pill--sm ${variance > 0 ? 'tone-blue' : 'tone-red'}`}>
+                                {variance > 0 ? '+' : ''}{fmt(variance)}
+                              </span>
+                            )}
+                        </button>
+                      )}
                     </td>
                     <td className="ss-remark">{r.remark || <span className="muted">—</span>}</td>
                   </tr>
@@ -291,7 +329,26 @@ export default function StockSummary() {
         </div>
       </div>
 
+      {openCell && (
+        <MovementDetailDrawer
+          cell={openCell}
+          range={{ from: filters.from, to: filters.to, allOutlets: filters.allOutlets }}
+          onClose={() => setOpenCell(null)}
+        />
+      )}
+
       <style>{`
+        .ss-cell {
+          border: none; background: none; padding: 2px 3px; margin: -2px -3px;
+          font: inherit; color: inherit; cursor: pointer; border-radius: 5px;
+          font-variant-numeric: tabular-nums;
+        }
+        .ss-cell:hover {
+          background: var(--color-info-soft, #EAF1FE);
+          color: var(--color-info, #2563EB);
+          box-shadow: 0 0 0 1px var(--color-info, #2563EB);
+        }
+
         .ss-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
         .ss-title { font-size: 20px; font-weight: 800; margin: 0; }
 

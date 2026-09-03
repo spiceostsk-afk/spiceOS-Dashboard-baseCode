@@ -8,7 +8,7 @@ const FORMAT_CURRENCY = new Intl.NumberFormat('en-IN', {
 
 const DATASETS = [
   { key: 'section', label: 'By section' },
-  { key: 'daily', label: 'Last 7 days' },
+  { key: 'daily', label: 'By day' },
 ];
 
 const VIEWS = [
@@ -75,7 +75,7 @@ function List({ series }) {
   );
 }
 
-export default function SalesChart({ sectionRevenue, dailyTrend }) {
+export default function SalesChart({ sectionRevenue, dailyTrend, periodLabel = 'today' }) {
   const [dataset, setDataset] = useState('section');
   const [view, setView] = useState('graph');
 
@@ -84,7 +84,7 @@ export default function SalesChart({ sectionRevenue, dailyTrend }) {
 
   const subtitle = dataset === 'section'
     ? `Across ${series.length} section${series.length === 1 ? '' : 's'} · total ${fmt(total)}`
-    : `Last 7 days · total ${fmt(total)}`;
+    : `By day ${periodLabel} · total ${fmt(total)}`;
 
   return (
     <div className="card chart-card">

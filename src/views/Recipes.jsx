@@ -628,9 +628,21 @@ export default function Recipes() {
               {r.lines.length === 0
                 ? <span className="pill pill--sm tone-neutral">No recipe</span>
                 : (
-                  <span className="muted">
-                    {r.lines.length} ingredient{r.lines.length === 1 ? '' : 's'}
-                  </span>
+                  // Name what a dish is made of rather than counting it. "2
+                  // ingredients" tells nobody whether the recipe is right;
+                  // "Lollipop 4 Piece" does, at a glance and without opening it.
+                  <div className="rc-ing__list">
+                    {r.lines.slice(0, 3).map((l) => (
+                      <span key={l.id} className="rc-ing__one">
+                        <b>{l.name}</b> {l.quantity} {l.unit}
+                      </span>
+                    ))}
+                    {r.lines.length > 3 && (
+                      <span className="rc-ing__more">
+                        +{r.lines.length - 3} more
+                      </span>
+                    )}
+                  </div>
                 )}
             </div>
             <div className="rc-left">
@@ -697,7 +709,14 @@ export default function Recipes() {
         .rc-check { width: 40px; }
         .rc-name  { flex: 1.6; min-width: 0; }
         .rc-cat   { flex: 1; min-width: 0; }
-        .rc-ing   { width: 140px; }
+        .rc-ing   { flex: 1.6; min-width: 190px; }
+        .rc-ing__list { display: flex; flex-direction: column; gap: 2px; }
+        .rc-ing__one {
+          font-size: 12.5px; color: var(--color-text-soft);
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .rc-ing__one b { font-weight: 600; color: var(--color-text); }
+        .rc-ing__more { font-size: 11.5px; color: var(--color-text-muted); }
         .rc-left  { width: 130px; }
         .rc-act   { width: 110px; display: flex; justify-content: flex-end; gap: 6px; }
         .rc-sub   { font-size: 11.5px; color: var(--color-text-muted); }

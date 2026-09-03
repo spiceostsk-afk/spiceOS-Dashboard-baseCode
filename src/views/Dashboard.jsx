@@ -6,6 +6,7 @@ import NeedsAttention from '../components/dashboard/NeedsAttention';
 import SalesChart from '../components/dashboard/SalesChart';
 import RecentActivity from '../components/dashboard/RecentActivity';
 import LiveOrders from '../components/dashboard/LiveOrders';
+import PeriodPicker from '../components/dashboard/PeriodPicker';
 
 const LOADING_ERROR_MSG = 'Failed to load dashboard data.';
 
@@ -20,7 +21,35 @@ export default function Dashboard() {
     loading,
     error,
     refresh,
+    period,
+    setPeriod,
+    customRange,
+    setCustomRange,
+    range,
   } = useDashboardData();
+
+  // What the cards should say they are measuring. Reads as "…today",
+  // "…yesterday", "…this month", so each card states its own timeframe rather
+  // than leaving the reader to assume one.
+  const periodLabel = {
+    today: 'today',
+    yesterday: 'yesterday',
+    this_month: 'this month',
+    last_month: 'last month',
+    custom: 'in this range',
+  }[period] || 'today';
+
+  const dayFmt = (d) => (d
+    ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+    : '');
+
+  // Spelling out the actual dates matters most for "this month" and "last
+  // month", where the boundaries are not obvious at a glance.
+  const rangeLabel = range
+    ? (dayFmt(range.from) === dayFmt(range.to)
+      ? dayFmt(range.from)
+      : `${dayFmt(range.from)} – ${dayFmt(range.to)}`)
+    : '';
 
   if (error && !loading) {
     return (
@@ -41,6 +70,13 @@ export default function Dashboard() {
   return (
     <div className="page dashboard">
       <div className="dashboard__bar">
+        <PeriodPicker
+          period={period}
+          onPeriod={setPeriod}
+          customRange={customRange}
+          onCustomRange={setCustomRange}
+          rangeLabel={rangeLabel}
+        />
         <div className="spacer" />
         <button className="btn btn--ghost" onClick={refresh} disabled={loading}>
           <RefreshCw size={14} className={loading ? 'spin' : ''} />
@@ -48,12 +84,16 @@ export default function Dashboard() {
         </button>
       </div>
 
-      <StatCardsGrid stats={stats} loading={loading} />
+      <StatCardsGrid stats={stats} loading={loading} periodLabel={periodLabel} />
 
       <NeedsAttention alerts={alerts} loading={loading} />
 
       <div className="dashboard__split">
-        <SalesChart sectionRevenue={sectionRevenue} dailyTrend={dailyTrend} />
+        <SalesChart
+          sectionRevenue={sectionRevenue}
+          dailyTrend={dailyTrend}
+          periodLabel={periodLabel}
+        />
         <RecentActivity orders={recentOrders} loading={loading} />
       </div>
 

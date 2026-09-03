@@ -4,6 +4,7 @@ import {
   CheckCircle2, Ban, Package, History, FolderInput,
 } from 'lucide-react';
 import { useInventoryData } from '../../hooks/useInventoryData';
+import { useUnitMaster } from '../../hooks/useMastersData';
 import { useOutlet } from '../../context/OutletContext';
 import { CategoryStrip, Pager, SelectionBar, ActionMenu, MastersStyles } from './mastersUi';
 import { ItemModal, StockLogDrawer } from './rawMaterialModals';
@@ -36,6 +37,7 @@ export default function RawMaterials() {
     applyEdits, bulkUpdate, quickAdd, refresh,
   } = useInventoryData();
   const { outlet, isMultiOutlet } = useOutlet();
+  const { units } = useUnitMaster();
 
   const [name, setName] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
@@ -466,6 +468,7 @@ export default function RawMaterials() {
       {showQuickAdd && (
         <QuickAddModal
           categories={categories}
+          units={units}
           onClose={() => setShowQuickAdd(false)}
           onSave={quickAdd}
           onDone={(n) => flash(`${n} material${n === 1 ? '' : 's'} added.`)}
@@ -528,7 +531,7 @@ export default function RawMaterials() {
  * stock should arrive through a purchase or a count so it lands on the ledger
  * with a reason attached to it.
  */
-function QuickAddModal({ categories, onClose, onSave, onDone }) {
+function QuickAddModal({ categories, units, onClose, onSave, onDone }) {
   const blank = () => ({ key: Math.random().toString(36).slice(2), name: '', categoryId: '', unit: '' });
   const [rows, setRows] = useState(() => [blank(), blank(), blank(), blank(), blank()]);
   const [saving, setSaving] = useState(false);
@@ -591,12 +594,16 @@ function QuickAddModal({ categories, onClose, onSave, onDone }) {
                 </select>
               </div>
               <div className="qa-unit">
-                <input
+                <select
                   className="gcell"
                   value={r.unit}
                   onChange={(e) => set(r.key, { unit: e.target.value })}
-                  placeholder="kg"
-                />
+                >
+                  <option value="">Unit…</option>
+                  {units.filter((u) => u.is_active).map((u) => (
+                    <option key={u.id} value={u.symbol}>{u.symbol}</option>
+                  ))}
+                </select>
               </div>
             </div>
           ))}

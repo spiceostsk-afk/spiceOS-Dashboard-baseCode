@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
   Printer, Edit3, CreditCard, Banknote, QrCode, X, Minus, Plus, Trash2, Check,
+  Bike, Truck, Utensils,
   ArrowLeftRight, Split, LayoutGrid, RefreshCw, Coffee, FileText,
 } from 'lucide-react';
 
@@ -262,6 +263,10 @@ function SplitPaymentBlock({ splitPayments, total, isPaid, onUpdateSplitPayment,
     { key: 'cash', label: 'Cash' },
     { key: 'card', label: 'Card' },
     { key: 'upi', label: 'UPI' },
+    { key: 'zomato', label: 'Zomato' },
+    { key: 'swiggy', label: 'Swiggy' },
+    { key: 'home_delivery', label: 'Home delivery' },
+    { key: 'other', label: 'Other' },
   ];
 
   const splitTotal = splitPayments.reduce((s, p) => s + (p.amount || 0), 0);
@@ -319,10 +324,20 @@ function SplitPaymentBlock({ splitPayments, total, isPaid, onUpdateSplitPayment,
 /* -------------------------------------------------------------- settlement */
 
 function PaymentBlock({ paymentMethod, total, isPaid, itemsEmpty, loadingAction, onSelectPayment, onSettle, onPrint }) {
+  /**
+   * How the money arrived. The aggregators are payment modes rather than
+   * payment types — Zomato settles the bill on the customer's behalf — so
+   * they belong here beside cash and card, and let the payment report split
+   * dine-in takings from platform takings.
+   */
   const methods = [
     { key: 'cash', label: 'Cash', Icon: Banknote },
     { key: 'card', label: 'Card', Icon: CreditCard },
     { key: 'qr', label: 'UPI', Icon: QrCode },
+    { key: 'zomato', label: 'Zomato', Icon: Bike },
+    { key: 'swiggy', label: 'Swiggy', Icon: Bike },
+    { key: 'home_delivery', label: 'Home delivery', Icon: Truck },
+    { key: 'other', label: 'Other', Icon: Utensils },
   ];
 
   return (

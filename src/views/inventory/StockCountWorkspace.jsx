@@ -1,11 +1,13 @@
 import React, { useMemo, useRef, useState } from 'react';
 import {
   Calendar, Clock, X, Star, RotateCcw, PlusCircle, Search, ArrowRight,
-  CheckCircle2, Upload, FileDown, AlertTriangle, Package,
+  CheckCircle2, Upload, FileDown, AlertTriangle, Package, Trash2,
 } from 'lucide-react';
 import { useStockCount, useStockCountHistory } from '../../hooks/useStockCount';
 import { useOutlet } from '../../context/OutletContext';
 import ClosingStockHistory from './ClosingStockHistory';
+import { useStockDocuments, useStockCountHistoryDetail } from '../../hooks/useStockDocuments';
+import { ConfirmDelete } from '../masters/masterDialogs';
 
 /**
  * Counting stock, for both the end-of-day close and a mid-service spot check.
@@ -299,6 +301,14 @@ export default function StockCountWorkspace({ mode = 'closing' }) {
   const [padFor, setPadFor] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
   const [toast, setToast] = useState(null);
+  const [deletingPosted, setDeletingPosted] = useState(false);
+  const [postedError, setPostedError] = useState('');
+
+  // Acting on the sheet already posted for this date, without leaving the
+  // screen for the History tab.
+  const { counts: postedSheets, refresh: refreshHistory } = useStockCountHistoryDetail(mode);
+  const docs = useStockDocuments(async () => { await refreshHistory(); await sheet.refresh(); });
+  const postedSheet = postedSheets.find((c) => c.date === sheet.date) || null;
 
   const currentLabel = mode === 'closing' ? 'Closing Stock' : 'Current';
   const title = mode === 'closing' ? 'Closing Stock' : 'Available Stock';
@@ -364,32 +374,137 @@ export default function StockCountWorkspace({ mode = 'closing' }) {
     sheet.setEntry(row.itemId, { qty: String(nextBase), unit: 'base' });
   };
 
+  /**
+   * Exports the day being looked at, one row per counted line.
+   *
+   * Deliberately this date only. The History tab exports everything; someone
+   * standing on 31 August wants 31 August, not eight months of sheets.
+   */
+  const exportPostedDay = () => {
+    if (!postedSheet) return;
+    const esc = (v) => {
+      const t = v === null || v === undefined ? '' : String(v);
+      return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+    };
+    const head = ['Date', 'Raw Material', 'Unit', 'Ideal', 'Physical', 'Variance', 'Remark'];
+    const body = postedSheet.lines.map((l) => [
+      postedSheet.date, l.name, l.unit, l.ideal, l.physical, l.variance, l.remark,
+    ].map(esc).join(','));
+
+    const url = URL.createObjectURL(
+      new Blob([[head.join(','), ...body].join('\n')], { type: 'text/csv;charset=utf-8;' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${mode}-stock-${postedSheet.date}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const reopenPosted = async () => {
+    if (!postedSheet) return;
+    const res = await docs.reopenCount(postedSheet.id);
+    flash(res.success
+      ? `${dateLabel(sheet.date)} reopened — its stock correction has been undone, and the counted numbers are still on the sheet.`
+      : res.error, res.success ? 'ok' : 'bad');
+  };
+
+  const confirmDeletePosted = async () => {
+    setPostedError('');
+    const res = await docs.deleteDocument('count', postedSheet.id);
+    if (res.success) {
+      setDeletingPosted(false);
+      flash(`Count for ${dateLabel(sheet.date)} deleted.`);
+    } else {
+      setPostedError(res.error);
+    }
+  };
+
   if (sheet.isSubmitted) {
     return (
       <div className="page">
         <div className="stock-top">
           <h2 className="stock-title">{title}</h2>
           <div className="stock-top__actions">
-            <div className="ghost-pill"><Calendar size={14} /> {dateLabel(sheet.date)}</div>
+            <label className="ghost-pill">
+              <Calendar size={14} />
+              <input
+                type="date"
+                className="date-input"
+                value={sheet.date}
+                onChange={(e) => sheet.setDate(e.target.value)}
+              />
+            </label>
           </div>
         </div>
+
+        {toast && (
+          <div className={`stock-toast ${toast.tone === 'bad' ? 'bad' : ''}`}>{toast.msg}</div>
+        )}
+
         <div className="card">
           <div className="empty-state">
             <span className="empty-state__mark tone-green"><CheckCircle2 size={22} /></span>
-            <div className="empty-state__title">{title} already posted for {dateLabel(sheet.date)}</div>
-            <div className="empty-state__sub">
-              This sheet is closed and its variances are on the ledger. Pick another date to
-              count again.
+            <div className="empty-state__title">
+              {title} posted for {dateLabel(sheet.date)}
             </div>
-            <input
-              type="date"
-              className="date-input"
-              style={{ marginTop: 12 }}
-              value={sheet.date}
-              onChange={(e) => sheet.setDate(e.target.value)}
-            />
+            <div className="empty-state__sub">
+              {postedSheet
+                ? `${postedSheet.counted} material${postedSheet.counted === 1 ? '' : 's'} counted, `
+                  + `${postedSheet.mismatched} with a variance. Its corrections are on the ledger.`
+                : 'This sheet is closed and its variances are on the ledger.'}
+            </div>
+
+            <div className="posted-actions">
+              <button
+                className="btn btn--ghost"
+                onClick={exportPostedDay}
+                disabled={!postedSheet}
+              >
+                <FileDown size={15} /> Export this day
+              </button>
+              <button
+                className="btn btn--primary"
+                onClick={reopenPosted}
+                disabled={!postedSheet || docs.busy}
+              >
+                <RotateCcw size={15} /> Edit this count
+              </button>
+              <button
+                className="btn btn--danger"
+                onClick={() => { setPostedError(''); setDeletingPosted(true); }}
+                disabled={!postedSheet || docs.busy}
+              >
+                <Trash2 size={15} /> Delete
+              </button>
+            </div>
+
+            <div className="posted-hint">
+              Editing undoes this count&apos;s stock correction and hands the sheet back with
+              the counted numbers still on it, so you correct what was typed rather than
+              starting again.
+            </div>
           </div>
         </div>
+
+        {deletingPosted && postedSheet && (
+          <ConfirmDelete
+            title="Delete stock count"
+            subject={`${title} — ${dateLabel(sheet.date)}`}
+            permanent
+            busy={docs.busy}
+            error={postedError}
+            consequences={[
+              `The ${postedSheet.counted} counted quantit${postedSheet.counted === 1 ? 'y' : 'ies'} and their remarks are removed.`,
+              postedSheet.mismatched > 0
+                ? `The stock correction this count applied across ${postedSheet.mismatched} material${postedSheet.mismatched === 1 ? '' : 's'} is undone, and those balances go back to what the books said before it.`
+                : 'This count changed no balances, so stock is unaffected.',
+              'The Stock Summary for that date will report differently afterwards.',
+            ]}
+            onCancel={() => setDeletingPosted(false)}
+            onConfirm={confirmDeletePosted}
+          />
+        )}
+
         <WorkspaceStyles />
       </div>
     );
@@ -698,6 +813,15 @@ export default function StockCountWorkspace({ mode = 'closing' }) {
 function WorkspaceStyles() {
   return (
     <style>{`
+      .posted-actions {
+        display: flex; gap: 10px; flex-wrap: wrap;
+        justify-content: center; margin-top: 16px;
+      }
+      .posted-hint {
+        max-width: 460px; margin-top: 12px;
+        font-size: 12.5px; line-height: 1.6; color: var(--color-text-muted);
+      }
+
       .stock-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
       .stock-title { font-size: 20px; font-weight: 800; margin: 0; }
       .stock-top__actions { display: flex; align-items: center; gap: 8px; }

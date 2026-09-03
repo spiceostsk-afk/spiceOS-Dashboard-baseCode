@@ -215,10 +215,18 @@ describe('Closing stock sheet', () => {
     expect(screen.getByText('1 of 2 counted')).toBeInTheDocument();
   });
 
-  it('closes a sheet that has already been posted instead of letting it be recounted', () => {
+  // A posted sheet is not a dead end. Counting again is closed off, but the
+  // day can still be looked at, corrected or removed from right here.
+  it('offers edit, delete and export on a sheet already posted', () => {
     mockSheet = sheetStub({ status: 'submitted', isSubmitted: true, rows: [makeRow()] });
     render(<MemoryRouter><ClosingStock /></MemoryRouter>);
-    expect(screen.getByText(/already posted/i)).toBeInTheDocument();
+
+    expect(screen.getByText(/posted for/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Edit this count/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Delete/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Export this day/i })).toBeInTheDocument();
+
+    // Entering fresh counts stays closed off until it is reopened.
     expect(screen.queryByRole('button', { name: /Review/i })).not.toBeInTheDocument();
   });
 

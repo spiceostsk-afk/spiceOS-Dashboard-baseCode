@@ -63,11 +63,16 @@ const money = (v) => `₹${Number(v || 0).toFixed(2)}`;
 vi.mock('../hooks/useDashboardData', () => ({
   useDashboardData: () => ({
     stats: {
-      totalSales: 0, netSales: 0, todayOrders: 0, activeTables: 0,
+      totalSales: 0, netSales: 0, periodOrders: 0, activeTables: 0,
       occupiedTables: 0, customerCount: 0, averageOrderValue: 0, totalOrders: 0,
     },
     sectionRevenue: [], dailyTrend: [], recentOrders: [], liveOrders: [],
     alerts: [], loading: false, error: null, refresh: vi.fn(),
+    period: 'today',
+    setPeriod: vi.fn(),
+    customRange: { from: '2026-09-01', to: '2026-09-02' },
+    setCustomRange: vi.fn(),
+    range: { from: new Date('2026-09-02T00:00:00'), to: new Date('2026-09-02T23:59:59') },
   }),
 }));
 

@@ -348,10 +348,18 @@ const MenuCatalog = () => {
   const total = subtotal + tax;
 
   const q = search.trim().toLowerCase();
-  const inCategory = menuItems.filter((item) => item.category_id === activeCategory);
+  /**
+   * A search is a question about the whole menu, not about whichever category
+   * happens to be selected. Typing looks across every category; clearing the
+   * box returns to the selected one.
+   *
+   * Descriptions are searched too — someone hunting "paneer" should find
+   * Kadhai Paneer whether or not the word is in the title.
+   */
   const searched = q
-    ? inCategory.filter((i) => (i.item_name || '').toLowerCase().includes(q))
-    : inCategory;
+    ? menuItems.filter((i) => (i.item_name || '').toLowerCase().includes(q)
+        || (i.description || '').toLowerCase().includes(q))
+    : menuItems.filter((item) => item.category_id === activeCategory);
   // Diners can only be sold what's on; managers need to see the 86'd items too.
   const availabilityScoped = manageMode ? searched : searched.filter((i) => i.is_available !== false);
   const visibleItems = availabilityScoped.filter((i) => {
@@ -486,6 +494,19 @@ const MenuCatalog = () => {
               </div>
             </div>
           ) : (
+            <>
+            {q && (
+              <div className="menu-searchnote">
+                <span>
+                  {visibleItems.length} result{visibleItems.length === 1 ? '' : 's'} for
+                  {' '}&ldquo;{search.trim()}&rdquo; across all categories
+                </span>
+                <button className="link-action" onClick={() => setSearch('')}>
+                  Clear search
+                </button>
+              </div>
+            )}
+
             <div className="menu-grid">
               {visibleItems.map((item) => {
                 const available = item.is_available !== false;
@@ -500,6 +521,15 @@ const MenuCatalog = () => {
                     </div>
 
                     <div className="dish-card__body">
+                      {/* While searching across the menu, say which category a
+                          result belongs to — otherwise the cards look misfiled
+                          against the category still highlighted in the rail. */}
+                      {q && (
+                        <div className="menu-cardcat">
+                          {categories.find((c) => c.id === item.category_id)?.category_name
+                            || 'Uncategorised'}
+                        </div>
+                      )}
                       <div className="dish-card__top">
                         <div className="dish-card__name">{item.item_name}</div>
                         {manageMode && (
@@ -550,6 +580,7 @@ const MenuCatalog = () => {
                 );
               })}
             </div>
+            </>
           )}
         </div>
 
@@ -729,6 +760,19 @@ const MenuCatalog = () => {
         /* ---- dish grid ---- */
         .menu-main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
         .menu-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+        .menu-searchnote {
+          display: flex; align-items: center; justify-content: space-between;
+          gap: 12px; flex-wrap: wrap; margin-bottom: 12px;
+          padding: 9px 13px; border-radius: var(--radius-md);
+          background: var(--color-info-soft, #EAF1FE);
+          font-size: 12.5px; font-weight: 600; color: var(--color-text-soft);
+        }
+        .menu-cardcat {
+          font-size: 11px; font-weight: 700; text-transform: uppercase;
+          letter-spacing: 0.04em; color: var(--color-text-muted);
+          margin-bottom: 2px;
+        }
 
         .menu-grid {
           display: grid;
