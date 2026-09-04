@@ -4,7 +4,7 @@ import {
 } from 'lucide-react';
 import { useTransferData } from '../../hooks/useStockOps';
 import { useOutlet } from '../../context/OutletContext';
-import { useTransferLocations } from '../../hooks/useMastersData';
+import { useTransferPlaces } from '../../hooks/useMastersData';
 import {
   useLines, ItemSelect, UnitSelect, AddLineButton, RemoveLineButton, LineEditorStyles,
 } from './lineEditor';
@@ -36,7 +36,7 @@ function TransferForm({
   items, outlets, defaultFromName, sourceStock,
   existing, onClose, onSave,
 }) {
-  const { locations, saveLocation } = useTransferLocations();
+  const { places, savePlace } = useTransferPlaces();
   const [addingPlace, setAddingPlace] = useState(false);
   const [newPlace, setNewPlace] = useState('');
   const [placeError, setPlaceError] = useState('');
@@ -140,13 +140,13 @@ function TransferForm({
                   value={head.fromLabel}
                   onChange={(e) => setHead({ ...head, fromLabel: e.target.value })}
                 >
-                  <option value="">Select location…</option>
-                  {locations.filter((l) => l.is_active).map((l) => (
-                    <option key={l.id} value={l.name}>{l.name}</option>
+                  <option value="">Select supplier…</option>
+                  {places.map((p) => (
+                    <option key={p.id} value={p.name}>{p.name}</option>
                   ))}
                   {/* A place recorded before the list existed still shows,
                       rather than silently emptying an old transfer. */}
-                  {head.fromLabel && !locations.some((l) => l.name === head.fromLabel) && (
+                  {head.fromLabel && !places.some((p) => p.name === head.fromLabel) && (
                     <option value={head.fromLabel}>{head.fromLabel}</option>
                   )}
                 </select>
@@ -165,11 +165,11 @@ function TransferForm({
                   value={head.toLabel}
                   onChange={(e) => setHead({ ...head, toLabel: e.target.value })}
                 >
-                  <option value="">Select location…</option>
-                  {locations.filter((l) => l.is_active).map((l) => (
-                    <option key={l.id} value={l.name}>{l.name}</option>
+                  <option value="">Select supplier…</option>
+                  {places.map((p) => (
+                    <option key={p.id} value={p.name}>{p.name}</option>
                   ))}
-                  {head.toLabel && !locations.some((l) => l.name === head.toLabel) && (
+                  {head.toLabel && !places.some((p) => p.name === head.toLabel) && (
                     <option value={head.toLabel}>{head.toLabel}</option>
                   )}
                 </select>
@@ -181,7 +181,7 @@ function TransferForm({
               className="tf-addplace"
               onClick={() => { setPlaceError(''); setAddingPlace(true); }}
             >
-              <Plus size={12} /> New location
+              <Plus size={12} /> New supplier
             </button>
           </div>
 
@@ -190,14 +190,14 @@ function TransferForm({
               <input
                 value={newPlace}
                 onChange={(e) => setNewPlace(e.target.value)}
-                placeholder="e.g. Yashoda Nagar"
+                placeholder="Supplier or branch name"
                 autoFocus
               />
               <button
                 type="button"
                 className="btn btn--primary btn--sm"
                 onClick={async () => {
-                  const res = await saveLocation(newPlace);
+                  const res = await savePlace(newPlace);
                   if (!res.success) { setPlaceError(res.error); return; }
                   // Drop it straight into whichever side is the other end.
                   setHead((h) => ({

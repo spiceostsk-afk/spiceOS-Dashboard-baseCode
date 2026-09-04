@@ -31,6 +31,23 @@ describe('Report periods', () => {
     expect(to.getTime()).toBeLessThan(Date.now());
   });
 
+  // A rolling window includes today, so "7D" is seven days of trade rather
+  // than seven days ending yesterday. Off by one here silently drops a day of
+  // purchases off the front of every preset.
+  it.each([['last_7', 7], ['last_14', 14], ['last_30', 30]])(
+    'makes %s a rolling window of %i days ending today',
+    (key, days) => {
+      const { from, to } = resolveReportPeriod(key);
+      const start = new Date();
+      start.setDate(start.getDate() - (days - 1));
+
+      expect(isoDay(from)).toBe(isoDay(start));
+      expect(isoDay(to)).toBe(isoDay(new Date()));
+      expect(at(from).endsWith('00:00')).toBe(true);
+      expect(at(to).endsWith('23:59')).toBe(true);
+    },
+  );
+
   it('starts this month on the 1st', () => {
     const { from, to } = resolveReportPeriod('this_month');
     expect(from.getDate()).toBe(1);

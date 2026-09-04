@@ -270,12 +270,17 @@ export function ReportTable({
 }
 
 /* ------------------------------------------------------------- page wrapper */
-export function ReportPage({ title, subtitle, periodProps, cards, loading, error, children }) {
+export function ReportPage({
+  title, subtitle, periodProps, cards, loading, error, actions, children,
+}) {
   return (
     <div className="page">
-      <div>
-        <h2 className="rt-title">{title}</h2>
-        {subtitle && <div className="card__subtitle">{subtitle}</div>}
+      <div className="rt-head">
+        <div>
+          <h2 className="rt-title">{title}</h2>
+          {subtitle && <div className="card__subtitle">{subtitle}</div>}
+        </div>
+        {actions}
       </div>
 
       <ReportPeriod {...periodProps} />
@@ -285,7 +290,13 @@ export function ReportPage({ title, subtitle, periodProps, cards, loading, error
 
       {children}
 
-      <style>{`.rt-title { font-size: 20px; font-weight: 800; margin: 0; }`}</style>
+      <style>{`
+        .rt-title { font-size: 20px; font-weight: 800; margin: 0; }
+        .rt-head {
+          display: flex; align-items: flex-start; justify-content: space-between;
+          gap: 16px; flex-wrap: wrap;
+        }
+      `}</style>
     </div>
   );
 }

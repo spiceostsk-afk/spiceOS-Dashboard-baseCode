@@ -17,6 +17,9 @@ import { supabase } from '../lib/supabase';
 export const REPORT_PERIODS = [
   { key: 'today', label: 'Today' },
   { key: 'yesterday', label: 'Yesterday' },
+  { key: 'last_7', label: '7D' },
+  { key: 'last_14', label: '14D' },
+  { key: 'last_30', label: '30D' },
   { key: 'this_month', label: 'This month' },
   { key: 'last_month', label: 'Last month' },
   { key: 'custom', label: 'Custom range' },
@@ -33,6 +36,16 @@ export function resolveReportPeriod(period, custom) {
     case 'yesterday': {
       const y = new Date(now); y.setDate(now.getDate() - 1);
       return { from: startOfDay(y), to: endOfDay(y) };
+    }
+    // Rolling windows, inclusive of today: "7D" is the last seven days of
+    // trade, not the seven days before today.
+    case 'last_7':
+    case 'last_14':
+    case 'last_30': {
+      const days = Number(period.slice(5));
+      const start = new Date(now);
+      start.setDate(now.getDate() - (days - 1));
+      return { from: startOfDay(start), to: endOfDay(now) };
     }
     case 'this_month':
       return { from: new Date(now.getFullYear(), now.getMonth(), 1), to: endOfDay(now) };

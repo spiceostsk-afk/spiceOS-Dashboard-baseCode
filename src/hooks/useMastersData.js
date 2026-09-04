@@ -268,17 +268,20 @@ export function useOpeningStock() {
   };
 }
 
-/* --------------------------------------------------- Transfer locations */
+/* ------------------------------------------------------ Transfer places */
 /**
- * Where stock goes when it leaves, and where it comes from when it arrives.
+ * The other end of a transfer, drawn from the Suppliers master.
  *
- * These are the restaurant's own units — a factory, another branch — not
- * suppliers. Typing them freehand is how "Southx", "South X" and "southx"
- * become three destinations no report can add together, which is the same
- * drift the Unit Master exists to prevent.
+ * Wali Baba's factory, Southx, Yashoda Nagar and the rest are already kept
+ * under Suppliers, and keeping a second list of the same names is how
+ * "Southx" and "South X" become two places no report can add together. One
+ * list, maintained in one screen — Masters → Suppliers.
+ *
+ * Only the name is used here. A transfer stores a text label, not a foreign
+ * key, because the far end is not somewhere this system holds a balance for.
  */
-export function useTransferLocations() {
-  const [locations, setLocations] = useState([]);
+export function useTransferPlaces() {
+  const [places, setPlaces] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -286,18 +289,18 @@ export function useTransferLocations() {
     setLoading(true);
     try {
       const { data, error: qErr } = await supabase
-        .from('transfer_locations')
-        .select('*')
-        .order('sort_order')
+        .from('vendors')
+        .select('id, name, is_active')
+        .eq('is_active', true)
         .order('name');
       if (qErr) throw qErr;
-      setLocations(data || []);
+      setPlaces(data || []);
       setError(null);
     } catch (err) {
-      // Before the migration runs there is no such table. That is not fatal —
-      // the transfer form falls back to accepting a typed name.
-      console.warn('Transfer locations unavailable:', err.message);
-      setLocations([]);
+      // Not fatal — the transfer form keeps whatever label is already on the
+      // record rather than blanking it.
+      console.warn('Suppliers unavailable:', err.message);
+      setPlaces([]);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -306,14 +309,21 @@ export function useTransferLocations() {
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  const saveLocation = useCallback(async (name, extras = {}, id = null) => {
+  /**
+   * Add a supplier from inside the transfer form.
+   *
+   * Name only: someone mid-transfer knows where the stock went, not the
+   * GSTIN. The rest is filled in later under Suppliers.
+   */
+  const savePlace = useCallback(async (name) => {
     const trimmed = (name || '').trim();
-    if (!trimmed) return { success: false, error: 'A location name is required.' };
+    if (!trimmed) return { success: false, error: 'A name is required.' };
 
-    const payload = { name: trimmed, note: (extras.note || '').trim() || null };
-    const { data, error: wErr } = id
-      ? await supabase.from('transfer_locations').update(payload).eq('id', id).select('id').single()
-      : await supabase.from('transfer_locations').insert([payload]).select('id').single();
+    const { data, error: wErr } = await supabase
+      .from('vendors')
+      .insert([{ name: trimmed }])
+      .select('id, name')
+      .single();
 
     if (wErr) {
       return {
@@ -325,12 +335,5 @@ export function useTransferLocations() {
     return { success: true, id: data?.id, name: trimmed };
   }, [refresh]);
 
-  const deleteLocation = useCallback(async (id) => {
-    const { error: dErr } = await supabase.from('transfer_locations').delete().eq('id', id);
-    if (dErr) return { success: false, error: dErr.message };
-    await refresh();
-    return { success: true };
-  }, [refresh]);
-
-  return { locations, loading, error, refresh, saveLocation, deleteLocation };
+  return { places, loading, error, refresh, savePlace };
 }
