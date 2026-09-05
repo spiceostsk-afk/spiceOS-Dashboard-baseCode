@@ -260,17 +260,18 @@ export default function StockSummary() {
                 <Th col="ideal_stock" label="Ideal" sub="Stock" className="grp" />
                 <Th col="physical_stock" label="Physical" sub="Stock" className="grp" />
                 <Th col="variance" label="Variance" />
+                <Th col="closing_stock" label="Closing" sub="Stock" className="grp" />
                 <Th col="remark" label="Remark" className="ss-remark" />
               </tr>
             </thead>
             <tbody>
               {loading && (
-                <tr><td colSpan={12} className="ss-msg">Loading stock summary…</td></tr>
+                <tr><td colSpan={13} className="ss-msg">Loading stock summary…</td></tr>
               )}
 
               {!loading && rows.length === 0 && (
                 <tr>
-                  <td colSpan={12} className="ss-msg">
+                  <td colSpan={13} className="ss-msg">
                     <span className="empty-state__mark"><BarChart3 size={22} /></span>
                     <div className="empty-state__title">No stock movement in this range</div>
                     <div className="empty-state__sub">
@@ -323,6 +324,14 @@ export default function StockSummary() {
                         </button>
                       )}
                     </td>
+                    {/* What actually carries into tomorrow. Ideal deliberately
+                        excludes the count correction; closing includes it, so
+                        when the two differ a count is the reason. */}
+                    <Cell
+                      v={r.closing_stock}
+                      cls="grp strong"
+                      onOpen={() => openDetail(r, 'closing_stock')}
+                    />
                     <td className="ss-remark">{r.remark || <span className="muted">—</span>}</td>
                   </tr>
                 );

@@ -288,8 +288,22 @@ describe('Stock Summary report', () => {
   it('shows the counted figure alongside the expected one', () => {
     render(<MemoryRouter><StockSummary /></MemoryRouter>);
     expect(screen.getByText('14')).toBeInTheDocument();   // ideal
-    expect(screen.getByText('13')).toBeInTheDocument();   // physical
     expect(screen.getByText('-1')).toBeInTheDocument();   // variance
+    // Physical and closing are both 13, and that is the point: once a count is
+    // taken, what carries into tomorrow is the counted figure, not the ideal.
+    expect(screen.getAllByText('13')).toHaveLength(2);    // physical + closing
+  });
+
+  it('shows what actually carries into the next day', () => {
+    // Ideal deliberately excludes the count correction; closing includes it.
+    // When the two differ, a count is the reason — and the report has to show
+    // the number the next day will open at, not only the one the books expected.
+    mockSummary = summaryStub([summaryRow({ ideal_stock: 14, physical_stock: 9, closing_stock: 9 })]);
+    render(<MemoryRouter><StockSummary /></MemoryRouter>);
+
+    expect(screen.getAllByText(/Closing/i).length).toBeGreaterThan(0);
+    expect(screen.getByText('14')).toBeInTheDocument();   // ideal, before the count
+    expect(screen.getAllByText('9')).toHaveLength(2);     // physical, and what carries
   });
 
   it('carries the operator’s remark through to the report', () => {

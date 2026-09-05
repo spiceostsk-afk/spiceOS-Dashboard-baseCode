@@ -418,3 +418,136 @@ export function useTransferData() {
     updateTransfer, deleteTransfer,
   };
 }
+
+/* --------------------------------------------------------------- Production */
+/**
+ * What the kitchen made, and what it used making it.
+ *
+ * The one movement type nothing has ever written. Rumali Roti, Fry Tikka,
+ * Korma Gravy and the rest are consumed by recipes when a dish is sold but
+ * never bought from anyone, so without this they can only go down — which is
+ * why seventeen materials have never had a single unit put in.
+ *
+ * Same shape as wastage and transfers: a dated header, lines, and a database
+ * function that turns the lot into ledger movements atomically.
+ */
+export function useProductionData() {
+  const { outletId } = useOutlet();
+
+  const [batches, setBatches] = useState([]);
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [batchRes, itemRes] = await Promise.all([
+        supabase
+          .from('production_batches')
+          .select(`
+            id, batch_no, made_on, status, note, outlet_id, posted_at,
+            production_items ( id, inventory_item_id, role, qty, entry_unit, qty_base,
+                               inventory_items ( item_name, unit, purchase_unit ) )
+          `)
+          .order('made_on', { ascending: false })
+          .limit(200),
+        supabase
+          .from('inventory_items')
+          .select('id, item_name, unit, purchase_unit, conversion_factor, stock, category')
+          .eq('is_active', true)
+          .order('item_name'),
+      ]);
+
+      if (batchRes.error) throw batchRes.error;
+      if (itemRes.error) throw itemRes.error;
+
+      setBatches(batchRes.data || []);
+      setItems(itemRes.data || []);
+      setError(null);
+    } catch (err) {
+      // Before the migration runs there is no such table; the screen says so
+      // rather than looking broken.
+      console.warn('Production unavailable:', err.message);
+      setError(err.message);
+      setBatches([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  /**
+   * Save and post in one go. A batch that has been cooked is stock that
+   * exists; leaving it as a draft is the exception, not the rule.
+   */
+  const saveBatch = useCallback(async (draft) => {
+    const clean = (role) => (draft[role] || [])
+      .filter((l) => l.inventoryItemId && Number(l.qty) > 0);
+
+    const outputs = clean('outputs');
+    const inputs = clean('inputs');
+
+    if (outputs.length === 0) {
+      return { success: false, error: 'Add at least one thing that was made.' };
+    }
+
+    const itemById = new Map(items.map((i) => [i.id, i]));
+
+    try {
+      const { data: header, error: headError } = await supabase
+        .from('production_batches')
+        .insert([{
+          outlet_id: outletId,
+          made_on: draft.madeOn,
+          batch_no: (draft.batchNo || '').trim() || null,
+          note: (draft.note || '').trim() || null,
+        }])
+        .select()
+        .single();
+      if (headError) throw headError;
+
+      const rows = [
+        ...outputs.map((l) => ({ ...l, role: 'output' })),
+        ...inputs.map((l) => ({ ...l, role: 'input' })),
+      ].map((l) => {
+        const item = itemById.get(l.inventoryItemId);
+        return {
+          batch_id: header.id,
+          inventory_item_id: l.inventoryItemId,
+          role: l.role,
+          qty: Number(l.qty),
+          entry_unit: l.entryUnit || 'base',
+          qty_base: toBase(l, item),
+        };
+      });
+
+      const { error: lineError } = await supabase.from('production_items').insert(rows);
+      if (lineError) {
+        await supabase.from('production_batches').delete().eq('id', header.id);
+        throw lineError;
+      }
+
+      const { data, error: postError } = await supabase
+        .rpc('post_production', { p_batch_id: header.id });
+      if (postError) throw postError;
+
+      await refresh();
+      return { success: true, result: data };
+    } catch (err) {
+      console.error('Error saving production batch:', err);
+      return { success: false, error: err.message };
+    }
+  }, [items, outletId, refresh]);
+
+  /** Reverses every movement the batch made, rather than erasing it. */
+  const cancelBatch = useCallback(async (id) => {
+    const { error: rpcError } = await supabase.rpc('cancel_production', { p_batch_id: id });
+    if (rpcError) return { success: false, error: rpcError.message };
+    await refresh();
+    return { success: true };
+  }, [refresh]);
+
+  return { batches, items, loading, error, refresh, saveBatch, cancelBatch };
+}

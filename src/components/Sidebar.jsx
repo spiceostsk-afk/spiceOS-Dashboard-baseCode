@@ -48,6 +48,7 @@ const NAV_ITEMS = [
       { to: '/inventory/closing-stock', label: 'Closing Stock' },
       { to: '/inventory/sales-entry', label: 'Sales Entry' },
       { to: '/inventory/purchase', label: 'Purchase' },
+      { to: '/inventory/production', label: 'Production' },
       { to: '/inventory/wastage', label: 'Wastage' },
       { to: '/inventory/transfer', label: 'Transfer' },
       { to: '/inventory/summary', label: 'Stock Summary' },

@@ -91,9 +91,19 @@ export default function SearchSelect({
     };
   }, [open, place]);
 
+  /**
+   * Focus the search box the moment the menu exists.
+   *
+   * `box` is the reason this waits. The menu only renders once place() has
+   * measured the trigger, which happens in a layout effect AFTER the first
+   * render with open=true — so on that first pass inputRef is still null and
+   * focusing does nothing. Keying on `box` runs it again once the menu is
+   * actually mounted, which is the difference between the caret landing in the
+   * search box and the operator having to click it.
+   */
   useEffect(() => {
-    if (open && withSearch && inputRef.current) inputRef.current.focus();
-  }, [open, withSearch]);
+    if (open && box && withSearch) inputRef.current?.focus();
+  }, [open, box, withSearch]);
 
   /* Close on an outside click — the menu is not a DOM child, so it needs its
      own check as well as the control's. */

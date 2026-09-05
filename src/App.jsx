@@ -21,6 +21,7 @@ import CategoryWiseSales from './views/reports/CategoryWiseSales';
 import PaymentModeReport from './views/reports/PaymentModeReport';
 import DayWiseSales from './views/reports/DayWiseSales';
 import PurchaseReport from './views/reports/PurchaseReport';
+import Production from './views/inventory/Production';
 import Settings from './views/Settings';
 import Customers from './views/Customers';
 import QRManagement from './views/QRManagement';
@@ -98,6 +99,7 @@ function AppShell() {
               <Route path="/reports/category-wise" element={<CategoryWiseSales />} />
               <Route path="/reports/payment-mode" element={<PaymentModeReport />} />
               <Route path="/reports/day-wise" element={<DayWiseSales />} />
+              <Route path="/inventory/production" element={<Production />} />
               <Route path="/reports/purchase" element={<PurchaseReport />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/customers" element={<Customers />} />

@@ -108,7 +108,7 @@ export function useStockSummary() {
     const head = [
       'Raw Material', 'Category', 'Unit', 'Opening Stock', 'Purchase Stock',
       'Total Stock', 'Consumption', 'Transfer In', 'Transfer Out', 'Wastage',
-      'Ideal Stock', 'Physical Stock', 'Variance', 'Remark',
+      'Ideal Stock', 'Physical Stock', 'Variance', 'Closing Stock', 'Remark',
     ];
     const esc = (v) => {
       const s = v === null || v === undefined ? '' : String(v);
@@ -117,7 +117,7 @@ export function useStockSummary() {
     const body = rows.map((r) => [
       r.item_name, r.category_name, r.unit, r.opening_stock, r.purchase_stock,
       r.total_stock, r.consumption, r.transfer_in, r.transfer_out, r.wastage,
-      r.ideal_stock, r.physical_stock, r.variance, r.remark,
+      r.ideal_stock, r.physical_stock, r.variance, r.closing_stock, r.remark,
     ].map(esc).join(','));
 
     const csv = [head.join(','), ...body].join('\n');
