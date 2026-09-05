@@ -1,5 +1,6 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { Trash2, Plus } from 'lucide-react';
+import SearchSelect from '../../components/SearchSelect';
 
 /**
  * The bits every stock document shares: a growing list of lines, each naming
@@ -41,18 +42,21 @@ export function useLines() {
 }
 
 export function ItemSelect({ items, value, onChange, exclude = [] }) {
+  // Two hundred materials is exactly the case a native select cannot handle:
+  // its first-letter jump lands you in the C's and then the H's rather than
+  // narrowing to "Chicken Tikka".
+  const options = useMemo(() => items
+    .filter((i) => i.id === value || !exclude.includes(i.id))
+    .map((i) => ({ value: i.id, label: i.item_name })), [items, value, exclude]);
+
   return (
-    <select
-      className="ln-select"
+    <SearchSelect
+      options={options}
       value={value}
-      onChange={(e) => onChange(e.target.value)}
-      aria-label="Raw material"
-    >
-      <option value="">Select raw material…</option>
-      {items
-        .filter((i) => i.id === value || !exclude.includes(i.id))
-        .map((i) => <option key={i.id} value={i.id}>{i.item_name}</option>)}
-    </select>
+      onChange={onChange}
+      placeholder="Select raw material…"
+      ariaLabel="Raw material"
+    />
   );
 }
 

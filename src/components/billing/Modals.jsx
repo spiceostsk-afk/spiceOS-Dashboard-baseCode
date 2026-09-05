@@ -1,5 +1,6 @@
 import React from 'react';
 import { X, ArrowRight } from 'lucide-react';
+import SearchSelect from '../SearchSelect';
 
 function Modal({ onClose, title, width, children }) {
   return (
@@ -98,11 +99,15 @@ export function MoveTableModal({ availableTables, selectedMoveTableId, loadingAc
             No available tables to move to.
           </div>
         ) : (
-          <select value={selectedMoveTableId} onChange={(e) => onSelectTable(e.target.value)}>
-            {availableTables.map((t) => (
-              <option key={t.id} value={t.id}>Table {t.table_number} ({t.capacity} seats)</option>
-            ))}
-          </select>
+          <SearchSelect
+            value={selectedMoveTableId}
+            onChange={onSelectTable}
+            options={availableTables.map((t) => ({
+              value: t.id, label: `Table ${t.table_number}`, sub: `${t.capacity} seats`,
+            }))}
+            placeholder="Select a table…"
+            ariaLabel="Move to table"
+          />
         )}
       </div>
       <div className="modal__actions">
@@ -129,13 +134,17 @@ export function MergeOrderModal({ occupiedSessions, selectedMergeSessionId, load
         ) : occupiedSessions.length === 0 ? (
           <div className="card__subtitle">No other occupied tables to merge.</div>
         ) : (
-          <select value={selectedMergeSessionId} onChange={(e) => onSelectSession(e.target.value)}>
-            {occupiedSessions.map((s) => (
-              <option key={s.id} value={s.id}>
-                Table {s.restaurant_tables?.table_number} ({s.customer_name || 'Walk-in'})
-              </option>
-            ))}
-          </select>
+          <SearchSelect
+            value={selectedMergeSessionId}
+            onChange={onSelectSession}
+            options={occupiedSessions.map((s) => ({
+              value: s.id,
+              label: `Table ${s.restaurant_tables?.table_number}`,
+              sub: s.customer_name || 'Walk-in',
+            }))}
+            placeholder="Select a session…"
+            ariaLabel="Session to merge"
+          />
         )}
       </div>
       <div className="modal__actions">

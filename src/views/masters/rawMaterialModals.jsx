@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, Trash2, History, Pencil, Plus } from 'lucide-react';
+import SearchSelect from '../../components/SearchSelect';
 import { useUnitMaster } from '../../hooks/useMastersData';
 
 /**
@@ -116,10 +117,15 @@ export function ItemModal({ item, categories, onClose, onSave, onAddCategory }) 
               </div>
             ) : (
               <div className="inv-newcat">
-                <select value={draft.categoryId} onChange={set('categoryId')}>
-                  <option value="">Uncategorised</option>
-                  {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+                <SearchSelect
+                  value={draft.categoryId}
+                  onChange={(v) => setDraft((d) => ({ ...d, categoryId: v }))}
+                  options={categories.map((c) => ({ value: c.id, label: c.name }))}
+                  placeholder="Uncategorised"
+                  allowEmpty
+                  emptyLabel="Uncategorised"
+                  ariaLabel="Category"
+                />
                 <button type="button" className="btn btn--ghost btn--sm" onClick={() => setAddingCategory(true)}>
                   <Plus size={14} /> New
                 </button>
@@ -130,21 +136,27 @@ export function ItemModal({ item, categories, onClose, onSave, onAddCategory }) 
           <div className="field-grid">
             <div className="field">
               <label>Consumption unit</label>
-              <select value={draft.unit} onChange={set('unit')}>
-                <option value="">Select unit…</option>
-                {units.filter((u) => u.is_active).map((u) => (
-                  <option key={u.id} value={u.symbol}>{u.symbol}</option>
-                ))}
-              </select>
+              <SearchSelect
+                value={draft.unit}
+                onChange={(v) => setDraft((d) => ({ ...d, unit: v }))}
+                options={units.filter((u) => u.is_active)
+                  .map((u) => ({ value: u.symbol, label: u.symbol, sub: u.name !== u.symbol ? u.name : undefined }))}
+                placeholder="Select unit…"
+                ariaLabel="Consumption unit"
+              />
             </div>
             <div className="field">
               <label>Purchase unit</label>
-              <select value={draft.purchaseUnit} onChange={set('purchaseUnit')}>
-                <option value="">Same as consumption unit</option>
-                {units.filter((u) => u.is_active).map((u) => (
-                  <option key={u.id} value={u.symbol}>{u.symbol}</option>
-                ))}
-              </select>
+              <SearchSelect
+                value={draft.purchaseUnit}
+                onChange={(v) => setDraft((d) => ({ ...d, purchaseUnit: v }))}
+                options={units.filter((u) => u.is_active)
+                  .map((u) => ({ value: u.symbol, label: u.symbol, sub: u.name !== u.symbol ? u.name : undefined }))}
+                placeholder="Same as consumption unit"
+                allowEmpty
+                emptyLabel="Same as consumption unit"
+                ariaLabel="Purchase unit"
+              />
             </div>
 
             {dualUnit && (

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { X, AlertTriangle, Plus, Trash2, ShieldAlert } from 'lucide-react';
+import SearchSelect from '../components/SearchSelect';
 import { supabase } from '../lib/supabase';
 
 /**
@@ -232,16 +233,16 @@ export function EditOrderModal({ order, busy, onClose, onConfirm }) {
             return (
               <div key={l.key} className="oa-row">
                 <div className="oa-dish">
-                  <select
-                    className="gcell"
+                  <SearchSelect
+                    className="ss-root--cell"
                     value={l.menuItemId}
-                    onChange={(e) => setLine(l.key, { menuItemId: e.target.value })}
-                  >
-                    <option value="">Select dish…</option>
-                    {dishes
+                    onChange={(v) => setLine(l.key, { menuItemId: v })}
+                    options={dishes
                       .filter((d) => d.id === l.menuItemId || !chosen.includes(d.id))
-                      .map((d) => <option key={d.id} value={d.id}>{d.item_name}</option>)}
-                  </select>
+                      .map((d) => ({ value: d.id, label: d.item_name }))}
+                    placeholder="Select dish…"
+                    ariaLabel="Dish"
+                  />
                 </div>
                 <div className="oa-qty">
                   <input

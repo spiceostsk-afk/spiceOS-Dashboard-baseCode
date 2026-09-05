@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { QrCode, RefreshCw, Printer, Download, Edit3, Trash2, X, Plus, LayoutGrid } from 'lucide-react';
+import SearchSelect from '../components/SearchSelect';
 import { supabase } from '../lib/supabase';
 
 const QR_SIZE = 180;
@@ -106,15 +107,16 @@ function TableFormModal({ editingTable, sections, onSave, onCreateSection, onClo
 
           <div className="field">
             <label>Section <span className="field__hint">optional</span></label>
-            <select
+            <SearchSelect
               value={form.section_id}
-              onChange={(e) => setForm({ ...form, section_id: e.target.value })}
-            >
-              <option value="">
-                {sections.length === 0 ? 'No sections yet — add one below' : 'No section'}
-              </option>
-              {sections.map((s) => <option key={s.id} value={s.id}>{s.section_name}</option>)}
-            </select>
+              onChange={(v) => setForm({ ...form, section_id: v })}
+              options={sections.map((s) => ({ value: s.id, label: s.section_name }))}
+              placeholder={sections.length === 0
+                ? 'No sections yet — add one below' : 'No section'}
+              allowEmpty
+              emptyLabel="No section"
+              ariaLabel="Section"
+            />
 
             <div className="section-add">
               <input

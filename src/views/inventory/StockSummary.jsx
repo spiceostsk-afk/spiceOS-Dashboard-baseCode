@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import {
   Download, Search, RefreshCw, BarChart3, ChevronUp, ChevronDown,
 } from 'lucide-react';
+import SearchSelect from '../../components/SearchSelect';
 import { useStockSummary } from '../../hooks/useStockSummary';
 import { useOutlet } from '../../context/OutletContext';
 import MovementDetailDrawer from './MovementDetailDrawer';
@@ -167,13 +168,15 @@ export default function StockSummary() {
 
         <div className="field">
           <label>Category</label>
-          <select
+          <SearchSelect
             value={filters.categoryId}
-            onChange={(e) => setFilter({ categoryId: e.target.value })}
-          >
-            <option value="">All</option>
-            {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+            onChange={(v) => setFilter({ categoryId: v })}
+            options={categories.map((c) => ({ value: c.id, label: c.name }))}
+            placeholder="All"
+            allowEmpty
+            emptyLabel="All"
+            ariaLabel="Category"
+          />
         </div>
 
         <div className="field">

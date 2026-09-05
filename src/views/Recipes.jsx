@@ -3,6 +3,7 @@ import {
   ChefHat, X, Plus, Trash2, Search, AlertTriangle, Copy, Pencil,
   FileDown, Eraser, Zap,
 } from 'lucide-react';
+import SearchSelect from '../components/SearchSelect';
 import { useRecipesData } from '../hooks/useRecipesData';
 import {
   CategoryStrip, Pager, SelectionBar, ActionMenu, MastersStyles,
@@ -84,17 +85,15 @@ function RecipeEditor({ recipe, inventory, onSave, onClose }) {
                   const inv = invById.get(line.inventoryItemId);
                   return (
                     <div key={line.key} className="rec-line">
-                      <select
+                      <SearchSelect
                         value={line.inventoryItemId}
-                        onChange={(e) => setLine(line.key, { inventoryItemId: e.target.value })}
-                      >
-                        <option value="">Select ingredient…</option>
-                        {inventory.map((i) => (
-                          <option key={i.id} value={i.id}>
-                            {i.item_name}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(v) => setLine(line.key, { inventoryItemId: v })}
+                        options={inventory.map((i) => ({
+                          value: i.id, label: i.item_name, sub: i.unit,
+                        }))}
+                        placeholder="Select ingredient…"
+                        ariaLabel="Ingredient"
+                      />
 
                       <input
                         type="number"
@@ -256,17 +255,20 @@ function CopyRecipeModal({ recipe, recipes, onClose, onCopy }) {
 
           <div className="field">
             <label>Copy onto</label>
-            <select value={target} onChange={(e) => setTarget(e.target.value)} required>
-              <option value="">Select a dish…</option>
-              {recipes
+            <SearchSelect
+              value={target}
+              onChange={setTarget}
+              options={recipes
                 .filter((r) => r.id !== recipe.id)
-                .map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name}
-                    {r.lines.length ? ` — replaces ${r.lines.length} ingredient(s)` : ''}
-                  </option>
-                ))}
-            </select>
+                .map((r) => ({
+                  value: r.id,
+                  label: r.name,
+                  sub: r.lines.length
+                    ? `replaces ${r.lines.length} ingredient(s)` : undefined,
+                }))}
+              placeholder="Select a dish…"
+              ariaLabel="Copy onto"
+            />
           </div>
         </div>
 
@@ -510,19 +512,27 @@ export default function Recipes() {
       <div className="card mst-filters">
         <div className="field">
           <label>Item</label>
-          <select value={itemFilter} onChange={(e) => setItemFilter(e.target.value)}>
-            <option value="">All items</option>
-            {recipes.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-          </select>
+          <SearchSelect
+            value={itemFilter}
+            onChange={setItemFilter}
+            options={recipes.map((r) => ({ value: r.id, label: r.name }))}
+            placeholder="All items"
+            allowEmpty
+            emptyLabel="All items"
+            ariaLabel="Item"
+          />
         </div>
         <div className="field">
           <label>Category</label>
-          <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
-            <option value="">All categories</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>{c.category_name}</option>
-            ))}
-          </select>
+          <SearchSelect
+            value={categoryFilter}
+            onChange={setCategoryFilter}
+            options={categories.map((c) => ({ value: c.id, label: c.category_name }))}
+            placeholder="All categories"
+            allowEmpty
+            emptyLabel="All categories"
+            ariaLabel="Category"
+          />
         </div>
         <div className="field">
           <label>Recipes</label>

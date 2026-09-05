@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Search, Bell, Plus, X, ArrowRight, ChevronDown, LogOut, Check, Store } from 'lucide-react';
+import SearchSelect from './SearchSelect';
 import { supabase } from '../lib/supabase';
 import { useOutlet } from '../context/OutletContext';
 import { useAuth } from '../context/AuthContext';
@@ -445,17 +446,17 @@ const Header = () => {
                     No available tables. Complete or clean a table first.
                   </div>
                 ) : (
-                  <select
+                  <SearchSelect
                     value={customerData.tableId}
-                    onChange={(e) => setCustomerData({ ...customerData, tableId: e.target.value })}
-                    required
-                  >
-                    {availableTables.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        Table {t.table_number} ({t.capacity} seats)
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(v) => setCustomerData({ ...customerData, tableId: v })}
+                    options={availableTables.map((t) => ({
+                      value: t.id,
+                      label: `Table ${t.table_number}`,
+                      sub: `${t.capacity} seats`,
+                    }))}
+                    placeholder="Select a table…"
+                    ariaLabel="Table"
+                  />
                 )}
               </div>
 

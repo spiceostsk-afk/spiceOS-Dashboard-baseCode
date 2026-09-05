@@ -5,6 +5,7 @@ import {
 import { useTransferData } from '../../hooks/useStockOps';
 import { useOutlet } from '../../context/OutletContext';
 import { useTransferPlaces } from '../../hooks/useMastersData';
+import SearchSelect from '../../components/SearchSelect';
 import {
   useLines, ItemSelect, UnitSelect, AddLineButton, RemoveLineButton, LineEditorStyles,
 } from './lineEditor';
@@ -80,6 +81,19 @@ function TransferForm({
   const [error, setError] = useState('');
 
 
+  /**
+   * Both ends offer the same suppliers. A label recorded before the list
+   * existed is kept as an option of its own, rather than silently emptying an
+   * old transfer that named somewhere no longer on the list.
+   */
+  const placeOptions = useMemo(() => {
+    const opts = places.map((p) => ({ value: p.name, label: p.name }));
+    [head.fromLabel, head.toLabel].forEach((label) => {
+      if (label && !opts.some((o) => o.value === label)) opts.push({ value: label, label });
+    });
+    return opts;
+  }, [places, head.fromLabel, head.toLabel]);
+
   const itemById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
   const chosen = lines.map((l) => l.inventoryItemId).filter(Boolean);
 
@@ -135,21 +149,13 @@ function TransferForm({
               {head.direction === 'out' ? (
                 <input className="tf-box__select" value={head.fromLabel} readOnly />
               ) : (
-                <select
-                  className="tf-box__select"
+                <SearchSelect
+                  options={placeOptions}
                   value={head.fromLabel}
-                  onChange={(e) => setHead({ ...head, fromLabel: e.target.value })}
-                >
-                  <option value="">Select supplier…</option>
-                  {places.map((p) => (
-                    <option key={p.id} value={p.name}>{p.name}</option>
-                  ))}
-                  {/* A place recorded before the list existed still shows,
-                      rather than silently emptying an old transfer. */}
-                  {head.fromLabel && !places.some((p) => p.name === head.fromLabel) && (
-                    <option value={head.fromLabel}>{head.fromLabel}</option>
-                  )}
-                </select>
+                  onChange={(v) => setHead({ ...head, fromLabel: v })}
+                  placeholder="Select supplier…"
+                  ariaLabel="Transfer from"
+                />
               )}
             </div>
 
@@ -160,19 +166,13 @@ function TransferForm({
               {head.direction === 'in' ? (
                 <input className="tf-box__select" value={head.toLabel} readOnly />
               ) : (
-                <select
-                  className="tf-box__select"
+                <SearchSelect
+                  options={placeOptions}
                   value={head.toLabel}
-                  onChange={(e) => setHead({ ...head, toLabel: e.target.value })}
-                >
-                  <option value="">Select supplier…</option>
-                  {places.map((p) => (
-                    <option key={p.id} value={p.name}>{p.name}</option>
-                  ))}
-                  {head.toLabel && !places.some((p) => p.name === head.toLabel) && (
-                    <option value={head.toLabel}>{head.toLabel}</option>
-                  )}
-                </select>
+                  onChange={(v) => setHead({ ...head, toLabel: v })}
+                  placeholder="Select supplier…"
+                  ariaLabel="Transfer to"
+                />
               )}
             </div>
 
@@ -549,7 +549,9 @@ export default function Transfer() {
                     {t.direction === 'in' ? 'In' : 'Out'}
                   </span>
                 </div>
-                <div className="tc-ref strong">{t.reference_no || '—'}</div>
+                <div className="tc-ref strong" title={t.reference_no || ''}>
+                  {t.reference_no || '—'}
+                </div>
                 <div className="tc-route muted">
                   {t.from_label || outletName(t.from_outlet_id)} →{' '}
                   {t.to_label || outletName(t.to_outlet_id)}
@@ -681,8 +683,18 @@ export default function Transfer() {
 
         .tr-row { margin: 0 -24px; padding: 0 24px; }
         .tc-dir { width: 90px; }
-        .tc-ref { width: 120px; }
-        .tc-route { flex: 1.4; min-width: 0; }
+        /* The row is a fixed 48px, so anything that wraps paints over its
+           neighbours. A reference is meant to be a short code, but people type
+           whole sentences into it — one line, ellipsis, full text on hover and
+           in the detail drawer. */
+        .tc-ref {
+          width: 150px; min-width: 0;
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .tc-route {
+          flex: 1.4; min-width: 0;
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
         .tc-date { width: 120px; }
         .tc-items { width: 60px; text-align: center; }
         .tc-status { width: 96px; }

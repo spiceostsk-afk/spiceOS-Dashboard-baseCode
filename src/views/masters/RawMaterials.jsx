@@ -3,6 +3,7 @@ import {
   Plus, Zap, FileDown, Upload, Search, X, Star, Trash2, Pencil,
   CheckCircle2, Ban, Package, History, FolderInput,
 } from 'lucide-react';
+import SearchSelect from '../../components/SearchSelect';
 import { useInventoryData } from '../../hooks/useInventoryData';
 import { useUnitMaster } from '../../hooks/useMastersData';
 import { useOutlet } from '../../context/OutletContext';
@@ -280,10 +281,14 @@ export default function RawMaterials() {
         </div>
         <div className="field">
           <label>Category</label>
-          <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
-            <option value="all">All</option>
-            {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+          <SearchSelect
+            value={categoryFilter}
+            onChange={(v) => setCategoryFilter(v || 'all')}
+            options={[{ value: 'all', label: 'All' }]
+              .concat(categories.map((c) => ({ value: c.id, label: c.name })))}
+            placeholder="All"
+            ariaLabel="Category"
+          />
         </div>
         <div className="mst-filters__actions">
           <button className="btn btn--primary" onClick={() => setAppliedName(name)}>
@@ -380,15 +385,14 @@ export default function RawMaterials() {
               </div>
 
               <div className="rm-cat">
-                <select
-                  className={`gcell ${isDirty(item, 'category_id') ? 'gcell--dirty' : ''}`}
-                  value={editOf(item, 'category_id')}
-                  onChange={(e) => setEdit(item.id, 'category_id', e.target.value || null)}
-                  aria-label={`Category of ${item.name}`}
-                >
-                  <option value="">Select Category</option>
-                  {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+                <SearchSelect
+                  className={`ss-root--cell ${isDirty(item, 'category_id') ? 'ss-root--dirty' : ''}`}
+                  value={editOf(item, 'category_id') || ''}
+                  onChange={(v) => setEdit(item.id, 'category_id', v || null)}
+                  options={categories.map((c) => ({ value: c.id, label: c.name }))}
+                  placeholder="Select Category"
+                  ariaLabel={`Category of ${item.name}`}
+                />
               </div>
 
               <div className="rm-unit">
@@ -584,26 +588,25 @@ function QuickAddModal({ categories, units, onClose, onSave, onDone }) {
                 />
               </div>
               <div className="qa-cat">
-                <select
-                  className="gcell"
+                <SearchSelect
+                  className="ss-root--cell"
                   value={r.categoryId}
-                  onChange={(e) => set(r.key, { categoryId: e.target.value })}
-                >
-                  <option value="">Select Category</option>
-                  {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+                  onChange={(v) => set(r.key, { categoryId: v })}
+                  options={categories.map((c) => ({ value: c.id, label: c.name }))}
+                  placeholder="Select Category"
+                  ariaLabel="Category"
+                />
               </div>
               <div className="qa-unit">
-                <select
-                  className="gcell"
+                <SearchSelect
+                  className="ss-root--cell"
                   value={r.unit}
-                  onChange={(e) => set(r.key, { unit: e.target.value })}
-                >
-                  <option value="">Unit…</option>
-                  {units.filter((u) => u.is_active).map((u) => (
-                    <option key={u.id} value={u.symbol}>{u.symbol}</option>
-                  ))}
-                </select>
+                  onChange={(v) => set(r.key, { unit: v })}
+                  options={units.filter((u) => u.is_active)
+                    .map((u) => ({ value: u.symbol, label: u.symbol }))}
+                  placeholder="Unit…"
+                  ariaLabel="Unit"
+                />
               </div>
             </div>
           ))}

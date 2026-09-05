@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Plus, X, ShoppingCart, Eye, Pencil, Trash2, CheckCircle2 } from 'lucide-react';
+import SearchSelect from '../../components/SearchSelect';
 import { usePurchaseData, lineTotals } from '../../hooks/usePurchaseData';
 import {
   useLines, ItemSelect, UnitSelect, AddLineButton, RemoveLineButton, LineEditorStyles,
@@ -84,13 +85,15 @@ function PurchaseForm({ items, vendors, existing, onClose, onSave }) {
           <div className="pf-head">
             <div className="field">
               <label>Vendor</label>
-              <select
+              <SearchSelect
                 value={head.vendorId}
-                onChange={(e) => setHead({ ...head, vendorId: e.target.value })}
-              >
-                <option value="">No vendor</option>
-                {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-              </select>
+                onChange={(v) => setHead({ ...head, vendorId: v })}
+                options={vendors.map((v) => ({ value: v.id, label: v.name }))}
+                placeholder="No vendor"
+                allowEmpty
+                emptyLabel="No vendor"
+                ariaLabel="Vendor"
+              />
             </div>
             <div className="field">
               <label>Invoice no.</label>

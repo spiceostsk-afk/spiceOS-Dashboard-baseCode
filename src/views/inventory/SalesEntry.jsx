@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import {
   Plus, Trash2, Calendar, Receipt, AlertTriangle, CheckCircle2, ClipboardList,
 } from 'lucide-react';
+import SearchSelect from '../../components/SearchSelect';
 import { useSalesEntry } from '../../hooks/useSalesEntry';
 import { useOutlet } from '../../context/OutletContext';
 import { MastersStyles } from '../masters/mastersUi';
@@ -86,7 +87,10 @@ export default function SalesEntry() {
       // moment to book it at, since it covers the whole day.
       time: mode === 'day' ? '21:00' : time,
       lines,
-      tableId,
+      // A day sheet is the whole day consolidated, not one table's bill.
+      // Sending a table here is what put fourteen day totals on G1-G4 and
+      // P1-P4 as though someone had sat there.
+      tableId: mode === 'day' ? '' : tableId,
       customerName: mode === 'day' ? 'Day total' : (customerName || 'Walk-in'),
       paymentMethod,
       note: mode === 'day' ? `Day sheet for ${dateLabel(date)}` : note,
@@ -152,7 +156,7 @@ export default function SalesEntry() {
 
       <div className="se-explain">
         {mode === 'day'
-          ? 'One line per dish with the whole day’s quantity, saved as a single sale booked at close of business.'
+          ? 'One line per dish with the whole day’s quantity, saved as a single sale booked at close of business. It is not recorded against any one table.'
           : 'Recreate one bill with its own time and table. Save, then enter the next.'}
         {' '}
         The date you choose is what the revenue reports against and what the stock comes
@@ -178,15 +182,24 @@ export default function SalesEntry() {
           </div>
         )}
 
-        <div className="field">
-          <label>Table</label>
-          <select value={tableId} onChange={(e) => setTableId(e.target.value)}>
-            <option value="">First available</option>
-            {tables.map((t) => (
-              <option key={t.id} value={t.id}>Table {t.table_number}</option>
-            ))}
-          </select>
-        </div>
+        {mode === 'order' && (
+          <div className="field">
+            <label>Table</label>
+            {/* Left blank, the sale lands on the restaurant's first table —
+                a session cannot exist without one. It is a placeholder, not a
+                seating record, so it is only offered where a real table is
+                being recreated. */}
+            <SearchSelect
+              value={tableId}
+              onChange={setTableId}
+              options={tables.map((t) => ({ value: t.id, label: `Table ${t.table_number}` }))}
+              placeholder="Default table"
+              allowEmpty
+              emptyLabel="Default table"
+              ariaLabel="Table"
+            />
+          </div>
+        )}
 
         {mode === 'order' && (
           <div className="field">
@@ -238,21 +251,18 @@ export default function SalesEntry() {
           return (
             <div key={l.key} className="se-row">
               <div className="se-dish">
-                <select
-                  className="gcell"
+                <SearchSelect
+                  className="ss-root--cell"
                   value={l.menuItemId}
-                  onChange={(e) => setLine(l.key, { menuItemId: e.target.value })}
-                  aria-label="Dish"
-                >
-                  <option value="">Select dish…</option>
-                  {sellable
+                  onChange={(v) => setLine(l.key, { menuItemId: v })}
+                  options={sellable
                     .filter((d) => d.id === l.menuItemId || !chosen.includes(d.id))
-                    .map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.item_name} — {money(d.price)}
-                      </option>
-                    ))}
-                </select>
+                    .map((d) => ({
+                      value: d.id, label: d.item_name, sub: money(d.price),
+                    }))}
+                  placeholder="Select dish…"
+                  ariaLabel="Dish"
+                />
               </div>
               <div className="se-qty">
                 <input
