@@ -88,14 +88,21 @@ export function VoidOrderModal({ order, busy, onClose, onConfirm }) {
 }
 
 /* ----------------------------------------------------------------- Delete */
+/**
+ * Deleting asks for no reason, on purpose.
+ *
+ * Voiding keeps the bill and needs explaining — the record survives and the
+ * next person to read it deserves to know why it is struck through. A delete
+ * leaves nothing to annotate: the bill is gone, and a reason box in front of
+ * it is a box someone types "delete" into. The audit entry still records who
+ * removed what and when.
+ */
 export function DeleteOrderModal({ order, busy, onClose, onConfirm }) {
-  const [reason, setReason] = useState('');
   const [error, setError] = useState('');
 
   const submit = async (e) => {
     e.preventDefault();
-    if (!reason.trim()) { setError('A reason is required.'); return; }
-    const res = await onConfirm(order.id, reason.trim());
+    const res = await onConfirm(order.id, '');
     if (res.success) onClose(); else setError(res.error);
   };
 
@@ -125,21 +132,15 @@ export function DeleteOrderModal({ order, busy, onClose, onConfirm }) {
 
           <div className="oa-keep">
             The audit entry survives the deletion, so there is still a record of who
-            removed it and why.
+            removed it and when.
           </div>
-
-          <ReasonField
-            value={reason}
-            onChange={setReason}
-            placeholder="e.g. Duplicate of bill #1DE4"
-          />
         </div>
 
         <div className="modal__actions">
           <button type="button" className="btn btn--ghost" onClick={onClose} disabled={busy}>
             Cancel
           </button>
-          <button type="submit" className="btn btn--danger" disabled={busy || !reason.trim()}>
+          <button type="submit" className="btn btn--danger" disabled={busy}>
             {busy ? 'Deleting…' : 'Delete permanently'}
           </button>
         </div>

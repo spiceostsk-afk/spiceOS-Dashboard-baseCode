@@ -74,10 +74,23 @@ export default function ClosingStockHistory({ type = 'closing', onEdit }) {
     setTimeout(() => setNotice(null), 4200);
   };
 
+  /**
+   * Open a sheet for more work.
+   *
+   * A posted count has to be REOPENED — its correction is on the ledger and
+   * has to come off before the figures can be touched again. A draft has
+   * posted nothing, so there is nothing to undo and it simply opens.
+   *
+   * The two were conflated, and because reopening only makes sense for a
+   * posted count the button was disabled for everything else — which left a
+   * half-finished sheet with no way back to it from here.
+   */
   const handleEdit = async (count) => {
-    const res = await docs.reopenCount(count.id);
-    if (!res.success) { flash(res.error, 'bad'); return; }
-    flash(`${dateLabel(count.date)} reopened — its stock correction has been undone.`);
+    if (count.status === 'submitted') {
+      const res = await docs.reopenCount(count.id);
+      if (!res.success) { flash(res.error, 'bad'); return; }
+      flash(`${dateLabel(count.date)} reopened — its stock correction has been undone.`);
+    }
     if (onEdit) onEdit(count.date);
   };
 
@@ -122,10 +135,10 @@ export default function ClosingStockHistory({ type = 'closing', onEdit }) {
         {!loading && counts.length === 0 && (
           <div className="empty-state">
             <span className="empty-state__mark"><ClipboardList size={22} /></span>
-            <div className="empty-state__title">Nothing posted yet</div>
+            <div className="empty-state__title">No sheets yet</div>
             <div className="empty-state__sub">
-              Counts appear here once they are reviewed and posted, with the option to
-              look inside, correct them or remove them.
+              Every sheet appears here, posted or not. A draft has corrected nothing
+              until it is posted — open it from here to finish it off.
             </div>
           </div>
         )}
@@ -135,18 +148,27 @@ export default function ClosingStockHistory({ type = 'closing', onEdit }) {
             <div className="csh-date strong">{dateLabel(c.date)}</div>
             <div className="csh-cycle muted">{c.cycle}</div>
             <div className="csh-n muted">{c.counted}</div>
+            {/* A draft's variance was worked out when the sheet was typed and
+                the ledger has moved since, so showing it as a finding invites
+                someone to act on a stale number. It is settled on submit,
+                which recomputes against the balance at that day's end. */}
             <div className="csh-n">
-              {c.mismatched === 0
-                ? <span className="pill pill--sm tone-green">All matched</span>
-                : <span className="pill pill--sm tone-amber">{c.mismatched}</span>}
+              {c.status !== 'submitted'
+                ? <span className="csh-pending">Not posted yet</span>
+                : c.mismatched === 0
+                  ? <span className="pill pill--sm tone-green">All matched</span>
+                  : <span className="pill pill--sm tone-amber">{c.mismatched}</span>}
             </div>
-            <div className={`csh-val tnum ${c.varianceValue < 0 ? 'neg' : ''}`}>
-              {money(c.varianceValue)}
+            <div className={`csh-val tnum ${c.status === 'submitted' && c.varianceValue < 0 ? 'neg' : ''}`}>
+              {c.status === 'submitted' ? money(c.varianceValue) : <span className="muted">—</span>}
             </div>
             <div className="csh-status">
               <span className={`pill pill--sm ${c.status === 'submitted' ? 'tone-green' : 'tone-amber'}`}>
                 {c.status === 'submitted' ? 'Posted' : c.status}
               </span>
+              {c.status !== 'submitted' && c.counted > 0 && (
+                <div className="csh-warn">{c.counted} counted, none applied</div>
+              )}
             </div>
             <div className="csh-act">
               <button className="step" title="View detail" onClick={() => setViewing(c)}>
@@ -154,9 +176,11 @@ export default function ClosingStockHistory({ type = 'closing', onEdit }) {
               </button>
               <button
                 className="step"
-                title="Edit — undoes this count's stock correction"
+                title={c.status === 'submitted'
+                  ? "Edit — undoes this count's stock correction"
+                  : 'Carry on filling in this sheet'}
                 onClick={() => handleEdit(c)}
-                disabled={docs.busy || c.status !== 'submitted'}
+                disabled={docs.busy}
               >
                 <Pencil size={12} />
               </button>
@@ -236,7 +260,12 @@ export default function ClosingStockHistory({ type = 'closing', onEdit }) {
         .csh-cycle  { width: 90px; text-transform: capitalize; }
         .csh-n      { width: 110px; }
         .csh-val    { width: 130px; text-align: right; font-weight: 600; }
-        .csh-status { width: 100px; }
+        .csh-status { width: 130px; }
+        .csh-pending { font-size: 11.5px; font-weight: 600; color: var(--color-text-faint); }
+        .csh-warn {
+          margin-top: 2px; font-size: 11px; font-weight: 600;
+          color: var(--color-warning);
+        }
         .csh-act    { flex: 1; display: flex; justify-content: flex-end; gap: 6px; }
         .neg { color: var(--color-danger); }
         .tnum { font-variant-numeric: tabular-nums; }
