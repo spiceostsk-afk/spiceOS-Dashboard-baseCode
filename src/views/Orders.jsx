@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { ClipboardList, Search, RefreshCw, Printer } from 'lucide-react';
+import {
+  ClipboardList, Search, RefreshCw, Printer, ShieldCheck, Pencil, Ban, Trash2,
+} from 'lucide-react';
 import { useOrdersData } from '../hooks/useOrdersData';
 import { useOrderAdmin } from '../hooks/useOrderAdmin';
 import { EditOrderModal, VoidOrderModal, DeleteOrderModal } from './OrderAdminModals';
@@ -243,6 +245,10 @@ export default function Orders() {
 
   return (
     <div className="page">
+      {notice && (
+        <div className={`mst-note ${notice.tone === 'bad' ? 'bad' : ''}`}>{notice.msg}</div>
+      )}
+
       <div className="oh-filters">
         <div className="search-input" style={{ width: 300 }}>
           <Search size={15} />
@@ -345,6 +351,53 @@ export default function Orders() {
           );
         })}
       </div>
+
+      {/* The correction dialogs. openAdmin only ever set the target — nothing
+          rendered them, so Edit, Void and Delete looked live and did nothing. */}
+      {adminTarget?.kind === 'edit' && (
+        <EditOrderModal
+          order={adminTarget}
+          busy={admin.busy}
+          onClose={() => setAdminTarget(null)}
+          onConfirm={async (id, lines, reason) => {
+            const res = await admin.editOrder(id, lines, reason);
+            flash(res.success
+              ? `${adminTarget.billNo} corrected. Its ingredients were adjusted to match.`
+              : res.error, res.success ? 'ok' : 'bad');
+            return res;
+          }}
+        />
+      )}
+
+      {adminTarget?.kind === 'void' && (
+        <VoidOrderModal
+          order={adminTarget}
+          busy={admin.busy}
+          onClose={() => setAdminTarget(null)}
+          onConfirm={async (id, reason) => {
+            const res = await admin.voidOrder(id, reason);
+            flash(res.success
+              ? `${adminTarget.billNo} voided. It stays on record and its stock has been returned.`
+              : res.error, res.success ? 'ok' : 'bad');
+            return res;
+          }}
+        />
+      )}
+
+      {adminTarget?.kind === 'delete' && (
+        <DeleteOrderModal
+          order={adminTarget}
+          busy={admin.busy}
+          onClose={() => setAdminTarget(null)}
+          onConfirm={async (id, reason) => {
+            const res = await admin.deleteOrder(id, reason);
+            flash(res.success
+              ? `${adminTarget.billNo} deleted. The audit entry records who removed it.`
+              : res.error, res.success ? 'ok' : 'bad');
+            return res;
+          }}
+        />
+      )}
 
       <style>{`
         .oh-filters { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }

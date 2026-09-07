@@ -484,8 +484,46 @@ export function useBillingData() {
         : uiState.amountPaid > 0 && uiState.amountPaid < curTotal;
       const isFullyPaid = !isPartial;
 
+      // The figures the till worked out and put on the customer's bill. They
+      // are recorded as they stand rather than recomputed anywhere else: two
+      // implementations of the same arithmetic eventually disagree, and the
+      // one the customer was handed is the one that has to be on record.
+      const billSubtotal = calcSubtotal(sessionState.items);
+      const billDiscount = calcDiscountAmount(
+        billSubtotal, uiState.discountType, uiState.discountValue,
+      );
+      const billService = calcServiceCharge(
+        billSubtotal - billDiscount,
+        uiState.showServiceCharge ? uiState.serviceChargePercent : 0,
+      );
+
+      /**
+       * Settling has always closed the session and never written a bill, so
+       * every table settled at the till was invisible to the payment-mode
+       * report and its discount lived only in session metadata. record_bill is
+       * idempotent on the session, so a partial payment followed by the rest
+       * updates one row rather than making two.
+       */
+      const writeBill = async (paid) => {
+        const { error: billError } = await supabase.rpc('record_bill', {
+          p_session_id: sessionId,
+          p_payment_method: uiState.paymentMethod || 'cash',
+          p_subtotal: billSubtotal,
+          p_discount_type: uiState.discountType === 'none' ? null : uiState.discountType,
+          p_discount_amount: billDiscount,
+          p_service_charge: billService,
+          p_tax: 0,
+          p_total: curTotal,
+          p_paid: paid,
+        });
+        // A bill that fails to save must not strand a paid table on the floor;
+        // the settle itself is what the staff are waiting on.
+        if (billError) console.error('Could not record the bill:', billError);
+      };
+
       if (isOnline) {
         if (isFullyPaid) {
+          await writeBill(true);
           await supabase
             .from('customer_sessions')
             .update({ session_status: SESSION_STATUS.completed, ended_at: new Date().toISOString() })
@@ -505,6 +543,7 @@ export function useBillingData() {
             .eq('id', sessionState.session?.table_id);
           scheduleTableCleanup(sessionState.session?.table_id, TABLE_CLEANUP_DELAY_MS);
         } else {
+          await writeBill(false);
           const { error: partialError } = await supabase
             .from('customer_sessions')
             .update({ session_status: SESSION_STATUS.billing })

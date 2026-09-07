@@ -218,6 +218,13 @@ export default function SalesEntry() {
             <option value="cash">Cash</option>
             <option value="card">Card</option>
             <option value="upi">UPI</option>
+            {/* Aggregator and delivery takings are money through a different
+                door, not a different card machine. Recorded as their own
+                method, the payment report separates platform sales from
+                dine-in without anyone having to reconcile it by hand. */}
+            <option value="zomato">Zomato</option>
+            <option value="swiggy">Swiggy</option>
+            <option value="home_delivery">Home delivery</option>
             <option value="other">Other</option>
           </select>
         </div>
