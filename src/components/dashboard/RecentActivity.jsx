@@ -1,4 +1,5 @@
 import React from 'react';
+import { fmtTime } from '../../lib/dates';
 
 const STATUS_TONES = {
   pending: { label: 'Pending', tone: 'tone-amber' },
@@ -19,7 +20,7 @@ const FORMAT_CURRENCY = new Intl.NumberFormat('en-IN', {
 function formatTime(dateStr) {
   if (!dateStr) return '';
   try {
-    return new Date(dateStr).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    return fmtTime(dateStr);
   } catch {
     return '';
   }

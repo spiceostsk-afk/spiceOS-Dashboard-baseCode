@@ -1,6 +1,7 @@
 import React from 'react';
 import { Wallet, X, RefreshCw } from 'lucide-react';
 import { usePaymentsData } from '../hooks/usePaymentsData';
+import { fmtDateTime, fmtTime } from '../lib/dates';
 
 const DATE_RANGES = [
   { key: 'today', label: 'Today' },
@@ -17,7 +18,7 @@ function PaymentDetailModal({ payment, formatCurrency, onClose }) {
     ['Table', `T-${payment.table_number}`],
     ['Customer', payment.customer_name || 'Walk-in'],
     ['Guests', payment.guest_count || '—'],
-    ['Settled at', payment.ended_at ? new Date(payment.ended_at).toLocaleString('en-IN') : '—'],
+    ['Settled at', fmtDateTime(payment.ended_at)],
     ['Orders', payment.order_count],
   ];
 
@@ -158,11 +159,7 @@ export default function Payments() {
             className="table-row table-row--clickable"
             onClick={() => setSelectedPayment(p)}
           >
-            <div className="pc-time muted tnum">
-              {p.ended_at
-                ? new Date(p.ended_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
-                : '—'}
-            </div>
+            <div className="pc-time muted tnum">{fmtTime(p.ended_at)}</div>
             <div className="pc-bill strong">#{p.id?.slice(0, 6).toUpperCase()}</div>
             <div className="pc-table">T-{p.table_number}</div>
             <div className="pc-cust muted">{p.customer_name || 'Walk-in'}</div>

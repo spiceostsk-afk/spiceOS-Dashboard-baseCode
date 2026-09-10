@@ -5,6 +5,7 @@ import {
 import { useOpeningStock } from '../../hooks/useMastersData';
 import { useOutlet } from '../../context/OutletContext';
 import { CategoryStrip, MastersStyles } from '../masters/mastersUi';
+import { fmtDate } from '../../lib/dates';
 
 /**
  * Opening Stock — what was on the shelf when the day started.
@@ -28,9 +29,6 @@ const fmt = (n) => {
   return Number.isInteger(num) ? String(num) : num.toFixed(3).replace(/\.?0+$/, '');
 };
 
-const dateLabel = (iso) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-IN', {
-  day: '2-digit', month: 'short', year: 'numeric',
-});
 
 const previousDay = (iso) => {
   const d = new Date(`${iso}T00:00:00`);
@@ -117,7 +115,7 @@ export default function OpeningStock() {
         <div>
           <h2 className="mst-title">Opening Stock</h2>
           <div className="card__subtitle">
-            {dateLabel(date)}
+            {fmtDate(date)}
             {isMultiOutlet && outlet ? ` · ${outlet.name}` : ''}
           </div>
         </div>
@@ -140,9 +138,9 @@ export default function OpeningStock() {
 
       <div className="os-explain">
         <div className="os-chain">
-          <span>Closing on {dateLabel(previousDay(date))}</span>
+          <span>Closing on {fmtDate(previousDay(date))}</span>
           <ArrowRight size={15} />
-          <strong>Opening on {dateLabel(date)}</strong>
+          <strong>Opening on {fmtDate(date)}</strong>
         </div>
         <p>
           These are the same number. Opening stock is everything that happened before
@@ -210,7 +208,7 @@ export default function OpeningStock() {
               {r.hasHistory ? (
                 <span className="os-derived">
                   <Lock size={12} /> Carried from {r.lastMovement
-                    ? dateLabel(r.lastMovement) : 'earlier activity'}
+                    ? fmtDate(r.lastMovement) : 'earlier activity'}
                 </span>
               ) : (
                 <span className="muted">No earlier activity</span>

@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, ArrowRight } from 'lucide-react';
 import SearchSelect from '../SearchSelect';
+import { fmtDate } from '../../lib/dates';
 
 function Modal({ onClose, title, width, children }) {
   return (
@@ -366,7 +367,7 @@ export function ReprintBillModal({ session, onClose }) {
         </div>
         <div className="reprint__meta">
           <div><span>Customer</span><b>{session.customer_name || 'Walk-in'}</b></div>
-          <div><span>Date</span><b>{session.ended_at ? new Date(session.ended_at).toLocaleDateString() : '—'}</b></div>
+          <div><span>Date</span><b>{fmtDate(session.ended_at)}</b></div>
           <div><span>Bill #</span><b>{session.id?.slice(0, 4).toUpperCase()}</b></div>
         </div>
         <div className="reprint__status">

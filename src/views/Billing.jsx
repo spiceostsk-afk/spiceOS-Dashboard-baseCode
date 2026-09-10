@@ -18,6 +18,7 @@ import {
   VoidBillModal,
   ReprintBillModal,
 } from '../components/billing/Modals';
+import { fmtDate, fmtTime } from '../lib/dates';
 
 const FORMAT_CURRENCY = new Intl.NumberFormat('en-IN', {
   style: 'currency', currency: 'INR', minimumFractionDigits: 2,
@@ -80,7 +81,7 @@ function EndShiftModal({ onClose }) {
     <div className="overlay" onClick={onClose}>
       <div className="modal shift-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal__head">
-          <div className="modal__title">Shift summary · {new Date().toLocaleDateString('en-IN')}</div>
+          <div className="modal__title">Shift summary · {fmtDate(new Date())}</div>
           <button className="modal__close" onClick={onClose}><X size={17} /></button>
         </div>
 
@@ -132,9 +133,7 @@ function EndShiftModal({ onClose }) {
                         {FORMAT_CURRENCY.format(s.total_amount || 0)}
                       </div>
                       <div style={{ width: 70, textAlign: 'right' }} className="muted tnum">
-                        {s.ended_at
-                          ? new Date(s.ended_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
-                          : '—'}
+                        {fmtTime(s.ended_at)}
                       </div>
                     </div>
                   ))}
@@ -185,6 +184,7 @@ export default function Billing() {
     setAmountPaid,
     setVoidReason,
     updateTab,
+    setActiveArea,
     handleStartSession,
     handleMarkAsPaid,
     handleAddManualItem,
@@ -362,7 +362,7 @@ export default function Billing() {
             error={state.workspaceError}
             selectedSessionId={sessionState.session?.id}
             sessionTableId={sessionState.session?.table_id}
-            onSelectArea={(area) => setModalState((prev) => ({ ...prev, activeArea: area }))}
+            onSelectArea={setActiveArea}
             onTableClick={onTableClick}
             onFreeTable={handleFreeTable}
           />
@@ -418,6 +418,7 @@ export default function Billing() {
           onSettle={handleMarkAsPaid}
           onPrint={() => handlePrint('bill')}
           onPrintKot={() => handlePrint('kot')}
+          onReprintKot={() => handlePrint('kot-all')}
           onMoveTable={handleOpenMoveTable}
           onMergeBill={handleOpenMergeOrder}
           onSplit={onSplitBill}

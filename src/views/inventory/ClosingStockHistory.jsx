@@ -3,6 +3,7 @@ import { Eye, Pencil, Trash2, ClipboardList, Download } from 'lucide-react';
 import { useStockCountHistoryDetail, useStockDocuments } from '../../hooks/useStockDocuments';
 import { ConfirmDelete, DetailDrawer } from '../masters/masterDialogs';
 import { MastersStyles } from '../masters/mastersUi';
+import { fmtDate, fmtDateTime } from '../../lib/dates';
 
 /**
  * Everything already posted on the Closing Stock screen, with a way back in.
@@ -20,9 +21,6 @@ const fmt = (n) => {
   return Number.isInteger(num) ? String(num) : num.toFixed(3).replace(/\.?0+$/, '');
 };
 
-const dateLabel = (iso) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-IN', {
-  day: '2-digit', month: 'short', year: 'numeric',
-});
 
 const money = (n) => `${n < 0 ? '−' : ''}₹${Math.abs(Number(n) || 0).toFixed(2)}`;
 
@@ -89,7 +87,7 @@ export default function ClosingStockHistory({ type = 'closing', onEdit }) {
     if (count.status === 'submitted') {
       const res = await docs.reopenCount(count.id);
       if (!res.success) { flash(res.error, 'bad'); return; }
-      flash(`${dateLabel(count.date)} reopened — its stock correction has been undone.`);
+      flash(`${fmtDate(count.date)} reopened — its stock correction has been undone.`);
     }
     if (onEdit) onEdit(count.date);
   };
@@ -98,7 +96,7 @@ export default function ClosingStockHistory({ type = 'closing', onEdit }) {
     setDelError('');
     const res = await docs.deleteDocument('count', deleting.id);
     if (res.success) {
-      flash(`Count for ${dateLabel(deleting.date)} deleted.`);
+      flash(`Count for ${fmtDate(deleting.date)} deleted.`);
       setDeleting(null);
     } else {
       setDelError(res.error);
@@ -145,7 +143,7 @@ export default function ClosingStockHistory({ type = 'closing', onEdit }) {
 
         {!loading && counts.map((c) => (
           <div key={c.id} className="table-row csh-row">
-            <div className="csh-date strong">{dateLabel(c.date)}</div>
+            <div className="csh-date strong">{fmtDate(c.date)}</div>
             <div className="csh-cycle muted">{c.cycle}</div>
             <div className="csh-n muted">{c.counted}</div>
             {/* A draft's variance was worked out when the sheet was typed and
@@ -199,9 +197,9 @@ export default function ClosingStockHistory({ type = 'closing', onEdit }) {
 
       {viewing && (
         <DetailDrawer
-          title={`Closing stock — ${dateLabel(viewing.date)}`}
+          title={`Closing stock — ${fmtDate(viewing.date)}`}
           subtitle={viewing.status === 'submitted'
-            ? `Posted ${viewing.submittedAt ? new Date(viewing.submittedAt).toLocaleString('en-IN') : ''}`
+            ? `Posted ${fmtDateTime(viewing.submittedAt, '')}`
             : 'Draft, not yet posted'}
           meta={[
             { label: 'Items counted', value: viewing.counted },
@@ -235,7 +233,7 @@ export default function ClosingStockHistory({ type = 'closing', onEdit }) {
       {deleting && (
         <ConfirmDelete
           title="Delete stock count"
-          subject={`Closing stock — ${dateLabel(deleting.date)}`}
+          subject={`Closing stock — ${fmtDate(deleting.date)}`}
           permanent
           busy={docs.busy}
           error={delError}

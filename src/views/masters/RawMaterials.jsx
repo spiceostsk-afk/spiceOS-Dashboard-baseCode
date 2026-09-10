@@ -9,6 +9,7 @@ import { useUnitMaster } from '../../hooks/useMastersData';
 import { useOutlet } from '../../context/OutletContext';
 import { CategoryStrip, Pager, SelectionBar, ActionMenu, MastersStyles } from './mastersUi';
 import { ItemModal, StockLogDrawer } from './rawMaterialModals';
+import { fmtDate } from '../../lib/dates';
 
 /**
  * Raw Materials — the master list of everything the kitchen tracks.
@@ -27,9 +28,6 @@ import { ItemModal, StockLogDrawer } from './rawMaterialModals';
 
 const PAGE_SIZE = 100;
 
-const dayLabel = (iso) => (iso
-  ? new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })
-  : '—');
 
 export default function RawMaterials() {
   const {
@@ -406,8 +404,8 @@ export default function RawMaterials() {
                 {item.outletStock ?? item.stock} {item.unit}
               </div>
 
-              <div className="rm-date muted">{dayLabel(item.createdAt)}</div>
-              <div className="rm-date muted">{dayLabel(item.lastMovementAt)}</div>
+              <div className="rm-date muted">{fmtDate(item.createdAt)}</div>
+              <div className="rm-date muted">{fmtDate(item.lastMovementAt)}</div>
 
               <div className="rm-fav">
                 <input

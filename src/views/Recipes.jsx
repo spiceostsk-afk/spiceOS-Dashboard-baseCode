@@ -284,6 +284,80 @@ function CopyRecipeModal({ recipe, recipes, onClose, onCopy }) {
 }
 
 /**
+ * Pick which dish to write a recipe for.
+ *
+ * Only dishes that have no recipe yet are offered: the ones already mapped are
+ * sitting in the table behind this modal, where they are edited in place, and
+ * repeating them here only invites overwriting a recipe by accident.
+ */
+function NewRecipeModal({ recipes, onClose, onPick }) {
+  const [target, setTarget] = useState('');
+
+  const unmapped = useMemo(
+    () => recipes.filter((r) => !r.lines.length),
+    [recipes],
+  );
+
+  const submit = (e) => {
+    e.preventDefault();
+    const dish = unmapped.find((r) => r.id === target);
+    if (dish) onPick(dish);
+  };
+
+  return (
+    <div className="overlay" onClick={onClose}>
+      <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
+        <div className="modal__head">
+          <div className="modal__title">Create new recipe</div>
+          <button type="button" className="modal__close" onClick={onClose}><X size={17} /></button>
+        </div>
+
+        <div className="modal__body">
+          {unmapped.length === 0 ? (
+            <div className="mst-note">
+              Every dish on the menu already has a recipe. To change one, edit it
+              from the list behind this window.
+            </div>
+          ) : (
+            <>
+              <div className="card__subtitle">
+                {unmapped.length} dish{unmapped.length === 1 ? '' : 'es'} still without a
+                recipe. Dishes already mapped are not listed here.
+              </div>
+              <div className="field">
+                <label>Dish</label>
+                <SearchSelect
+                  value={target}
+                  onChange={setTarget}
+                  options={unmapped.map((r) => ({
+                    value: r.id,
+                    label: r.name,
+                    sub: r.category,
+                  }))}
+                  placeholder="Select a dish…"
+                  ariaLabel="Dish"
+                />
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="modal__actions">
+          <button type="button" className="btn btn--ghost" onClick={onClose}>Cancel</button>
+          <button
+            type="submit"
+            className="btn btn--primary"
+            disabled={!target || unmapped.length === 0}
+          >
+            Add ingredients
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+/**
  * Recipe Management — which dish eats which raw materials.
  *
  * A recipe is what connects the menu to the store: without one, a dish can be
@@ -308,6 +382,7 @@ export default function Recipes() {
   const [selected, setSelected] = useState(() => new Set());
   const [editing, setEditing] = useState(null);
   const [copying, setCopying] = useState(null);
+  const [creating, setCreating] = useState(false);
   const [notice, setNotice] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -429,7 +504,7 @@ export default function Recipes() {
     URL.revokeObjectURL(url);
   };
 
-  const firstWithoutRecipe = recipes.find((r) => !r.lines.length);
+  const unmappedCount = recipes.reduce((n, r) => n + (r.lines.length ? 0 : 1), 0);
 
   const cards = [
     { label: 'Dishes', value: metrics.dishes, color: 'var(--color-text)' },
@@ -450,8 +525,9 @@ export default function Recipes() {
         <div className="mst-actions">
           <button
             className="btn btn--primary"
-            onClick={() => setEditing(firstWithoutRecipe || recipes[0])}
-            disabled={recipes.length === 0}
+            onClick={() => setCreating(true)}
+            disabled={unmappedCount === 0}
+            title={unmappedCount === 0 ? 'Every dish already has a recipe' : undefined}
           >
             <Plus size={15} /> Create New
           </button>
@@ -691,6 +767,14 @@ export default function Recipes() {
 
         <Pager page={page} pageSize={PAGE_SIZE} total={visible.length} onPage={setPage} />
       </div>
+
+      {creating && (
+        <NewRecipeModal
+          recipes={recipes}
+          onClose={() => setCreating(false)}
+          onPick={(dish) => { setCreating(false); setEditing(dish); }}
+        />
+      )}
 
       {editing && (
         <RecipeEditor

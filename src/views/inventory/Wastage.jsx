@@ -6,6 +6,7 @@ import {
 } from './lineEditor';
 import { ConfirmDelete, DetailDrawer } from '../masters/masterDialogs';
 import { MastersStyles } from '../masters/mastersUi';
+import { fmtDate } from '../../lib/dates';
 
 /**
  * Wastage — stock that left without being sold.
@@ -18,10 +19,6 @@ import { MastersStyles } from '../masters/mastersUi';
 const money = (n) => `₹${(Number(n) || 0).toFixed(2)}`;
 const today = () => new Date().toISOString().slice(0, 10);
 
-const dateLabel = (iso) =>
-  new Date(`${iso}T00:00:00`).toLocaleDateString('en-IN', {
-    day: '2-digit', month: 'short', year: 'numeric',
-  });
 
 function WastageForm({ items, existing, onClose, onSave }) {
   const { lines, addLine, updateLine, removeLine, setLines } = useLines();
@@ -287,7 +284,7 @@ export default function Wastage() {
           return (
             <React.Fragment key={e.id}>
               <div className="table-row wa-row">
-                <div className="wc-date strong">{dateLabel(e.wasted_on)}</div>
+                <div className="wc-date strong">{fmtDate(e.wasted_on)}</div>
                 <div className="wc-items muted">{lines.length}</div>
                 <div className="wc-note muted">{e.note || '—'}</div>
                 <div className="wc-value amount">{money(e.total_value)}</div>
@@ -328,7 +325,7 @@ export default function Wastage() {
 
       {viewing && (
         <DetailDrawer
-          title={`Wastage — ${dateLabel(viewing.wasted_on)}`}
+          title={`Wastage — ${fmtDate(viewing.wasted_on)}`}
           subtitle={viewing.note || 'No note'}
           meta={[
             { label: 'Status', value: viewing.status },
@@ -352,7 +349,7 @@ export default function Wastage() {
       {deleting && (
         <ConfirmDelete
           title="Delete wastage entry"
-          subject={`Wastage — ${dateLabel(deleting.wasted_on)}, ${money(deleting.total_value)}`}
+          subject={`Wastage — ${fmtDate(deleting.wasted_on)}, ${money(deleting.total_value)}`}
           permanent
           busy={busy}
           error={delError}

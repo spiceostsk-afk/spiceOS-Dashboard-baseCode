@@ -7,6 +7,7 @@ import {
 } from './lineEditor';
 import { ConfirmDelete, DetailDrawer } from '../masters/masterDialogs';
 import { MastersStyles } from '../masters/mastersUi';
+import { fmtDate } from '../../lib/dates';
 
 /**
  * Purchase entry — the vendor invoice that puts stock on the shelf.
@@ -19,10 +20,6 @@ import { MastersStyles } from '../masters/mastersUi';
 const money = (n) => `₹${(Number(n) || 0).toFixed(2)}`;
 const today = () => new Date().toISOString().slice(0, 10);
 
-const dateLabel = (iso) =>
-  new Date(`${iso}T00:00:00`).toLocaleDateString('en-IN', {
-    day: '2-digit', month: 'short', year: 'numeric',
-  });
 
 const STATUS_TONE = { posted: 'tone-green', draft: 'tone-amber', cancelled: 'tone-neutral' };
 
@@ -62,7 +59,30 @@ function PurchaseForm({ items, vendors, existing, onClose, onSave }) {
   const gross = computed.reduce((s, c) => s + c.amount, 0);
   const total = gross - (Number(head.discount) || 0);
 
+  // Lines with a quantity but no rate. Almost always a field the operator
+  // tabbed past rather than goods that were genuinely free, and the cost of
+  // missing it is high: the invoice posts at ₹0, the stock is valued at
+  // nothing, and every report that touches money reads zero afterwards.
+  const unpriced = lines.filter(
+    (l) => l.inventoryItemId && Number(l.qty) > 0 && !(Number(l.rate) > 0),
+  );
+
   const submit = async (postNow) => {
+    if (unpriced.length > 0) {
+      const names = unpriced
+        .slice(0, 4)
+        .map((l) => itemById.get(l.inventoryItemId)?.item_name || 'an item');
+      const more = unpriced.length > 4 ? `, and ${unpriced.length - 4} more` : '';
+      const ok = window.confirm(
+        `${unpriced.length} line${unpriced.length === 1 ? '' : 's'} ${unpriced.length === 1 ? 'has' : 'have'} no rate — `
+        + `${names.join(', ')}${more}.\n\n`
+        + 'Saving now records this stock as free. Purchase value, stock value '
+        + 'and every costing report will read ₹0 for it.\n\n'
+        + 'Save anyway?',
+      );
+      if (!ok) return;
+    }
+
     setSaving(true);
     setError('');
     const res = await onSave({ ...head, lines }, { postNow });
@@ -160,11 +180,17 @@ function PurchaseForm({ items, vendors, existing, onClose, onSave }) {
                     />
                   </div>
                   <div className="ln-c-rate">
+                    {/* Flagged as soon as a quantity is entered without a
+                        rate, rather than only at save. */}
                     <input
-                      className="ln-input" type="number" step="any" min="0"
+                      className={`ln-input ${Number(l.qty) > 0 && !(Number(l.rate) > 0) ? 'ln-input--warn' : ''}`}
+                      type="number" step="any" min="0"
                       value={l.rate}
                       onChange={(e) => updateLine(l.key, { rate: e.target.value })}
                       placeholder="0.00"
+                      title={Number(l.qty) > 0 && !(Number(l.rate) > 0)
+                        ? 'No rate — this line will be recorded as free'
+                        : undefined}
                     />
                   </div>
                   <div className="ln-c-tax">
@@ -366,7 +392,7 @@ export default function Purchase() {
               <div className="table-row pu-row">
                 <div className="pc-inv strong">{p.invoice_no || '—'}</div>
                 <div className="pc-vendor muted">{p.vendors?.name || 'No vendor'}</div>
-                <div className="pc-date muted">{dateLabel(p.invoice_date)}</div>
+                <div className="pc-date muted">{fmtDate(p.invoice_date)}</div>
                 <div className="pc-items muted">{lines.length}</div>
                 <div className="pc-total amount">{money(p.total)}</div>
                 <div className="pc-status">
@@ -423,7 +449,7 @@ export default function Purchase() {
       {viewing && (
         <DetailDrawer
           title={viewing.invoice_no || 'Purchase'}
-          subtitle={`${viewing.vendors?.name || 'No vendor'} · ${dateLabel(viewing.invoice_date)}`}
+          subtitle={`${viewing.vendors?.name || 'No vendor'} · ${fmtDate(viewing.invoice_date)}`}
           meta={[
             { label: 'Status', value: viewing.status },
             { label: 'Items', value: (viewing.purchase_items || []).length },

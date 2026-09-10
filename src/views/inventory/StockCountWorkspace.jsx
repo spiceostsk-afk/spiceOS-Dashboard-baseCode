@@ -8,6 +8,7 @@ import { useOutlet } from '../../context/OutletContext';
 import ClosingStockHistory from './ClosingStockHistory';
 import { useStockDocuments, useStockCountHistoryDetail } from '../../hooks/useStockDocuments';
 import { ConfirmDelete } from '../masters/masterDialogs';
+import { fmtDate } from '../../lib/dates';
 
 /**
  * Counting stock, for both the end-of-day close and a mid-service spot check.
@@ -34,10 +35,6 @@ const fmt = (n, digits = 3) => {
   return Number.isInteger(num) ? String(num) : num.toFixed(digits).replace(/\.?0+$/, '');
 };
 
-const dateLabel = (iso) =>
-  new Date(`${iso}T00:00:00`).toLocaleDateString('en-IN', {
-    day: '2-digit', month: 'short', year: 'numeric',
-  });
 
 /* --------------------------------------------------------------- Add-up pad */
 /**
@@ -404,7 +401,7 @@ export default function StockCountWorkspace({ mode = 'closing' }) {
     if (!postedSheet) return;
     const res = await docs.reopenCount(postedSheet.id);
     flash(res.success
-      ? `${dateLabel(sheet.date)} reopened — its stock correction has been undone, and the counted numbers are still on the sheet.`
+      ? `${fmtDate(sheet.date)} reopened — its stock correction has been undone, and the counted numbers are still on the sheet.`
       : res.error, res.success ? 'ok' : 'bad');
   };
 
@@ -413,7 +410,7 @@ export default function StockCountWorkspace({ mode = 'closing' }) {
     const res = await docs.deleteDocument('count', postedSheet.id);
     if (res.success) {
       setDeletingPosted(false);
-      flash(`Count for ${dateLabel(sheet.date)} deleted.`);
+      flash(`Count for ${fmtDate(sheet.date)} deleted.`);
     } else {
       setPostedError(res.error);
     }
@@ -445,7 +442,7 @@ export default function StockCountWorkspace({ mode = 'closing' }) {
           <div className="empty-state">
             <span className="empty-state__mark tone-green"><CheckCircle2 size={22} /></span>
             <div className="empty-state__title">
-              {title} posted for {dateLabel(sheet.date)}
+              {title} posted for {fmtDate(sheet.date)}
             </div>
             <div className="empty-state__sub">
               {postedSheet
@@ -489,7 +486,7 @@ export default function StockCountWorkspace({ mode = 'closing' }) {
         {deletingPosted && postedSheet && (
           <ConfirmDelete
             title="Delete stock count"
-            subject={`${title} — ${dateLabel(sheet.date)}`}
+            subject={`${title} — ${fmtDate(sheet.date)}`}
             permanent
             busy={docs.busy}
             error={postedError}
@@ -548,7 +545,7 @@ export default function StockCountWorkspace({ mode = 'closing' }) {
                       className="hist__row"
                       onClick={() => { sheet.setDate(h.count_date); setShowHistory(false); }}
                     >
-                      <span>{dateLabel(h.count_date)}</span>
+                      <span>{fmtDate(h.count_date)}</span>
                       <span className="pill tone-green pill--sm">Posted</span>
                     </button>
                   ))}

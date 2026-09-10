@@ -21,6 +21,11 @@ import CategoryWiseSales from './views/reports/CategoryWiseSales';
 import PaymentModeReport from './views/reports/PaymentModeReport';
 import DayWiseSales from './views/reports/DayWiseSales';
 import PurchaseReport from './views/reports/PurchaseReport';
+import TransferReport from './views/reports/TransferReport';
+import WastageReport from './views/reports/WastageReport';
+import DiscountReport from './views/reports/DiscountReport';
+import ComplimentaryReport from './views/reports/ComplimentaryReport';
+import OnlineSalesReport from './views/reports/OnlineSalesReport';
 import Production from './views/inventory/Production';
 import Settings from './views/Settings';
 import Customers from './views/Customers';
@@ -101,6 +106,11 @@ function AppShell() {
               <Route path="/reports/day-wise" element={<DayWiseSales />} />
               <Route path="/inventory/production" element={<Production />} />
               <Route path="/reports/purchase" element={<PurchaseReport />} />
+              <Route path="/reports/transfer" element={<TransferReport />} />
+              <Route path="/reports/wastage" element={<WastageReport />} />
+              <Route path="/reports/discount" element={<DiscountReport />} />
+              <Route path="/reports/complimentary" element={<ComplimentaryReport />} />
+              <Route path="/reports/online" element={<OnlineSalesReport />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/customers" element={<Customers />} />
               <Route path="/qr-management" element={<QRManagement />} />

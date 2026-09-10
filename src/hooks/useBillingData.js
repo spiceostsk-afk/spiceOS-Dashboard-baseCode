@@ -10,6 +10,7 @@ import {
   calcTax, calcCgst, calcSgst, calcTotal,
   FORMAT_CURRENCY,
 } from '../lib/calculations';
+import { fmtDateTime } from '../lib/dates';
 
 function flattenOrderItems(sessionData) {
   if (!sessionData?.orders) return [];
@@ -22,6 +23,41 @@ function flattenOrderItems(sessionData) {
       price: item.item_price,
     }))
   );
+}
+
+/**
+ * Which lines have already gone to the kitchen, per session.
+ *
+ * A table is built up in rounds: two starters, then a main twenty minutes
+ * later. Reprinting the whole bill as a KOT each round tells the kitchen to
+ * cook the starters again, so a round has to know what was already sent.
+ *
+ * Kept in localStorage rather than on the row because it is a property of this
+ * till, not of the order: another terminal printing its own ticket does not
+ * mean this one's docket came out. It survives a refresh, which is what a
+ * crashed browser mid-service actually needs.
+ */
+const KOT_SENT_KEY = (sessionId) => `spiceos.kot.sent.${sessionId}`;
+
+function readKotSent(sessionId) {
+  if (!sessionId) return new Set();
+  try {
+    const raw = window.localStorage.getItem(KOT_SENT_KEY(sessionId));
+    return new Set(raw ? JSON.parse(raw) : []);
+  } catch {
+    // A private window, or storage turned off. Losing the round history just
+    // means the next ticket carries everything — never a broken screen.
+    return new Set();
+  }
+}
+
+function writeKotSent(sessionId, ids) {
+  if (!sessionId) return;
+  try {
+    window.localStorage.setItem(KOT_SENT_KEY(sessionId), JSON.stringify([...ids]));
+  } catch {
+    /* nothing to do — the ticket still printed */
+  }
 }
 
 // Freeing a table must also end whatever meal was on it. resolve-table decides
@@ -222,6 +258,10 @@ export function useBillingData() {
     },
     [setSearchParams]
   );
+
+  const setActiveArea = useCallback((area) => {
+    setState((prev) => ({ ...prev, activeArea: area }));
+  }, []);
 
   const fetchWorkspaceData = useCallback(async () => {
     setState((prev) => ({ ...prev, loadingWorkspace: true, workspaceError: null }));
@@ -471,6 +511,14 @@ export function useBillingData() {
     };
   }, []);
 
+  /**
+   * Settling has to print the bill, and printing is defined below this. Held
+   * in a ref rather than reordered: the print builder reads the same session
+   * state the settle just used, and moving it above would only trade this
+   * indirection for a longer one.
+   */
+  const printRef = useRef(null);
+
   const handleMarkAsPaid = useCallback(async () => {
     setLoadingAction(true);
     try {
@@ -551,6 +599,9 @@ export function useBillingData() {
           if (partialError) throw partialError;
         }
         setSessionState((prev) => ({ ...prev, isPaid: isFullyPaid }));
+        // The customer's copy, printed off the same figures that were just
+        // recorded. A part payment prints nothing: the bill is not final yet.
+        if (isFullyPaid) printRef.current?.('bill');
         alert(isFullyPaid ? 'Payment marked as successful!' : `Partial payment of ${FORMAT_CURRENCY.format(uiState.amountPaid || curTotal)} recorded.`);
         setSearchParams({ tab: state.activeTab });
         await fetchWorkspaceData();
@@ -910,10 +961,42 @@ export function useBillingData() {
     setLoadingAction,
   ]);
 
+  /**
+   * Print a ticket.
+   *
+   * 'kot'      — the new round only, and marks those lines as sent.
+   * 'kot-all'  — the whole table again, changing nothing (a lost docket).
+   * anything else — the customer's bill.
+   */
   const handlePrint = useCallback((type) => {
     const sess = sessionState.session;
-    const items = sessionState.items;
+    const allItems = sessionState.items;
     if (!sess) return;
+
+    const isKot = type === 'kot' || type === 'kot-all';
+    const sent = readKotSent(sess.id);
+    const isNewRound = type === 'kot';
+
+    const items = isNewRound
+      ? allItems.filter((i) => !sent.has(String(i.id)))
+      : allItems;
+
+    if (isKot && items.length === 0) {
+      alert(isNewRound
+        ? 'Nothing new to send — every item on this table has already gone to the kitchen.'
+        : 'There is nothing on this table to print.');
+      return;
+    }
+
+    if (isNewRound) {
+      allItems.forEach((i) => sent.add(String(i.id)));
+      writeKotSent(sess.id, sent);
+    }
+
+    const roundNo = isNewRound
+      ? new Set(allItems.filter((i) => sent.has(String(i.id))).map((i) => i.orderId)).size
+      : null;
+
     const tableNumber = sess.restaurant_tables?.table_number || '—';
     const billId = (sess.id || '').slice(0, 4).toUpperCase();
     const subtotal = calcSubtotal(items);
@@ -932,7 +1015,7 @@ export function useBillingData() {
       if (!win) { window.print(); return; }
 
       // A kitchen ticket carries what to cook, never money.
-      if (type === 'kot') {
+      if (isKot) {
         let kotRows = '';
         for (const item of items) {
           kotRows += `<tr><td class="qty">${item.qty}</td><td>${item.name}</td></tr>`;
@@ -950,11 +1033,11 @@ export function useBillingData() {
           @media print { body { margin: 0; padding: 0.5rem; } @page { margin: 0; } }
         </style></head><body>
         <h2>KOT</h2>
-        <div class="sub">Kitchen Order Ticket</div>
+        <div class="sub">${isNewRound ? `Kitchen Order Ticket · Round ${roundNo}` : 'REPRINT — full table'}</div>
         <hr/>
         <div class="meta"><strong>Table:</strong> T-${tableNumber} &nbsp; <strong>Bill #:</strong> ${billId}</div>
         <div class="meta"><strong>Guests:</strong> ${sess.guest_count || '—'}</div>
-        <div class="meta"><strong>Time:</strong> ${new Date().toLocaleString('en-IN')}</div>
+        <div class="meta"><strong>Time:</strong> ${fmtDateTime(new Date())}</div>
         <hr/>
         <table>${kotRows}</table>
         <hr/>
@@ -992,7 +1075,7 @@ export function useBillingData() {
       <hr/>
       <div><strong>Bill #:</strong> ${billId} &nbsp; <strong>Table:</strong> T-${tableNumber}</div>
       <div><strong>Customer:</strong> ${sess.customer_name || 'Walk-in'} &nbsp; <strong>Guests:</strong> ${sess.guest_count || '—'}</div>
-      <div><strong>Date:</strong> ${new Date().toLocaleString('en-IN')}</div>
+      <div><strong>Date:</strong> ${fmtDateTime(new Date())}</div>
       <hr/>
       <table>
         <tr><th>Item</th><th class="center">Qty</th><th class="right">Rate</th><th class="right">Total</th></tr>
@@ -1014,6 +1097,8 @@ export function useBillingData() {
       win.document.close();
     }, 100);
   }, [sessionState.session, sessionState.items, uiState.discountType, uiState.discountValue, uiState.showServiceCharge, uiState.serviceChargePercent]);
+
+  printRef.current = handlePrint;
 
   const handleHoldBill = useCallback(async () => {
     setLoadingAction(true);
@@ -1321,6 +1406,7 @@ export function useBillingData() {
     setVoidReason,
     setHoldNote,
     updateTab,
+    setActiveArea,
     fetchWorkspaceData,
     fetchSessionData,
     handleStartSession,

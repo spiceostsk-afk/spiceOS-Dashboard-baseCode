@@ -118,6 +118,13 @@ export function LineEditorStyles() {
       }
       .ln-select:focus, .ln-input:focus { border-color: var(--color-border-strong); }
       .ln-input { font-variant-numeric: tabular-nums; }
+
+      /* A quantity with no rate. Amber rather than red: it is legitimate for
+         genuinely free goods, so this asks the question without refusing. */
+      .ln-input--warn {
+        border-color: var(--color-warning, #B54708);
+        background: var(--color-warning-soft, #FFFAEB);
+      }
       .ln-select--unit { padding: 0 4px; }
       .ln-unit {
         display: flex; align-items: center; height: 38px;

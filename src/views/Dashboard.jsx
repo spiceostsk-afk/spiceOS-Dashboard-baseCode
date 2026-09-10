@@ -7,6 +7,8 @@ import SalesChart from '../components/dashboard/SalesChart';
 import RecentActivity from '../components/dashboard/RecentActivity';
 import LiveOrders from '../components/dashboard/LiveOrders';
 import PeriodPicker from '../components/dashboard/PeriodPicker';
+import SaleBreakdown from '../components/dashboard/SaleBreakdown';
+import { fmtDate } from '../lib/dates';
 
 const LOADING_ERROR_MSG = 'Failed to load dashboard data.';
 
@@ -14,6 +16,8 @@ export default function Dashboard() {
   const {
     stats,
     sectionRevenue,
+    channelSplit,
+    itemSplit,
     dailyTrend,
     recentOrders,
     liveOrders,
@@ -39,9 +43,7 @@ export default function Dashboard() {
     custom: 'in this range',
   }[period] || 'today';
 
-  const dayFmt = (d) => (d
-    ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-    : '');
+  const dayFmt = (d) => fmtDate(d, '');
 
   // Spelling out the actual dates matters most for "this month" and "last
   // month", where the boundaries are not obvious at a glance.
@@ -96,6 +98,13 @@ export default function Dashboard() {
         />
         <RecentActivity orders={recentOrders} loading={loading} />
       </div>
+
+      <SaleBreakdown
+        channelSplit={channelSplit}
+        itemSplit={itemSplit}
+        loading={loading}
+        periodLabel={periodLabel}
+      />
 
       <LiveOrders orders={liveOrders} loading={loading} />
 

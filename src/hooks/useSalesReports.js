@@ -131,7 +131,7 @@ export function useSalesData(range) {
       if (ids.length > 0) {
         const { data: b, error: bErr } = await supabase
           .from('bills')
-          .select('id, session_id, order_id, grand_total, subtotal, gst_amount, payment_method, payment_status, paid_at')
+          .select('id, session_id, order_id, grand_total, subtotal, gst_amount, service_charge, discount_type, discount_amount, payment_method, payment_status, paid_at')
           .in('session_id', ids);
         if (bErr) throw bErr;
         billRows = b || [];

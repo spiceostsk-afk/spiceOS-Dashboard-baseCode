@@ -11,14 +11,24 @@ import { ReportPage, ReportTable, money, num } from './ReportShell';
  */
 export default function ItemWiseSales() {
   const periodProps = useReportPeriod();
-  const { lines, summary, loading, error } = useSalesData(periodProps.range);
+  const { lines, categories, summary, loading, error } = useSalesData(periodProps.range);
 
   const rows = useMemo(() => {
+    // Category names arrive separately from the sale lines, so resolve the id
+    // once here rather than looking it up per row while rendering.
+    const catName = new Map((categories || []).map((c) => [c.id, c.category_name]));
     const byDish = new Map();
     lines.forEach((l) => {
       const key = l.menuItemId || l.dish;
       if (!byDish.has(key)) {
-        byDish.set(key, { id: key, dish: l.dish, qty: 0, revenue: 0, orders: new Set() });
+        byDish.set(key, {
+          id: key,
+          dish: l.dish,
+          category: catName.get(l.categoryId) || 'Uncategorised',
+          qty: 0,
+          revenue: 0,
+          orders: new Set(),
+        });
       }
       const r = byDish.get(key);
       r.qty += l.qty;
@@ -35,7 +45,7 @@ export default function ItemWiseSales() {
       avgPrice: r.qty ? Math.round((r.revenue / r.qty) * 100) / 100 : 0,
       share: total ? Math.round((r.revenue / total) * 1000) / 10 : 0,
     }));
-  }, [lines]);
+  }, [lines, categories]);
 
   const best = rows.reduce((a, b) => (b.revenue > (a?.revenue ?? -1) ? b : a), null);
 
@@ -64,6 +74,7 @@ export default function ItemWiseSales() {
         }}
         columns={[
           { key: 'dish', label: 'Dish' },
+          { key: 'category', label: 'Category' },
           { key: 'qty', label: 'Qty sold', align: 'right', total: true },
           { key: 'orders', label: 'Bills', align: 'right', total: true },
           {

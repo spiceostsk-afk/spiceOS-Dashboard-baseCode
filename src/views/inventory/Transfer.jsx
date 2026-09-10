@@ -11,6 +11,7 @@ import {
 } from './lineEditor';
 import { ConfirmDelete, DetailDrawer } from '../masters/masterDialogs';
 import { MastersStyles } from '../masters/mastersUi';
+import { fmtDate } from '../../lib/dates';
 
 /**
  * Stock moving between branches.
@@ -24,10 +25,6 @@ import { MastersStyles } from '../masters/mastersUi';
 
 const today = () => new Date().toISOString().slice(0, 10);
 
-const dateLabel = (iso) =>
-  new Date(`${iso}T00:00:00`).toLocaleDateString('en-IN', {
-    day: '2-digit', month: 'short', year: 'numeric',
-  });
 
 const STATUS_TONE = {
   draft: 'tone-neutral', sent: 'tone-blue', received: 'tone-green', cancelled: 'tone-neutral',
@@ -412,7 +409,7 @@ function ReceiveModal({ transfer, outletName, onClose, onConfirm }) {
         <div className="modal__body">
           {error && <div className="tf-error">{error}</div>}
           <div className="card__subtitle">
-            From {outletName(transfer.from_outlet_id)} · {dateLabel(transfer.transfer_date)}.
+            From {outletName(transfer.from_outlet_id)} · {fmtDate(transfer.transfer_date)}.
             Adjust any quantity that arrived short — the difference is recorded as a shortage.
           </div>
 
@@ -556,7 +553,7 @@ export default function Transfer() {
                   {t.from_label || outletName(t.from_outlet_id)} →{' '}
                   {t.to_label || outletName(t.to_outlet_id)}
                 </div>
-                <div className="tc-date muted">{dateLabel(t.transfer_date)}</div>
+                <div className="tc-date muted">{fmtDate(t.transfer_date)}</div>
                 <div className="tc-items muted">{lines.length}</div>
                 <div className="tc-status">
                   <span className={`pill pill--sm ${STATUS_TONE[t.status] || 'tone-neutral'}`}>
@@ -623,7 +620,7 @@ export default function Transfer() {
           title={viewing.reference_no || 'Transfer'}
           subtitle={`${viewing.from_label || outletName(viewing.from_outlet_id)} to ${viewing.to_label || outletName(viewing.to_outlet_id)}`}
           meta={[
-            { label: 'Date', value: dateLabel(viewing.transfer_date) },
+            { label: 'Date', value: fmtDate(viewing.transfer_date) },
             { label: 'Status', value: viewing.status },
             { label: 'Items', value: (viewing.stock_transfer_items || []).length },
             { label: 'Note', value: viewing.note || 'None' },

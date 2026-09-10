@@ -3,6 +3,7 @@ import { X, ChevronRight, ChevronDown, Check, Search, RefreshCw } from 'lucide-r
 import { supabase } from '../../lib/supabase';
 import { useReportPeriod } from '../../hooks/useSalesReports';
 import { ReportPage, ReportTable, money, num } from './ReportShell';
+import { fmtDate, fmtDateTime } from '../../lib/dates';
 
 /**
  * Item Purchase Report — what was bought, of what, from whom, on which day.
@@ -24,9 +25,6 @@ import { ReportPage, ReportTable, money, num } from './ReportShell';
  * back across the lines — they belong to the invoice, and are shown there.
  */
 
-const dayLabel = (iso) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-GB', {
-  day: '2-digit', month: 'short', year: 'numeric',
-});
 
 const round = (n, dp = 2) => {
   const f = 10 ** dp;
@@ -190,8 +188,14 @@ export default function PurchaseReport() {
       itemId: l.inventory_item_id || 'none',
       itemName: item.item_name || 'Unknown item',
       unit: item.unit || '',
+      purchaseUnit: item.purchase_unit || '',
       barcode: item.barcode || '',
       category: item.inventory_categories?.name || item.category || '',
+      // Kept on the line so the drawer can show one item's own purchase detail
+      // without reopening the invoice it happened to arrive on.
+      qtyEntered: Number(l.qty) || 0,
+      entryUnit: l.entry_unit,
+      rate: Number(l.rate) || 0,
       qtyBase: Number(l.qty_base) || 0,
       amount: Number(l.amount) || 0,
     };
@@ -221,7 +225,7 @@ export default function PurchaseReport() {
     return lines.filter((l) => {
       if (vendorIds.size && !vendorIds.has(l.vendorId)) return false;
       if (itemIds.size && !itemIds.has(l.itemId)) return false;
-      if (d && !dayLabel(l.date).toLowerCase().includes(d)) return false;
+      if (d && !fmtDate(l.date).toLowerCase().includes(d)) return false;
       if (i && !`${l.itemName} ${l.barcode} ${l.category}`.toLowerCase().includes(i)) return false;
       if (v && !l.vendor.toLowerCase().includes(v)) return false;
       return true;
@@ -352,7 +356,7 @@ export default function PurchaseReport() {
           itemCell(true),
           { key: 'vendorCount', label: 'Vendors', align: 'right' },
           { key: 'invoiceCount', label: 'Invoices', align: 'right', total: true },
-          { key: 'lastOn', label: 'Last bought', align: 'right', render: (r) => dayLabel(r.lastOn) },
+          { key: 'lastOn', label: 'Last bought', align: 'right', render: (r) => fmtDate(r.lastOn) },
           purchased, unitCost, amount, share,
         ];
 
@@ -365,7 +369,7 @@ export default function PurchaseReport() {
           },
           { key: 'itemCount', label: 'Items', align: 'right' },
           { key: 'invoiceCount', label: 'Invoices', align: 'right', total: true },
-          { key: 'lastOn', label: 'Last invoice', align: 'right', render: (r) => dayLabel(r.lastOn) },
+          { key: 'lastOn', label: 'Last invoice', align: 'right', render: (r) => fmtDate(r.lastOn) },
           // No unit cost here: a supplier's kilos and pieces added together
           // divide into a number that means nothing.
           purchased, amount, share,
@@ -380,7 +384,7 @@ export default function PurchaseReport() {
               <span className="pr-vendor">{r.invoiceNo} <ChevronRight size={13} /></span>
             ),
           },
-          { key: 'date', label: 'Date', render: (r) => dayLabel(r.date) },
+          { key: 'date', label: 'Date', render: (r) => fmtDate(r.date) },
           { key: 'vendor', label: 'Vendor' },
           { key: 'itemCount', label: 'Lines', align: 'right', total: true },
           purchased, amount,
@@ -388,7 +392,7 @@ export default function PurchaseReport() {
 
       default:
         return [
-          { key: 'date', label: 'Date', render: (r) => dayLabel(r.date) },
+          { key: 'date', label: 'Date', render: (r) => fmtDate(r.date) },
           itemCell(true),
           { key: 'vendor', label: 'Vendor' },
           {
@@ -615,15 +619,44 @@ export default function PurchaseReport() {
 
 /* --------------------------------------------------- one row, broken down */
 /**
- * The invoices behind whatever was clicked. Grouping changes what a row means,
- * so the drawer restates it rather than assuming the reader remembers.
+ * What lies behind whatever was clicked. Grouping changes what a row means, so
+ * the drawer restates it rather than assuming the reader remembers.
+ *
+ * Clicking an item shows that item's own purchase detail, day by day — not the
+ * challans it arrived on. A challan carries thirty other things the reader did
+ * not ask about, and hunting one line out of each of them is exactly the work
+ * the report exists to save. The full invoice is still shown when the invoice
+ * itself is the subject: grouped by vendor or by invoice.
  */
 function RowInvoices({ row, groupBy, onClose }) {
+  const itemScoped = groupBy === 'item' || groupBy === 'date';
+
   const invoices = useMemo(() => {
     const seen = new Map();
     row.lines.forEach((l) => { if (!seen.has(l.invoiceId)) seen.set(l.invoiceId, l.purchase); });
     return [...seen.values()].sort((a, b) => (a.invoice_date < b.invoice_date ? 1 : -1));
   }, [row]);
+
+  /** One line per purchase of this item, newest first. */
+  const itemLines = useMemo(
+    () => [...row.lines].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)),
+    [row],
+  );
+
+  /** And the same lines rolled up per day, for a run of small deliveries. */
+  const byDay = useMemo(() => {
+    const map = new Map();
+    itemLines.forEach((l) => {
+      if (!map.has(l.date)) map.set(l.date, { date: l.date, qty: 0, amount: 0, count: 0 });
+      const d = map.get(l.date);
+      d.qty += l.qtyBase;
+      d.amount += l.amount;
+      d.count += 1;
+    });
+    return [...map.values()]
+      .map((d) => ({ ...d, qty: round(d.qty, 3), amount: round(d.amount), unitCost: d.qty ? round(d.amount / d.qty) : 0 }))
+      .sort((a, b) => (a.date < b.date ? 1 : -1));
+  }, [itemLines]);
 
   const heading = {
     item: row.itemName,
@@ -631,7 +664,7 @@ function RowInvoices({ row, groupBy, onClose }) {
     invoice: row.invoiceNo,
   }[groupBy] || `${row.itemName} · ${row.vendor}`;
 
-  const sub = groupBy === 'date' ? dayLabel(row.date) : null;
+  const sub = groupBy === 'date' ? fmtDate(row.date) : null;
 
   return (
     <>
@@ -642,20 +675,73 @@ function RowInvoices({ row, groupBy, onClose }) {
             <div className="card__title">{heading}</div>
             <div className="card__subtitle">
               {sub && <>{sub} · </>}
-              {qtyLabel(row.qty)}{row.unit ? ` ${row.unit}` : ''} · {money(row.amount)} across{' '}
-              {row.invoiceCount} invoice{row.invoiceCount === 1 ? '' : 's'}
+              {qtyLabel(row.qty)}{row.unit ? ` ${row.unit}` : ''} · {money(row.amount)}
+              {itemScoped
+                ? ` over ${byDay.length} day${byDay.length === 1 ? '' : 's'}`
+                : ` across ${row.invoiceCount} invoice${row.invoiceCount === 1 ? '' : 's'}`}
             </div>
           </div>
           <button className="modal__close" onClick={onClose}><X size={17} /></button>
         </div>
 
-        {invoices.map((p) => (
+        {itemScoped ? (
+          <>
+            {byDay.length > 1 && (
+              <div className="pri__days">
+                <div className="pri__sec">Day by day</div>
+                {byDay.map((d) => (
+                  <div key={d.date} className="pri__day">
+                    <span className="pri__name">{fmtDate(d.date)}</span>
+                    <span className="pri__qty">
+                      {qtyLabel(d.qty)}{row.unit ? ` ${row.unit}` : ''}
+                      {d.count > 1 && <em> · {d.count} entries</em>}
+                    </span>
+                    <span className="pri__rate">@ {money(d.unitCost)}</span>
+                    <span className="pri__amt">{money(d.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="pri__sec">
+              {byDay.length > 1 ? 'Every purchase of this item' : 'Purchase detail'}
+            </div>
+            {itemLines.map((l) => {
+              const entryUnit = l.entryUnit === 'purchase'
+                ? (l.purchaseUnit || l.unit)
+                : l.unit;
+              return (
+                <div key={l.lineId} className="pri__row">
+                  <span className="pri__date">{fmtDate(l.date)}</span>
+                  <span className="pri__vend">
+                    {l.vendor}
+                    <em>{l.invoiceNo}</em>
+                  </span>
+                  <span className="pri__qty">
+                    {l.qtyEntered} {entryUnit}
+                    {l.entryUnit === 'purchase' && <em> → {qtyLabel(l.qtyBase)} {l.unit}</em>}
+                  </span>
+                  <span className="pri__rate">@ {money(l.rate)}</span>
+                  <span className="pri__amt">{money(l.amount)}</span>
+                </div>
+              );
+            })}
+
+            <div className="pri__row pri__row--total">
+              <span className="pri__date">Total</span>
+              <span className="pri__vend" />
+              <span className="pri__qty">{qtyLabel(row.qty)}{row.unit ? ` ${row.unit}` : ''}</span>
+              <span className="pri__rate">@ {money(row.unitCost)}</span>
+              <span className="pri__amt">{money(row.amount)}</span>
+            </div>
+          </>
+        ) : invoices.map((p) => (
           <div key={p.id} className="pri__inv">
             <div className="pri__inv-head">
               <div>
                 <strong>{p.invoice_no || 'No invoice number'}</strong>
                 <div className="card__subtitle">
-                  {dayLabel(p.invoice_date)} · {p.vendors?.name || 'No vendor'}
+                  {fmtDate(p.invoice_date)} · {p.vendors?.name || 'No vendor'}
                 </div>
               </div>
               <div className="pri__inv-total">{money(p.total)}</div>
@@ -692,6 +778,9 @@ function RowInvoices({ row, groupBy, onClose }) {
           </div>
         ))}
 
+        {/* The unit-cost column above is a weighted average of what is shown,
+            so a reader can check it rather than take it on trust. */}
+
         <style>{`
           .drawer--wide { width: 580px; }
           .pri__head {
@@ -716,6 +805,34 @@ function RowInvoices({ row, groupBy, onClose }) {
           .pri__rate { width: 92px; text-align: right; color: var(--color-text-muted); }
           .pri__amt { width: 92px; text-align: right; font-weight: 700; }
           .pri__note { margin-top: 6px; font-size: 12px; color: var(--color-text-muted); }
+
+          .pri__sec {
+            margin: 16px 0 6px; font-size: 11px; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 0.05em;
+            color: var(--color-text-muted);
+          }
+          .pri__days {
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--color-border);
+          }
+          .pri__day, .pri__row {
+            display: flex; align-items: baseline; gap: 10px;
+            padding: 6px 0; font-size: 12.5px;
+            border-bottom: 1px solid var(--color-border-soft);
+          }
+          .pri__day .pri__name { flex: 1; font-weight: 600; }
+          .pri__date { width: 108px; flex-shrink: 0; font-weight: 600; }
+          .pri__vend {
+            flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px;
+            overflow: hidden;
+          }
+          .pri__vend em {
+            font-style: normal; font-size: 11px; color: var(--color-text-faint);
+          }
+          .pri__row--total {
+            border-bottom: none; border-top: 2px solid var(--color-border);
+            font-weight: 700; margin-top: 2px;
+          }
         `}</style>
       </div>
     </>

@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Calendar, Download, ChevronUp, ChevronDown, BarChart3 } from 'lucide-react';
 import { REPORT_PERIODS, isoDay } from '../../hooks/useSalesReports';
+import { fmtDate } from '../../lib/dates';
 
 /**
  * The frame every report shares: a period selector, headline figures, a
@@ -14,16 +15,13 @@ import { REPORT_PERIODS, isoDay } from '../../hooks/useSalesReports';
 export const money = (n) => `₹${(Number(n) || 0).toFixed(2)}`;
 export const num = (n) => new Intl.NumberFormat('en-IN').format(Number(n) || 0);
 
-const dayLabel = (d) => new Date(d).toLocaleDateString('en-GB', {
-  day: '2-digit', month: 'short', year: 'numeric',
-});
 
 /* ------------------------------------------------------------ period picker */
 export function ReportPeriod({ period, setPeriod, customRange, setCustomRange, range }) {
   const maxDay = isoDay(new Date());
-  const label = dayLabel(range.from) === dayLabel(range.to)
-    ? dayLabel(range.from)
-    : `${dayLabel(range.from)} – ${dayLabel(range.to)}`;
+  const label = fmtDate(range.from) === fmtDate(range.to)
+    ? fmtDate(range.from)
+    : `${fmtDate(range.from)} – ${fmtDate(range.to)}`;
 
   return (
     <div className="card rp">

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useOutlet } from '../context/OutletContext';
+import { fmtDateTime } from '../lib/dates';
 
 /**
  * The raw-material master, backed by `inventory_items` + `inventory_stock`.
@@ -12,10 +13,7 @@ import { useOutlet } from '../context/OutletContext';
  * ledger and the balances can be guaranteed to agree.
  */
 
-const nowLabel = (iso) =>
-  new Date(iso || Date.now()).toLocaleString('en-IN', {
-    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-  });
+const nowLabel = (iso) => fmtDateTime(iso || Date.now());
 
 /** Trim the float dust that repeated 0.5-step arithmetic leaves behind. */
 const round = (n) => Math.round(Number(n || 0) * 1000) / 1000;

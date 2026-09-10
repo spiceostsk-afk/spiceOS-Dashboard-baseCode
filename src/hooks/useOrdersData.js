@@ -8,7 +8,12 @@ const FORMAT_CURRENCY = new Intl.NumberFormat('en-IN', {
 
 const STATUS_FILTERS = ['all', 'completed', 'void'];
 
-function getDateRange(range) {
+const isoDay = (d) => {
+  const t = new Date(d);
+  return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+};
+
+function getDateRange(range, custom) {
   const now = new Date();
   if (range === 'today') return { start: new Date(now.getFullYear(), now.getMonth(), now.getDate()), end: now };
   if (range === 'week') {
@@ -16,6 +21,16 @@ function getDateRange(range) {
     return { start: new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek), end: now };
   }
   if (range === 'month') return { start: new Date(now.getFullYear(), now.getMonth(), 1), end: now };
+  if (range === 'custom') {
+    if (!custom?.from || !custom?.to) return { start: new Date(0), end: now };
+    const a = new Date(`${custom.from}T00:00:00`);
+    const b = new Date(`${custom.to}T23:59:59.999`);
+    // Dates picked back to front are a slip, not an empty result — swap them
+    // rather than showing the till operator a blank screen.
+    return a <= b
+      ? { start: a, end: b }
+      : { start: new Date(`${custom.to}T00:00:00`), end: new Date(`${custom.from}T23:59:59.999`) };
+  }
   return { start: new Date(0), end: now };
 }
 
@@ -26,6 +41,12 @@ export function useOrdersData() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [dateRange, setDateRange] = useState('all');
+  const [customRange, setCustomRange] = useState(() => {
+    const today = new Date();
+    const weekAgo = new Date(today);
+    weekAgo.setDate(today.getDate() - 6);
+    return { from: isoDay(weekAgo), to: isoDay(today) };
+  });
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [kotOrder, setKotOrder] = useState(null);
 
@@ -33,7 +54,7 @@ export function useOrdersData() {
     setLoading(true);
     setError(null);
     try {
-      const { start, end } = getDateRange(dateRange);
+      const { start, end } = getDateRange(dateRange, customRange);
       const statuses = statusFilter === 'all' ? ['completed', 'void'] : [statusFilter];
 
       let query = supabase
@@ -56,10 +77,34 @@ export function useOrdersData() {
       const { data, error: queryError } = await query;
       if (queryError) throw queryError;
 
+      // How the money arrived lives on the bill, not the session, so it takes
+      // a second query. Fetched by session id in one go rather than per row:
+      // a month of history is one round trip either way.
+      const sessionIds = (data || []).map((s) => s.id);
+      const billBySession = new Map();
+      if (sessionIds.length > 0) {
+        const { data: billRows, error: billError } = await supabase
+          .from('bills')
+          .select('session_id, payment_method, payment_status, grand_total, paid_at')
+          .in('session_id', sessionIds);
+        // A bill that will not load must not blank the whole screen — the
+        // history is still readable without knowing the tender.
+        if (billError) console.error('Could not load payment modes:', billError);
+        (billRows || []).forEach((b) => {
+          const prev = billBySession.get(b.session_id);
+          // A part payment followed by the rest can leave more than one row.
+          // The settled one is the truth about how the table actually paid.
+          if (!prev || (b.payment_status === 'paid' && prev.payment_status !== 'paid')) {
+            billBySession.set(b.session_id, b);
+          }
+        });
+      }
+
       let results = (data || []).map((s) => {
         const orderList = s.orders || [];
         const itemCount = orderList.reduce((sum, o) => sum + (o.order_items?.length || 0), 0);
         const totalAmount = orderList.reduce((sum, o) => sum + Number(o.total || 0), 0);
+        const bill = billBySession.get(s.id);
         return {
           id: s.id,
           billId: s.id?.slice(0, 4).toUpperCase(),
@@ -72,6 +117,10 @@ export function useOrdersData() {
           endedAt: s.ended_at,
           itemCount,
           totalAmount,
+          // Null rather than a guess. A settled table with no bill row is a
+          // real gap worth seeing, not something to paper over with "Cash".
+          paymentMethod: bill?.payment_method || null,
+          paymentStatus: bill?.payment_status || null,
           orders: orderList,
         };
       });
@@ -82,6 +131,8 @@ export function useOrdersData() {
           r.billId.toLowerCase().includes(q) ||
           r.customerName.toLowerCase().includes(q) ||
           String(r.tableNumber || '').includes(q) ||
+          // So "zomato" or "upi" narrows the list the way a cashier expects.
+          (r.paymentMethod || '').toLowerCase().includes(q) ||
           r.orders.some((o) => (o.order_items || []).some((oi) =>
             oi.menu_items?.item_name?.toLowerCase().includes(q)
           ))
@@ -94,7 +145,7 @@ export function useOrdersData() {
     } finally {
       setLoading(false);
     }
-  }, [dateRange, statusFilter, search]);
+  }, [dateRange, customRange, statusFilter, search]);
 
   useEffect(() => {
     fetchData();
@@ -157,6 +208,8 @@ export function useOrdersData() {
     setStatusFilter,
     dateRange,
     setDateRange,
+    customRange,
+    setCustomRange,
     selectedOrder,
     setSelectedOrder,
     refetch: fetchData,

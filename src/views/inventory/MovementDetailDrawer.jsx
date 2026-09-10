@@ -3,6 +3,7 @@ import { X, ArrowRight } from 'lucide-react';
 import {
   useMovementDetail, COLUMN_MOVEMENTS, movementLabel, movementTone,
 } from '../../hooks/useMovementDetail';
+import { fmtDateTime } from '../../lib/dates';
 
 /**
  * What is behind one figure on the Stock Summary.
@@ -21,9 +22,6 @@ const fmt = (n) => {
   return Number.isInteger(num) ? String(num) : num.toFixed(3).replace(/\.?0+$/, '');
 };
 
-const stamp = (iso) => new Date(iso).toLocaleString('en-IN', {
-  day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit',
-});
 
 const DOC_LABEL = {
   purchases: 'Purchase',
@@ -79,7 +77,7 @@ export default function MovementDetailDrawer({ cell, range, onClose }) {
 
         {!loading && rows.map((r) => (
           <div key={r.id} className="md__row">
-            <div className="md__when">{stamp(r.at)}</div>
+            <div className="md__when">{fmtDateTime(r.at)}</div>
 
             <div className="md__what">
               <span className={`pill pill--sm ${movementTone(r.type)}`}>

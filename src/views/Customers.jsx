@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Users, RefreshCw, Search, X } from 'lucide-react';
 import { useCustomersData } from '../hooks/useCustomersData';
+import { fmtDate } from '../lib/dates';
 
 const REGULAR_VISITS = 5;
 
@@ -13,8 +14,6 @@ const initialsOf = (name) =>
     .slice(0, 2)
     .toUpperCase();
 
-const shortDate = (iso) =>
-  iso ? new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—';
 
 function CustomerDrawer({ customer, formatCurrency, onClose }) {
   if (!customer) return null;
@@ -43,7 +42,7 @@ function CustomerDrawer({ customer, formatCurrency, onClose }) {
             </div>
             <div>
               <div className="card__subtitle">Last visit</div>
-              <div className="cust-summary__value">{shortDate(customer.lastVisit)}</div>
+              <div className="cust-summary__value">{fmtDate(customer.lastVisit)}</div>
             </div>
           </div>
         </div>
@@ -52,7 +51,7 @@ function CustomerDrawer({ customer, formatCurrency, onClose }) {
           <div className="drawer__label">Visit history ({customer.sessions.length})</div>
           {customer.sessions.slice(0, 20).map((s) => (
             <div key={s.id} className="cust-visit">
-              <span className="muted">{shortDate(s.ended_at)}</span>
+              <span className="muted">{fmtDate(s.ended_at)}</span>
               <span className="cust-visit__what">
                 {s.guest_count || '—'} guests · {s.session_status}
               </span>
@@ -211,7 +210,7 @@ export default function Customers() {
               </div>
               <div className="cu-phone muted tnum">{c.phone || '—'}</div>
               <div className="cu-visits strong tnum">{c.visitCount}</div>
-              <div className="cu-last muted">{shortDate(c.lastVisit)}</div>
+              <div className="cu-last muted">{fmtDate(c.lastVisit)}</div>
               <div className="cu-spend amount">{formatCurrency(c.totalSpent)}</div>
               <div className="cu-tag">
                 <span className={`pill ${regular ? 'tone-green' : 'tone-blue'}`}>

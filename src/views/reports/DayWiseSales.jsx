@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { useReportPeriod, useSalesData } from '../../hooks/useSalesReports';
 import { ReportPage, ReportTable, money, num } from './ReportShell';
+import { fmtDate, fmtDateTime } from '../../lib/dates';
 
 /**
  * One row per day: the sales register a manager reconciles the till against.
@@ -14,9 +15,6 @@ const localKey = (d) => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 };
 
-const dayLabel = (key) => new Date(`${key}T00:00:00`).toLocaleDateString('en-GB', {
-  weekday: 'short', day: '2-digit', month: 'short',
-});
 
 export default function DayWiseSales() {
   const periodProps = useReportPeriod('this_month');
@@ -31,7 +29,7 @@ export default function DayWiseSales() {
     let guard = 0;
     while (cur <= last && guard < 400) {
       const k = localKey(cur);
-      byDay.set(k, { id: k, day: k, label: dayLabel(k), bills: 0, qty: 0, gross: 0, tax: 0 });
+      byDay.set(k, { id: k, day: k, label: fmtDate(k), bills: 0, qty: 0, gross: 0, tax: 0 });
       cur.setDate(cur.getDate() + 1);
       guard += 1;
     }
@@ -39,7 +37,7 @@ export default function DayWiseSales() {
     sessions.forEach((s) => {
       const k = localKey(new Date(s.ended_at));
       if (!byDay.has(k)) {
-        byDay.set(k, { id: k, day: k, label: dayLabel(k), bills: 0, qty: 0, gross: 0, tax: 0 });
+        byDay.set(k, { id: k, day: k, label: fmtDate(k), bills: 0, qty: 0, gross: 0, tax: 0 });
       }
       const r = byDay.get(k);
       r.bills += 1;

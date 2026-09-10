@@ -5,6 +5,7 @@ import SearchSelect from './SearchSelect';
 import { supabase } from '../lib/supabase';
 import { useOutlet } from '../context/OutletContext';
 import { useAuth } from '../context/AuthContext';
+import { fmtDate } from '../lib/dates';
 
 const SHIFT_KEY = 'lumiere_shift_active';
 
@@ -158,8 +159,7 @@ const Header = () => {
   const [currentDate, setCurrentDate] = useState('');
 
   useEffect(() => {
-    const options = { day: 'numeric', month: 'short' };
-    setCurrentDate(new Date().toLocaleDateString('en-US', options));
+    setCurrentDate(fmtDate(new Date()));
   }, []);
 
   const handleEndShift = () => {

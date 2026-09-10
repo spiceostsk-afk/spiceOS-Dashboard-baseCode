@@ -1,10 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import * as db from '../lib/db';
 import {
   Plus, Trash2, ChevronRight, WifiOff, Settings, X, Edit3, Search, Utensils,
+  FileDown, Upload,
 } from 'lucide-react';
+import {
+  MENU_CSV_COLUMNS, menuToCsv, csvToMenuRows, planMenuImport, downloadCsv,
+} from '../lib/menuCsv';
 
 const FOOD_PLACEHOLDER = 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'400\' height=\'200\'%3E%3Crect width=\'400\' height=\'200\' fill=\'%23F0F1F4\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' dominant-baseline=\'middle\' text-anchor=\'middle\' font-size=\'48\' opacity=\'0.35\'%3E%F0%9F%8D%BD%EF%B8%8F%3C/text%3E%3C/svg%3E';
 
@@ -120,6 +124,97 @@ function FormModal({ title, fields, onSave, onClose, initial }) {
   );
 }
 
+/**
+ * Shows what a CSV upload is about to do before it does it.
+ *
+ * An import that quietly repriced the whole menu would be very hard to undo,
+ * so the counts and the problem lines are put in front of the user first and
+ * nothing is written until they press the button.
+ */
+function ImportPreviewModal({ preview, saving, onConfirm, onClose }) {
+  const { fileName, errors, plan } = preview;
+  const total = plan ? plan.inserts.length + plan.updates.length : 0;
+
+  return (
+    <div className="overlay" onClick={saving ? undefined : onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal__head">
+          <div className="modal__title">Import menu from CSV</div>
+          <button className="modal__close" onClick={onClose} disabled={saving}>
+            <X size={17} />
+          </button>
+        </div>
+
+        <div className="modal__body">
+          <div className="card__subtitle" style={{ marginBottom: 12 }}>{fileName}</div>
+
+          {total > 0 && (
+            <ul className="menu-import__list">
+              <li><strong>{plan.inserts.length}</strong> new dish{plan.inserts.length === 1 ? '' : 'es'} added</li>
+              <li><strong>{plan.updates.length}</strong> existing dish{plan.updates.length === 1 ? '' : 'es'} updated</li>
+              {plan.newCategories.length > 0 && (
+                <li>
+                  <strong>{plan.newCategories.length}</strong> new categor
+                  {plan.newCategories.length === 1 ? 'y' : 'ies'} created
+                  {': '}
+                  {plan.newCategories.slice(0, 6).join(', ')}
+                  {plan.newCategories.length > 6 ? '…' : ''}
+                </li>
+              )}
+            </ul>
+          )}
+
+          {errors.length > 0 && (
+            <div className="menu-import__errors">
+              <div className="menu-import__errors-head">
+                {errors.length} line{errors.length === 1 ? '' : 's'} will be skipped
+              </div>
+              {errors.slice(0, 8).map((e) => <div key={e}>{e}</div>)}
+              {errors.length > 8 && <div>…and {errors.length - 8} more.</div>}
+            </div>
+          )}
+
+          {total === 0 && (
+            <div className="menu-import__errors">
+              Nothing in this file can be imported. Export the menu first to see
+              the columns expected.
+            </div>
+          )}
+        </div>
+
+        <div className="modal__actions">
+          <button className="btn btn--ghost" onClick={onClose} disabled={saving}>Cancel</button>
+          <button
+            className="btn btn--primary"
+            onClick={onConfirm}
+            disabled={saving || total === 0}
+          >
+            {saving ? 'Importing…' : `Import ${total} dish${total === 1 ? '' : 'es'}`}
+          </button>
+        </div>
+
+        <style>{`
+          .menu-import__list {
+            margin: 0 0 12px; padding-left: 18px;
+            font-size: 13.5px; line-height: 1.9; color: var(--color-text);
+          }
+          .menu-import__errors {
+            border-radius: var(--radius-md);
+            background: var(--color-danger-soft, #FDF3F3);
+            color: var(--color-danger, #B42318);
+            padding: 12px 14px;
+            font-size: 12.5px;
+            line-height: 1.7;
+            max-height: 190px;
+            overflow-y: auto;
+          }
+          .menu-import__errors-head { font-weight: 700; margin-bottom: 4px; }
+        `}</style>
+      </div>
+    </div>
+  );
+}
+
 const MenuCatalog = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -137,6 +232,9 @@ const MenuCatalog = () => {
   const [loadError, setLoadError] = useState(null);
   const [manageMode, setManageMode] = useState(false);
   const [modal, setModal] = useState(null);
+  const [importPreview, setImportPreview] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -337,6 +435,105 @@ const MenuCatalog = () => {
     }
   };
 
+  /* ------------------------------------------------------------ menu CSV */
+
+  // Always the whole menu, never the current filter: "export the menu" means
+  // the menu, and a half file re-imported later would look like deletions.
+  const handleExportCsv = () => {
+    const csv = menuToCsv(menuItems, categories);
+    downloadCsv(`menu-${new Date().toISOString().slice(0, 10)}.csv`, csv);
+  };
+
+  const handleDownloadTemplate = () => {
+    const sample = [
+      MENU_CSV_COLUMNS.join(','),
+      'Starters,Paneer Tikka,260.00,Char-grilled cottage cheese,,Yes',
+      'Main Course,Dal Makhani,240.00,,,Yes',
+    ].join('\r\n');
+    downloadCsv('menu-template.csv', sample);
+  };
+
+  const handleFilePicked = async (e) => {
+    const file = e.target.files?.[0];
+    // Cleared straight away so picking the same file twice still fires.
+    e.target.value = '';
+    if (!file) return;
+
+    if (!getOnlineStatus()) {
+      alert('Importing the menu needs a connection — the changes go to the server, not the local cache.');
+      return;
+    }
+
+    try {
+      const text = await file.text();
+      const { rows, errors } = csvToMenuRows(text);
+      const plan = rows.length ? planMenuImport(rows, menuItems, categories) : null;
+      setImportPreview({ fileName: file.name, errors, plan, rows });
+    } catch (err) {
+      alert('Could not read that file: ' + (err.message || 'Unknown error'));
+    }
+  };
+
+  const handleConfirmImport = async () => {
+    const { plan } = importPreview;
+    if (!plan) return;
+    setImporting(true);
+    try {
+      // Categories first: the inserts below need their ids.
+      const createdIds = new Map();
+      if (plan.newCategories.length) {
+        const { data, error } = await supabase
+          .from('menu_categories')
+          .insert(plan.newCategories.map((category_name) => ({ category_name })))
+          .select('id, category_name');
+        if (error) throw error;
+        (data || []).forEach((c) => createdIds.set(c.category_name.trim().toLowerCase(), c.id));
+      }
+
+      const resolveCat = (row) =>
+        row.categoryId
+        || createdIds.get(String(row.category || '').trim().toLowerCase())
+        || null;
+
+      if (plan.inserts.length) {
+        const { error } = await supabase.from('menu_items').insert(
+          plan.inserts.map((r) => ({
+            item_name: r.item_name,
+            price: r.price,
+            category_id: resolveCat(r),
+            description: r.description || '',
+            image_url: r.image_url || '',
+            is_available: r.is_available,
+          })),
+        );
+        if (error) throw error;
+      }
+
+      for (const r of plan.updates) {
+        const { error } = await supabase
+          .from('menu_items')
+          .update({
+            item_name: r.item_name,
+            price: r.price,
+            category_id: resolveCat(r),
+            description: r.description || '',
+            image_url: r.image_url || '',
+            is_available: r.is_available,
+          })
+          .eq('id', r.id);
+        if (error) throw error;
+      }
+
+      setImportPreview(null);
+      await fetchMenuData();
+      alert(`Menu imported — ${plan.inserts.length} added, ${plan.updates.length} updated.`);
+    } catch (err) {
+      alert('Import failed: ' + (err.message || 'Unknown error'));
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const handleDeleteItem = async (id, name) => {
     if (!confirm(`Delete item "${name}"?`)) return;
     await supabase.from('menu_items').delete().eq('id', id);
@@ -467,6 +664,39 @@ const MenuCatalog = () => {
             >
               <Settings size={14} /> {manageMode ? 'Done' : 'Manage'}
             </button>
+
+            <button
+              className="btn btn--ghost"
+              onClick={handleExportCsv}
+              disabled={menuItems.length === 0}
+              title="Download the whole menu as a CSV file"
+            >
+              <FileDown size={14} /> Export CSV
+            </button>
+
+            <button
+              className="btn btn--ghost"
+              onClick={() => fileInputRef.current?.click()}
+              title="Upload a CSV to add or reprice dishes in bulk"
+            >
+              <Upload size={14} /> Import CSV
+            </button>
+
+            <button
+              className="btn btn--ghost"
+              onClick={handleDownloadTemplate}
+              title="Download an empty CSV showing the columns expected"
+            >
+              Template
+            </button>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              onChange={handleFilePicked}
+              style={{ display: 'none' }}
+            />
 
             <div className="spacer" />
 
@@ -669,6 +899,14 @@ const MenuCatalog = () => {
           initial={modal.data}
           onSave={handleSaveItem}
           onClose={() => setModal(null)}
+        />
+      )}
+      {importPreview && (
+        <ImportPreviewModal
+          preview={importPreview}
+          saving={importing}
+          onConfirm={handleConfirmImport}
+          onClose={() => { if (!importing) setImportPreview(null); }}
         />
       )}
 

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import * as db from '../lib/db';
+import { fmtDayShort } from '../lib/dates';
 
 const FORMAT_CURRENCY = new Intl.NumberFormat('en-IN', {
   style: 'currency', currency: 'INR', minimumFractionDigits: 2,
@@ -64,7 +65,7 @@ function buildDailyBreakdown(orders, period) {
     const d = new Date(start);
     d.setDate(start.getDate() + i);
     const key = d.toISOString().slice(0, 10);
-    daysMap[key] = { label: d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric' }), total: 0 };
+    daysMap[key] = { label: `${d.toLocaleDateString('en-GB', { weekday: 'short' })} ${fmtDayShort(d)}`, total: 0 };
   }
 
   for (const o of orders || []) {

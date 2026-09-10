@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { ShieldCheck, RefreshCw, Ban, PlayCircle, Store, Search } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
+import { fmtDate } from '../lib/dates';
 
 const STATUS_STYLES = {
   trial: { bg: 'var(--color-info-soft)', color: 'var(--color-info)' },
@@ -105,7 +106,7 @@ export default function SuperAdmin() {
                 <span className="sa-mono">{r.slug}</span>
                 <span>{r.plan}</span>
                 <span><em className="sa-badge" style={{ background: st.bg, color: st.color }}>{r.status}</em></span>
-                <span className="sa-date">{new Date(r.created_at).toLocaleDateString()}</span>
+                <span className="sa-date">{fmtDate(r.created_at)}</span>
                 <span>
                   {suspended ? (
                     <button className="sa-action activate" disabled={busyId === r.id} onClick={() => setStatus(r.id, 'active')}>

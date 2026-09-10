@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { fmtDayShort } from '../lib/dates';
 
 const TODAY_START = new Date();
 TODAY_START.setHours(0, 0, 0, 0);
@@ -126,9 +127,11 @@ function buildDailyTrend(orders, from, to) {
     d.setDate(last.getDate() - i);
     const key = localKey(d);
     daysMap[key] = {
+      // A short window names the weekday, which is what a manager compares.
+      // Anything longer gets DD/MM — thirty full dates side by side are noise.
       label: span <= 8
-        ? d.toLocaleDateString('en-US', { weekday: 'short' })
-        : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }),
+        ? d.toLocaleDateString('en-GB', { weekday: 'short' })
+        : fmtDayShort(d),
       total: 0,
     };
   }
@@ -140,6 +143,81 @@ function buildDailyTrend(orders, from, to) {
   });
 
   return Object.entries(daysMap).map(([key, v]) => ({ key, ...v }));
+}
+
+/**
+ * How the period's money arrived, mode by mode.
+ *
+ * Read off the bills rather than the orders, because the payment mode lives on
+ * the bill. Zomato and Swiggy sit here beside cash and card for the same reason
+ * the till does it that way: the aggregator settles the bill on the guest's
+ * behalf, so it is a mode of payment, not a separate kind of sale.
+ */
+const CHANNEL_LABELS = {
+  cash: 'Cash', card: 'Card', upi: 'UPI', qr: 'UPI',
+  zomato: 'Zomato', swiggy: 'Swiggy',
+  home_delivery: 'Home delivery', other: 'Other',
+};
+
+/** The order the client reads them in, so the row never moves under them. */
+const CHANNEL_ORDER = ['Zomato', 'Swiggy', 'Cash', 'UPI', 'Card', 'Home delivery', 'Other'];
+
+export function buildChannelSplit(bills) {
+  const byMode = new Map();
+  let paidTotal = 0;
+
+  (bills || []).forEach((b) => {
+    if (b.payment_status !== 'paid') return;
+    const label = CHANNEL_LABELS[String(b.payment_method || 'other').toLowerCase()] || 'Other';
+    if (!byMode.has(label)) byMode.set(label, { label, bills: 0, amount: 0 });
+    const row = byMode.get(label);
+    row.bills += 1;
+    row.amount += Number(b.grand_total) || 0;
+    paidTotal += Number(b.grand_total) || 0;
+  });
+
+  const rows = [...byMode.values()]
+    .map((r) => ({
+      ...r,
+      amount: Math.round(r.amount * 100) / 100,
+      share: paidTotal ? Math.round((r.amount / paidTotal) * 1000) / 10 : 0,
+    }))
+    .sort((a, b) => {
+      const ia = CHANNEL_ORDER.indexOf(a.label);
+      const ib = CHANNEL_ORDER.indexOf(b.label);
+      return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+    });
+
+  return { rows, paidTotal: Math.round(paidTotal * 100) / 100 };
+}
+
+/** What actually sold in the period, biggest earner first. */
+export function buildItemSplit(orderItems) {
+  const byItem = new Map();
+  let total = 0;
+
+  (orderItems || []).forEach((oi) => {
+    if (oi.is_cancelled) return;
+    const name = oi.menu_items?.item_name || '(deleted dish)';
+    const category = oi.menu_items?.menu_categories?.category_name || 'Uncategorised';
+    const amount = Number(oi.total_price ?? (Number(oi.item_price || 0) * Number(oi.quantity || 0))) || 0;
+    const key = `${name}||${category}`;
+    if (!byItem.has(key)) byItem.set(key, { key, name, category, qty: 0, amount: 0 });
+    const row = byItem.get(key);
+    row.qty += Number(oi.quantity) || 0;
+    row.amount += amount;
+    total += amount;
+  });
+
+  const rows = [...byItem.values()]
+    .map((r) => ({
+      ...r,
+      amount: Math.round(r.amount * 100) / 100,
+      share: total ? Math.round((r.amount / total) * 1000) / 10 : 0,
+    }))
+    .sort((a, b) => b.amount - a.amount);
+
+  return { rows, total: Math.round(total * 100) / 100 };
 }
 
 function buildRecentOrders(orders, limit = 5) {
@@ -250,6 +328,8 @@ export function useDashboardData() {
       totalOrders: 0,
     },
     sectionRevenue: [],
+    channelSplit: { rows: [], paidTotal: 0 },
+    itemSplit: { rows: [], total: 0 },
     dailyTrend: [],
     recentOrders: [],
     liveOrders: [],
@@ -309,6 +389,34 @@ export function useDashboardData() {
         .select('*', { count: 'exact', head: true })
         .eq('status', STATUS_FILTERS.occupied);
 
+      // The payment-mode split. Filtered on paid_at rather than created_at: a
+      // bill raised before midnight and settled after belongs to the day the
+      // money actually landed.
+      const { data: periodBills, error: billsError } = await supabase
+        .from('bills')
+        .select('grand_total, payment_method, payment_status, paid_at')
+        .eq('payment_status', 'paid')
+        .gte('paid_at', from.toISOString())
+        .lte('paid_at', to.toISOString());
+
+      if (billsError) throw billsError;
+
+      // The item-wise split. Reached through the order rather than filtered on
+      // the line's own timestamp, so a line added late still counts against the
+      // order it belongs to.
+      const { data: periodItems, error: itemsError } = await supabase
+        .from('order_items')
+        .select(`
+          quantity, item_price, total_price, is_cancelled,
+          menu_items ( item_name, menu_categories ( category_name ) ),
+          orders!inner ( created_at, order_status )
+        `)
+        .gte('orders.created_at', from.toISOString())
+        .lte('orders.created_at', to.toISOString())
+        .neq('orders.order_status', 'cancelled');
+
+      if (itemsError) throw itemsError;
+
       const { count: periodCustomers } = await supabase
         .from('customer_sessions')
         .select('*', { count: 'exact', head: true })
@@ -331,6 +439,8 @@ export function useDashboardData() {
           totalOrders: orderCount,
         },
         sectionRevenue: buildSectionRevenue(orders),
+        channelSplit: buildChannelSplit(periodBills),
+        itemSplit: buildItemSplit(periodItems),
         dailyTrend: buildDailyTrend(orders, from, to),
         recentOrders: buildRecentOrders(orders),
         liveOrders: buildLiveOrders(liveOrderRows),

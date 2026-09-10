@@ -6,6 +6,7 @@ import SearchSelect from '../../components/SearchSelect';
 import { useSalesEntry } from '../../hooks/useSalesEntry';
 import { useOutlet } from '../../context/OutletContext';
 import { MastersStyles } from '../masters/mastersUi';
+import { fmtDate } from '../../lib/dates';
 
 /**
  * Sales for a day that has already passed.
@@ -30,9 +31,6 @@ const yesterday = () => {
   return d.toISOString().slice(0, 10);
 };
 
-const dateLabel = (iso) => new Date(iso).toLocaleDateString('en-IN', {
-  day: '2-digit', month: 'short', year: 'numeric',
-});
 
 let seq = 0;
 const blankLine = () => ({ key: `s${(seq += 1)}`, menuItemId: '', quantity: '', price: '' });
@@ -93,14 +91,14 @@ export default function SalesEntry() {
       tableId: mode === 'day' ? '' : tableId,
       customerName: mode === 'day' ? 'Day total' : (customerName || 'Walk-in'),
       paymentMethod,
-      note: mode === 'day' ? `Day sheet for ${dateLabel(date)}` : note,
+      note: mode === 'day' ? `Day sheet for ${fmtDate(date)}` : note,
     });
     setSaving(false);
 
     if (res.success) {
       const r = res.result || {};
       flash(
-        `Recorded ${r.lines} dish${r.lines === 1 ? '' : 'es'} on ${dateLabel(date)} `
+        `Recorded ${r.lines} dish${r.lines === 1 ? '' : 'es'} on ${fmtDate(date)} `
         + `— ${money(r.total)}. Stock for that day has been reduced.`,
       );
       reset();
@@ -321,7 +319,7 @@ export default function SalesEntry() {
             disabled={saving || filled === 0 || tables.length === 0}
           >
             {saving ? 'Recording…' : (
-              <><CheckCircle2 size={15} /> Record sale on {dateLabel(date)}</>
+              <><CheckCircle2 size={15} /> Record sale on {fmtDate(date)}</>
             )}
           </button>
         </div>
@@ -338,7 +336,7 @@ export default function SalesEntry() {
           </div>
           {backdatedRecent.map((o) => (
             <div key={o.id} className="table-row">
-              <div className="se-r-date strong">{dateLabel(o.created_at)}</div>
+              <div className="se-r-date strong">{fmtDate(o.created_at)}</div>
               <div className="se-r-items muted">{(o.order_items || []).length}</div>
               <div className="se-r-note muted">{o.notes}</div>
               <div className="se-r-total amount">{money(o.total)}</div>

@@ -9,6 +9,7 @@ import {
 } from './lineEditor';
 import { ConfirmDelete } from '../masters/masterDialogs';
 import { MastersStyles } from '../masters/mastersUi';
+import { fmtDate } from '../../lib/dates';
 
 /**
  * Production — what the kitchen made today.
@@ -31,9 +32,6 @@ import { MastersStyles } from '../masters/mastersUi';
 
 const today = () => new Date().toISOString().slice(0, 10);
 
-const dateLabel = (iso) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-IN', {
-  day: '2-digit', month: 'short', year: 'numeric',
-});
 
 const STATUS_TONE = { draft: 'tone-neutral', posted: 'tone-green', cancelled: 'tone-neutral' };
 
@@ -250,7 +248,7 @@ export default function Production() {
     if (res.success) {
       const r = res.result || {};
       flash(
-        `Recorded ${r.made} item${r.made === 1 ? '' : 's'} made on ${dateLabel(draft.madeOn)}`
+        `Recorded ${r.made} item${r.made === 1 ? '' : 's'} made on ${fmtDate(draft.madeOn)}`
         + `${r.used ? `, using ${r.used} ingredient${r.used === 1 ? '' : 's'}` : ''}.`,
       );
     }
@@ -316,7 +314,7 @@ export default function Production() {
           const used = lines.filter((l) => l.role === 'input');
           return (
             <div key={b.id} className="table-row pc-row">
-              <div className="pc-date muted">{dateLabel(b.made_on)}</div>
+              <div className="pc-date muted">{fmtDate(b.made_on)}</div>
               <div className="pc-ref strong" title={b.batch_no || ''}>{b.batch_no || '—'}</div>
               <div className="pc-made">
                 {made.map((l) => (
@@ -356,7 +354,7 @@ export default function Production() {
       {cancelling && (
         <ConfirmDelete
           title="Cancel this batch?"
-          subject={`Batch of ${dateLabel(cancelling.made_on)}`}
+          subject={`Batch of ${fmtDate(cancelling.made_on)}`}
           permanent={false}
           confirmLabel="Cancel batch"
           consequences={[

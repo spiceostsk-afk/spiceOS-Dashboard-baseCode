@@ -4,6 +4,7 @@ import {
   Bike, Truck, Utensils,
   ArrowLeftRight, Split, LayoutGrid, RefreshCw, Coffee, FileText,
 } from 'lucide-react';
+import { fmtDate } from '../../lib/dates';
 
 const FORMAT_CURRENCY = new Intl.NumberFormat('en-IN', {
   style: 'currency', currency: 'INR', minimumFractionDigits: 2,
@@ -227,7 +228,7 @@ function InvoicePreview({ session, items, subtotal, discountAmount, serviceCharg
       <div className="bd-receipt__meta">
         <div><span>Table</span><b>T-{session?.restaurant_tables?.table_number}</b></div>
         <div><span>Bill #</span><b>{session?.id?.slice(0, 4).toUpperCase()}</b></div>
-        <div><span>Date</span><b>{session?.started_at ? new Date(session.started_at).toLocaleDateString() : ''}</b></div>
+        <div><span>Date</span><b>{fmtDate(session?.started_at, '')}</b></div>
       </div>
       <div className="bd-receipt__items">
         {items.map((item, idx) => (
@@ -381,7 +382,7 @@ export default function BillingDetails({
   paymentMethod, isEditingQuantities, loadingAction,
   discountType, discountValue, showServiceCharge, serviceChargePercent, splitPayments,
   onCloseSession, onNavigateMenu, onEditItem, onUpdateQty, onDeleteItem, onToggleEdit,
-  onSelectPayment, onSettle, onPrint, onPrintKot, onMoveTable, onMergeBill, onSplit, onHold, onVoid,
+  onSelectPayment, onSettle, onPrint, onPrintKot, onReprintKot, onMoveTable, onMergeBill, onSplit, onHold, onVoid,
   isOnline, onAddManualItem, onSetDiscountType, onSetDiscountValue,
   onToggleServiceCharge, onSetServiceChargePercent,
   onUpdateSplitPayment, onAddSplitPayment, onRemoveSplitPayment, onSettlePartial,
@@ -530,8 +531,20 @@ export default function BillingDetails({
         <button className="btn btn--ghost btn--sm" onClick={onMergeBill} disabled={isPaid || !onMergeBill}>
           <FileText size={14} /> Merge bill
         </button>
+        {/* Two different jobs. "Send" fires only what has been added since the
+            last ticket, which is how a table is built up round by round.
+            "Reprint" puts the whole table out again for a lost docket, and is
+            deliberately the quieter of the two. */}
         <button className="btn btn--ghost btn--sm" onClick={onPrintKot} disabled={items.length === 0}>
-          <Printer size={14} /> Print KOT
+          <Printer size={14} /> Send KOT
+        </button>
+        <button
+          className="btn btn--ghost btn--sm"
+          onClick={onReprintKot}
+          disabled={items.length === 0 || !onReprintKot}
+          title="Print the whole table again without sending anything new"
+        >
+          <Printer size={14} /> Reprint KOT
         </button>
         <button className="btn btn--ghost btn--sm" onClick={onNavigateMenu} disabled={isPaid || !isOnline}>
           <Plus size={14} /> Add items
