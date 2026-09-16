@@ -4,11 +4,12 @@ import { supabase } from '../lib/supabase';
 import * as db from '../lib/db';
 import {
   Plus, Trash2, ChevronRight, WifiOff, Settings, X, Edit3, Search, Utensils,
-  FileDown, Upload,
+  FileDown, Upload, Printer,
 } from 'lucide-react';
 import {
   MENU_CSV_COLUMNS, menuToCsv, csvToMenuRows, planMenuImport, downloadCsv,
 } from '../lib/menuCsv';
+import { readKotSent, writeKotSent, kotTicketHtml, writeTicket } from '../lib/kot';
 
 const FOOD_PLACEHOLDER = 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'400\' height=\'200\'%3E%3Crect width=\'400\' height=\'200\' fill=\'%23F0F1F4\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' dominant-baseline=\'middle\' text-anchor=\'middle\' font-size=\'48\' opacity=\'0.35\'%3E%F0%9F%8D%BD%EF%B8%8F%3C/text%3E%3C/svg%3E';
 
@@ -328,7 +329,14 @@ const MenuCatalog = () => {
     if (confirm('Clear entire order?')) setOrderItems([]);
   };
 
-  const createOrder = async () => {
+  /**
+   * Place the order, and with `withKot` print its kitchen ticket.
+   *
+   * Placing an order is not a sale — a KOT is not proof of sale, a settled bill
+   * is — so nothing here touches revenue. The lines printed are marked as sent,
+   * so Billing's "Send KOT" later carries only what is added after them.
+   */
+  const createOrder = async (withKot) => {
     if (orderItems.length === 0) return;
 
     const validSessionId = sessionId && sessionId !== 'undefined' && sessionId !== 'null' ? sessionId : null;
@@ -338,6 +346,11 @@ const MenuCatalog = () => {
       alert('No active session found. Please assign a table first.');
       return;
     }
+
+    // Opened now, inside the click, because a window opened after the network
+    // round trip is no longer "from a click" and the browser blocks it.
+    const kotWin = withKot ? window.open('', '_blank') : null;
+    const ticketLines = orderItems.map((i) => ({ qty: i.qty, name: i.name }));
 
     try {
       const sub = orderItems.reduce((acc, item) => acc + item.price * item.qty, 0);
@@ -357,10 +370,36 @@ const MenuCatalog = () => {
           item_price: item.price, total_price: item.price * item.qty,
         }));
 
-        const { error: itemsError } = await supabase.from('order_items').insert(orderItemsToInsert);
+        const { data: insertedLines, error: itemsError } = await supabase
+          .from('order_items').insert(orderItemsToInsert).select('id');
         if (itemsError) throw itemsError;
 
-        alert('Order placed successfully!');
+        if (withKot) {
+          const sent = readKotSent(validSessionId);
+          (insertedLines || []).forEach((l) => sent.add(String(l.id)));
+          writeKotSent(validSessionId, sent);
+
+          const [{ data: sess }, { count: rounds }] = await Promise.all([
+            supabase.from('customer_sessions')
+              .select('guest_count, restaurant_tables ( table_number )')
+              .eq('id', validSessionId).maybeSingle(),
+            supabase.from('orders')
+              .select('id', { count: 'exact', head: true })
+              .eq('session_id', validSessionId)
+              .neq('order_status', 'cancelled'),
+          ]);
+
+          const printed = writeTicket(kotWin, kotTicketHtml({
+            tableNumber: sess?.restaurant_tables?.table_number,
+            billId: validSessionId.slice(0, 4).toUpperCase(),
+            guests: sess?.guest_count,
+            items: ticketLines,
+            subtitle: `Kitchen Order Ticket · Round ${rounds || 1}`,
+          }));
+          if (!printed) {
+            alert('Order placed, but the KOT window was blocked. Allow pop-ups for this site, then use Send KOT on the Billing screen.');
+          }
+        }
       } else {
         const orderTempId = db.generateTempId();
         const orderData = {
@@ -376,12 +415,25 @@ const MenuCatalog = () => {
           await db.enqueueSync({ action: 'insert', table: 'order_items', tempId: itemTempId, data: { order_id: orderTempId, menu_item_id: item.id, quantity: item.qty, item_price: item.price, total_price: item.price * item.qty } });
         }
 
+        // The kitchen still needs the ticket while the line is down. Lines are
+        // not marked sent: their ids are temporary until they sync.
+        if (withKot) {
+          writeTicket(kotWin, kotTicketHtml({
+            tableNumber: '—',
+            billId: validSessionId.slice(0, 4).toUpperCase(),
+            items: ticketLines,
+            subtitle: 'Kitchen Order Ticket · offline',
+          }));
+        }
+
         alert('Order saved offline! It will sync when you reconnect.');
       }
 
       setOrderItems([]);
-      navigate('/billing');
+      // Back to this table's bill, where the next round and the settlement happen.
+      navigate(`/billing?tab=tables&sessionId=${validSessionId}`);
     } catch (error) {
+      if (kotWin && !kotWin.closed) kotWin.close();
       alert('Error creating order: ' + error.message);
     }
   };
@@ -857,11 +909,22 @@ const MenuCatalog = () => {
             <button
               className="btn btn--primary"
               style={{ width: '100%', marginTop: 8 }}
-              onClick={createOrder}
+              onClick={() => createOrder(true)}
               disabled={orderItems.length === 0}
             >
-              Create order <ChevronRight size={16} />
+              <Printer size={16} /> KOT — place order &amp; print <ChevronRight size={16} />
             </button>
+            <button
+              className="btn btn--ghost btn--sm"
+              style={{ width: '100%', marginTop: 6 }}
+              onClick={() => createOrder(false)}
+              disabled={orderItems.length === 0}
+            >
+              Place order without printing
+            </button>
+            <div className="card__subtitle" style={{ textAlign: 'center', marginTop: 6 }}>
+              Counts as a sale only once the bill is settled.
+            </div>
           </div>
         </div>
         )}

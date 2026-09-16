@@ -391,6 +391,7 @@ export default function Billing() {
           sessionId={state.loadingWorkspace ? null : sessionState.session?.id}
           session={sessionState.session}
           items={sessionState.items}
+          voidItems={sessionState.voidItems}
           loading={sessionState.loadingSession}
           error={sessionState.sessionError}
           isPaid={sessionState.isPaid}

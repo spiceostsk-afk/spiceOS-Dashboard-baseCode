@@ -76,6 +76,7 @@ const NAV_ITEMS = [
       { to: '/reports/wastage', label: 'Wastage Report' },
       { to: '/reports/discount', label: 'Discount Report' },
       { to: '/reports/complimentary', label: 'Complimentary Report' },
+      { to: '/reports/void-kot', label: 'Void KOT Report' },
       { to: '/reports/online', label: 'Online Report' },
     ],
   },

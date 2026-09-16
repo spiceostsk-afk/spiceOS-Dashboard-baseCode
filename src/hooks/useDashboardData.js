@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
-import { fmtDayShort } from '../lib/dates';
+import { fmtDayShort, fmtWeekday } from '../lib/dates';
 
 const TODAY_START = new Date();
 TODAY_START.setHours(0, 0, 0, 0);
@@ -128,17 +128,19 @@ function buildDailyTrend(orders, from, to) {
     const key = localKey(d);
     daysMap[key] = {
       // A short window names the weekday, which is what a manager compares.
-      // Anything longer gets DD/MM — thirty full dates side by side are noise.
+      // Anything longer gets DD-Mon — thirty full dates side by side are noise.
       label: span <= 8
-        ? d.toLocaleDateString('en-GB', { weekday: 'short' })
+        ? fmtWeekday(d)
         : fmtDayShort(d),
       total: 0,
     };
   }
 
   (orders || []).forEach((o) => {
-    if (!o.created_at) return;
-    const key = localKey(new Date(o.created_at));
+    // A sale belongs to the day it was settled, the same day Reports files it.
+    const at = o.customer_sessions?.ended_at || o.created_at;
+    if (!at) return;
+    const key = localKey(new Date(at));
     if (daysMap[key]) daysMap[key].total += Number(o.total || 0);
   });
 
@@ -366,6 +368,28 @@ export function useDashboardData() {
 
       if (ordersError) throw ordersError;
 
+      // What counts as a sale. A KOT is not proof of sale; a settled bill is.
+      // Orders on a table still eating, and orders on a table that is voided
+      // or abandoned, earn nothing until the bill is settled. Filed under the
+      // day it was settled, which is how Reports and Payments already count,
+      // so the dashboard and the reports agree.
+      const { data: settledOrders, error: settledError } = await supabase
+        .from('orders')
+        .select(`
+          total,
+          subtotal,
+          restaurant_tables(
+            restaurant_sections(section_name)
+          ),
+          customer_sessions!inner ( session_status, ended_at )
+        `)
+        .eq('customer_sessions.session_status', 'completed')
+        .gte('customer_sessions.ended_at', from.toISOString())
+        .lte('customer_sessions.ended_at', to.toISOString())
+        .neq('order_status', 'cancelled');
+
+      if (settledError) throw settledError;
+
       // Anything still open belongs to the floor, whatever period is selected —
       // a table stuck since yesterday is still stuck while you look at
       // last month.
@@ -401,18 +425,19 @@ export function useDashboardData() {
 
       if (billsError) throw billsError;
 
-      // The item-wise split. Reached through the order rather than filtered on
-      // the line's own timestamp, so a line added late still counts against the
-      // order it belongs to.
+      // The item-wise split. Reached through the order and its session rather
+      // than filtered on the line's own timestamp, so a line added late still
+      // counts against the bill it was settled on — and an unsettled one not at all.
       const { data: periodItems, error: itemsError } = await supabase
         .from('order_items')
         .select(`
           quantity, item_price, total_price, is_cancelled,
           menu_items ( item_name, menu_categories ( category_name ) ),
-          orders!inner ( created_at, order_status )
+          orders!inner ( order_status, customer_sessions!inner ( session_status, ended_at ) )
         `)
-        .gte('orders.created_at', from.toISOString())
-        .lte('orders.created_at', to.toISOString())
+        .eq('orders.customer_sessions.session_status', 'completed')
+        .gte('orders.customer_sessions.ended_at', from.toISOString())
+        .lte('orders.customer_sessions.ended_at', to.toISOString())
         .neq('orders.order_status', 'cancelled');
 
       if (itemsError) throw itemsError;
@@ -423,7 +448,7 @@ export function useDashboardData() {
         .gte('started_at', from.toISOString())
         .lte('started_at', to.toISOString());
 
-      const { totalSales, netSales, orderCount } = parseOrders(orders);
+      const { totalSales, netSales, orderCount } = parseOrders(settledOrders);
       const averageOrderValue = calcAov(totalSales, orderCount);
 
       setState({
@@ -438,10 +463,10 @@ export function useDashboardData() {
           averageOrderValue,
           totalOrders: orderCount,
         },
-        sectionRevenue: buildSectionRevenue(orders),
+        sectionRevenue: buildSectionRevenue(settledOrders),
         channelSplit: buildChannelSplit(periodBills),
         itemSplit: buildItemSplit(periodItems),
-        dailyTrend: buildDailyTrend(orders, from, to),
+        dailyTrend: buildDailyTrend(settledOrders, from, to),
         recentOrders: buildRecentOrders(orders),
         liveOrders: buildLiveOrders(liveOrderRows),
         alerts: buildAlerts(liveOrderRows, todayStr),

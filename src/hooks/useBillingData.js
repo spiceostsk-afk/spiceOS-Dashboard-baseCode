@@ -11,8 +11,9 @@ import {
   FORMAT_CURRENCY,
 } from '../lib/calculations';
 import { fmtDateTime } from '../lib/dates';
+import { readKotSent, writeKotSent, kotTicketHtml, writeTicket } from '../lib/kot';
 
-function flattenOrderItems(sessionData) {
+function flattenLines(sessionData) {
   if (!sessionData?.orders) return [];
   return sessionData.orders.flatMap((order) =>
     (order.order_items || []).map((item) => ({
@@ -21,44 +22,24 @@ function flattenOrderItems(sessionData) {
       name: item.menu_items?.item_name || 'Unknown Item',
       qty: item.quantity,
       price: item.item_price,
+      cancelled: Boolean(item.is_cancelled),
+      cancelReason: item.cancel_reason || null,
     }))
   );
 }
 
-/**
- * Which lines have already gone to the kitchen, per session.
- *
- * A table is built up in rounds: two starters, then a main twenty minutes
- * later. Reprinting the whole bill as a KOT each round tells the kitchen to
- * cook the starters again, so a round has to know what was already sent.
- *
- * Kept in localStorage rather than on the row because it is a property of this
- * till, not of the order: another terminal printing its own ticket does not
- * mean this one's docket came out. It survives a refresh, which is what a
- * crashed browser mid-service actually needs.
- */
-const KOT_SENT_KEY = (sessionId) => `spiceos.kot.sent.${sessionId}`;
-
-function readKotSent(sessionId) {
-  if (!sessionId) return new Set();
-  try {
-    const raw = window.localStorage.getItem(KOT_SENT_KEY(sessionId));
-    return new Set(raw ? JSON.parse(raw) : []);
-  } catch {
-    // A private window, or storage turned off. Losing the round history just
-    // means the next ticket carries everything — never a broken screen.
-    return new Set();
-  }
+/** What the guest pays for. A Void KOT line was cooked but is never billed. */
+function flattenOrderItems(sessionData) {
+  return flattenLines(sessionData).filter((i) => !i.cancelled);
 }
 
-function writeKotSent(sessionId, ids) {
-  if (!sessionId) return;
-  try {
-    window.localStorage.setItem(KOT_SENT_KEY(sessionId), JSON.stringify([...ids]));
-  } catch {
-    /* nothing to do — the ticket still printed */
-  }
+/** Void KOT lines: shown on the bill for the record, never charged. */
+function flattenVoidItems(sessionData) {
+  return flattenLines(sessionData).filter((i) => i.cancelled);
 }
+
+// Which lines have already gone to the kitchen lives in lib/kot.js, shared
+// with the order screen that prints the first round.
 
 // Freeing a table must also end whatever meal was on it. resolve-table decides
 // the diner's mode purely from "does this table have an active session", so a
@@ -121,9 +102,14 @@ function processTablesWithSessions(tablesData) {
   }));
 }
 
-async function updateOrderTotalOnline(orderId, items) {
+async function updateOrderTotalOnline(orderId, items, { hasVoidLines = false } = {}) {
   const orderItems = items.filter((i) => i.orderId === orderId);
   if (orderItems.length === 0) {
+    // An order whose remaining lines are all Void KOT stays, at zero, as the
+    // record of what the kitchen cooked. Only a truly empty order goes.
+    if (hasVoidLines) {
+      return supabase.from('orders').update({ subtotal: 0, tax: 0, total: 0 }).eq('id', orderId);
+    }
     return supabase.from('orders').delete().eq('id', orderId);
   }
   const subtotal = orderItems.reduce((sum, item) => sum + item.price * item.qty, 0);
@@ -336,7 +322,7 @@ export function useBillingData() {
         const { data, error } = await supabase
           .from('customer_sessions')
           .select(
-            `*, restaurant_tables(table_number), orders(id, total, subtotal, tax, order_items(id, menu_item_id, quantity, item_price, menu_items(item_name)))`
+            `*, restaurant_tables(table_number), orders(id, total, subtotal, tax, order_items(id, menu_item_id, quantity, item_price, is_cancelled, cancel_reason, menu_items(item_name)))`
           )
           .eq('id', sessionId)
           .single();
@@ -377,6 +363,7 @@ export function useBillingData() {
       setSessionState({
         session: sessionData,
         items,
+        voidItems: flattenVoidItems(sessionData),
         isPaid: sessionData?.session_status === SESSION_STATUS.completed,
         loadingSession: false,
         sessionError: null,
@@ -726,15 +713,41 @@ export function useBillingData() {
       setLoadingAction(true);
       try {
         if (isOnline) {
-          if (newQty <= 0) {
-            await supabase.from('order_items').delete().eq('id', itemId);
+          // A line the kitchen has already had a KOT for was cooked. Removing
+          // it voids it instead of deleting it: stock stays used, nothing is
+          // billed, and it shows as Void KOT. A line never sent is simply a
+          // mistake and is deleted, which returns its stock.
+          const sentToKitchen = newQty <= 0 && readKotSent(sessionId).has(String(itemId));
+          if (sentToKitchen) {
+            const reason = window.prompt('This item has gone to the kitchen. Reason for Void KOT:');
+            if (reason === null) return;           // backed out — change nothing
+            if (!reason.trim()) throw new Error('A reason is needed to void a KOT item.');
+            const { error } = await supabase
+              .from('order_items')
+              .update({ is_cancelled: true, cancel_reason: reason.trim(), cancelled_at: new Date().toISOString() })
+              .eq('id', itemId);
+            if (error) throw error;
+          } else if (newQty <= 0) {
+            const { error } = await supabase.from('order_items').delete().eq('id', itemId);
+            if (error) throw error;
           } else {
             const item = sessionState.items.find((i) => i.id === itemId);
             if (!item) throw new Error('Item not found');
             const totalPrice = item.price * newQty;
-            await supabase.from('order_items').update({ quantity: newQty, total_price: totalPrice }).eq('id', itemId);
+            const { error } = await supabase.from('order_items').update({ quantity: newQty, total_price: totalPrice }).eq('id', itemId);
+            if (error) throw error;
           }
-          await updateOrderTotalOnline(orderId, sessionState.items.filter((i) => i.orderId === orderId));
+          // The order's lines as they are AFTER this change. Passing the list
+          // from before it meant deleting an order's last line left the order
+          // behind with no items and its old total: the table could not be
+          // settled, and the dashboard counted the stale total as a sale.
+          const remaining = sessionState.items
+            .filter((i) => i.orderId === orderId && !(newQty <= 0 && i.id === itemId))
+            .map((i) => (i.id === itemId ? { ...i, qty: newQty } : i));
+          const hasVoidLines = sentToKitchen
+            || (sessionState.voidItems || []).some((i) => i.orderId === orderId);
+          const { error: totalError } = await updateOrderTotalOnline(orderId, remaining, { hasVoidLines });
+          if (totalError) throw totalError;
           await fetchSessionData();
         } else {
           if (newQty <= 0) {
@@ -759,7 +772,7 @@ export function useBillingData() {
         setLoadingAction(false);
       }
     },
-    [sessionState.items, fetchSessionData, isOnline, setLoadingAction]
+    [sessionId, sessionState.items, sessionState.voidItems, fetchSessionData, isOnline, setLoadingAction]
   );
 
   const handleOpenMoveTable = useCallback(async () => {
@@ -1016,35 +1029,13 @@ export function useBillingData() {
 
       // A kitchen ticket carries what to cook, never money.
       if (isKot) {
-        let kotRows = '';
-        for (const item of items) {
-          kotRows += `<tr><td class="qty">${item.qty}</td><td>${item.name}</td></tr>`;
-        }
-        win.document.write(`<!DOCTYPE html><html><head><title>KOT - ${billId}</title>
-        <style>
-          body { font-family: 'Courier New', monospace; width: 280px; margin: 0 auto; padding: 0.75rem; font-size: 13px; }
-          h2 { text-align: center; font-size: 18px; margin: 0 0 2px 0; letter-spacing: 2px; }
-          .sub { text-align: center; font-size: 11px; color: #555; margin: 0 0 8px 0; }
-          hr { border: none; border-top: 1px dashed #333; margin: 6px 0; }
-          table { width: 100%; border-collapse: collapse; font-size: 14px; }
-          td { padding: 5px 0; vertical-align: top; }
-          .qty { width: 34px; font-weight: bold; font-size: 16px; }
-          .meta { font-size: 12px; }
-          @media print { body { margin: 0; padding: 0.5rem; } @page { margin: 0; } }
-        </style></head><body>
-        <h2>KOT</h2>
-        <div class="sub">${isNewRound ? `Kitchen Order Ticket · Round ${roundNo}` : 'REPRINT — full table'}</div>
-        <hr/>
-        <div class="meta"><strong>Table:</strong> T-${tableNumber} &nbsp; <strong>Bill #:</strong> ${billId}</div>
-        <div class="meta"><strong>Guests:</strong> ${sess.guest_count || '—'}</div>
-        <div class="meta"><strong>Time:</strong> ${fmtDateTime(new Date())}</div>
-        <hr/>
-        <table>${kotRows}</table>
-        <hr/>
-        <div class="sub">${items.length} line${items.length === 1 ? '' : 's'}</div>
-        <script>window.print();window.close();</script>
-        </body></html>`);
-        win.document.close();
+        writeTicket(win, kotTicketHtml({
+          tableNumber,
+          billId,
+          guests: sess.guest_count,
+          items,
+          subtitle: isNewRound ? `Kitchen Order Ticket · Round ${roundNo}` : 'REPRINT — full table',
+        }));
         return;
       }
 

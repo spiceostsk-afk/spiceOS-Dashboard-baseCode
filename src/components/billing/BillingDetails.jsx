@@ -377,7 +377,7 @@ function PaymentBlock({ paymentMethod, total, isPaid, itemsEmpty, loadingAction,
 /* -------------------------------------------------------------------- root */
 
 export default function BillingDetails({
-  sessionId, session, items, loading, error, isPaid,
+  sessionId, session, items, voidItems = [], loading, error, isPaid,
   subtotal, discountAmount, serviceCharge, cgst, sgst, total,
   paymentMethod, isEditingQuantities, loadingAction,
   discountType, discountValue, showServiceCharge, serviceChargePercent, splitPayments,
@@ -455,6 +455,24 @@ export default function BillingDetails({
         onNavigateMenu={onNavigateMenu}
         isOnline={isOnline}
       />
+
+      {voidItems.length > 0 && (
+        <div className="bd-void">
+          <div className="drawer__label" style={{ margin: 0 }}>
+            Void KOT · not billed, stock used
+          </div>
+          {voidItems.map((item) => (
+            <div key={item.id} className="bd-item bd-item--void">
+              <div className="bd-item__name">
+                {item.name}
+                {item.cancelReason && <em> — {item.cancelReason}</em>}
+              </div>
+              <div className="bd-item__qty muted tnum">×{item.qty}</div>
+              <div className="bd-item__amt tnum">{fmt(item.price * item.qty)}</div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {!isPaid && (
         <Adjustments
@@ -625,6 +643,14 @@ function BillingStyles() {
         font-size: 13.5px;
       }
       .bd-item:last-child { border-bottom: none; }
+      .bd-void {
+        padding: 8px 10px; border-radius: var(--radius-md);
+        background: var(--color-well, #F6F7F9); border: 1px dashed var(--color-border);
+      }
+      .bd-item--void .bd-item__name, .bd-item--void .bd-item__amt {
+        text-decoration: line-through; color: var(--color-text-muted);
+      }
+      .bd-item--void em { font-style: normal; text-decoration: none; color: var(--color-text-faint); }
       .bd-item__name { flex: 1; font-weight: 600; min-width: 0; }
       .bd-item__qty { width: 34px; text-align: center; color: var(--color-text-muted); }
       .bd-item__amt { width: 74px; text-align: right; font-weight: 600; }

@@ -25,6 +25,7 @@ import TransferReport from './views/reports/TransferReport';
 import WastageReport from './views/reports/WastageReport';
 import DiscountReport from './views/reports/DiscountReport';
 import ComplimentaryReport from './views/reports/ComplimentaryReport';
+import VoidKotReport from './views/reports/VoidKotReport';
 import OnlineSalesReport from './views/reports/OnlineSalesReport';
 import Production from './views/inventory/Production';
 import Settings from './views/Settings';
@@ -110,6 +111,7 @@ function AppShell() {
               <Route path="/reports/wastage" element={<WastageReport />} />
               <Route path="/reports/discount" element={<DiscountReport />} />
               <Route path="/reports/complimentary" element={<ComplimentaryReport />} />
+              <Route path="/reports/void-kot" element={<VoidKotReport />} />
               <Route path="/reports/online" element={<OnlineSalesReport />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/customers" element={<Customers />} />
