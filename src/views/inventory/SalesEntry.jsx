@@ -1,12 +1,12 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Plus, Trash2, Calendar, Receipt, AlertTriangle, CheckCircle2, ClipboardList,
+  Plus, Trash2, Calendar, Receipt, AlertTriangle, CheckCircle2, ClipboardList, X,
 } from 'lucide-react';
 import SearchSelect from '../../components/SearchSelect';
-import { useSalesEntry } from '../../hooks/useSalesEntry';
+import { useSalesEntry, HISTORY_PAGE_SIZE } from '../../hooks/useSalesEntry';
 import { useOutlet } from '../../context/OutletContext';
-import { MastersStyles } from '../masters/mastersUi';
-import { fmtDate } from '../../lib/dates';
+import { MastersStyles, Pager } from '../masters/mastersUi';
+import { fmtDate, fmtDateTime } from '../../lib/dates';
 
 /**
  * Sales for a day that has already passed.
@@ -36,7 +36,10 @@ let seq = 0;
 const blankLine = () => ({ key: `s${(seq += 1)}`, menuItemId: '', quantity: '', price: '' });
 
 export default function SalesEntry() {
-  const { dishes, tables, recent, taxPct, loading, error, recordSale, priceLines } = useSalesEntry();
+  const {
+    dishes, tables, recent, recentTotal, recentPage, setRecentPage,
+    taxPct, loading, error, recordSale, priceLines, loadEntry,
+  } = useSalesEntry();
   const { outlet, isMultiOutlet } = useOutlet();
 
   const [mode, setMode] = useState('day');          // 'day' | 'order'
@@ -49,6 +52,7 @@ export default function SalesEntry() {
   const [lines, setLines] = useState([blankLine()]);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState(null);
+  const [openEntryId, setOpenEntryId] = useState(null);
 
   const flash = (msg, tone = 'ok') => {
     setNotice({ msg, tone });
@@ -106,11 +110,6 @@ export default function SalesEntry() {
       flash(res.error || 'Could not record the sale.', 'bad');
     }
   };
-
-  const backdatedRecent = useMemo(
-    () => recent.filter((o) => (o.notes || '').match(/Day sheet|after the fact/i)).slice(0, 8),
-    [recent],
-  );
 
   return (
     <div className="page">
@@ -326,7 +325,7 @@ export default function SalesEntry() {
       </div>
 
       {/* --------------------------------------------------------- recent */}
-      {backdatedRecent.length > 0 && (
+      {recentTotal > 0 && (
         <div className="table-card table-card--padded">
           <div className="table-head">
             <div className="se-r-date">Recorded for</div>
@@ -334,18 +333,46 @@ export default function SalesEntry() {
             <div className="se-r-note">Note</div>
             <div className="se-r-total">Total</div>
           </div>
-          {backdatedRecent.map((o) => (
-            <div key={o.id} className="table-row">
+          {recent.map((o) => (
+            <div
+              key={o.id}
+              className="table-row se-r-row"
+              role="button"
+              tabIndex={0}
+              onClick={() => setOpenEntryId(o.id)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setOpenEntryId(o.id);
+                }
+              }}
+              title="See what was in this entry"
+            >
               <div className="se-r-date strong">{fmtDate(o.created_at)}</div>
               <div className="se-r-items muted">{(o.order_items || []).length}</div>
               <div className="se-r-note muted">{o.notes}</div>
               <div className="se-r-total amount">{money(o.total)}</div>
             </div>
           ))}
+          <Pager
+            page={recentPage}
+            pageSize={HISTORY_PAGE_SIZE}
+            total={recentTotal}
+            onPage={setRecentPage}
+          />
         </div>
       )}
 
-      {!loading && backdatedRecent.length === 0 && (
+      {openEntryId && (
+        <SaleEntryDrawer
+          key={openEntryId}
+          orderId={openEntryId}
+          loadEntry={loadEntry}
+          onClose={() => setOpenEntryId(null)}
+        />
+      )}
+
+      {!loading && recentTotal === 0 && (
         <div className="card">
           <div className="empty-state">
             <span className="empty-state__mark"><ClipboardList size={22} /></span>
@@ -401,6 +428,9 @@ export default function SalesEntry() {
         .se-r-items { width: 90px; text-align: center; }
         .se-r-note  { flex: 1; min-width: 0; font-size: 12.5px; }
         .se-r-total { width: 110px; text-align: right; }
+        .se-r-row { cursor: pointer; }
+        .se-r-row:hover { background: var(--color-surface-muted, #F7F7F8); }
+        .se-r-row:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
 
         .step {
           width: 26px; height: 26px; border: 1px solid var(--color-border);
@@ -412,5 +442,151 @@ export default function SalesEntry() {
         .tnum { font-variant-numeric: tabular-nums; }
       `}</style>
     </div>
+  );
+}
+
+const PAY_LABEL = {
+  cash: 'Cash', card: 'Card', upi: 'UPI', zomato: 'Zomato', swiggy: 'Swiggy',
+  home_delivery: 'Home delivery', other: 'Other',
+};
+
+/** The dishes, quantities and bill behind one row of the history. */
+function SaleEntryDrawer({ orderId, loadEntry, onClose }) {
+  const [entry, setEntry] = useState(null);
+  const [err, setErr] = useState(null);
+
+  useEffect(() => {
+    let live = true;
+    loadEntry(orderId).then((res) => {
+      if (!live) return;
+      if (res.success && res.entry) setEntry(res.entry);
+      else setErr(res.error || 'This entry could not be found.');
+    });
+    return () => { live = false; };
+  }, [orderId, loadEntry]);
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const items = entry?.order_items || [];
+  const qty = items.reduce((s, i) => s + (Number(i.quantity) || 0), 0);
+  const bill = Array.isArray(entry?.bills) ? entry.bills[0] : entry?.bills;
+  const isDaySheet = /Day sheet/i.test(entry?.notes || '');
+
+  return (
+    <>
+      <div className="drawer-scrim" onClick={onClose} />
+      <div className="drawer drawer--wide sed">
+        <div className="sed__head">
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="card__title">
+              {entry ? `Sale on ${fmtDate(entry.created_at)}` : 'Sale entry'}
+            </div>
+            {entry?.notes && <div className="card__subtitle">{entry.notes}</div>}
+          </div>
+          <button className="modal__close" onClick={onClose}><X size={17} /></button>
+        </div>
+
+        {err && <div className="mst-note bad">{err}</div>}
+        {!entry && !err && <div className="empty-state">Loading entry…</div>}
+
+        {entry && (
+          <>
+            <div className="sed__meta">
+              <div><span>Booked at</span><strong>{fmtDateTime(entry.created_at)}</strong></div>
+              <div>
+                <span>{isDaySheet ? 'Type' : 'Table'}</span>
+                <strong>
+                  {isDaySheet
+                    ? 'Day total'
+                    : `Table ${entry.restaurant_tables?.table_number ?? '—'}`}
+                </strong>
+              </div>
+              {!isDaySheet && (
+                <div>
+                  <span>Customer</span>
+                  <strong>{entry.customer_sessions?.customer_name || 'Walk-in'}</strong>
+                </div>
+              )}
+              <div>
+                <span>Paid by</span>
+                <strong>{PAY_LABEL[bill?.payment_method] || bill?.payment_method || '—'}</strong>
+              </div>
+            </div>
+
+            <div className="sed__rowhead">
+              <div className="sed__dish">Dish</div>
+              <div className="sed__qty">Qty</div>
+              <div className="sed__price">Unit price</div>
+              <div className="sed__amt">Amount</div>
+            </div>
+            {items.map((i) => (
+              <div key={i.id} className="sed__row">
+                <div className="sed__dish">{i.menu_items?.item_name || 'Deleted dish'}</div>
+                <div className="sed__qty tnum">{i.quantity}</div>
+                <div className="sed__price tnum">{money(i.item_price)}</div>
+                <div className="sed__amt tnum">
+                  {money(i.total_price ?? (Number(i.item_price) || 0) * (Number(i.quantity) || 0))}
+                </div>
+              </div>
+            ))}
+
+            <div className="sed__totals">
+              <div>
+                <span>{items.length} dish{items.length === 1 ? '' : 'es'} · {qty} qty</span>
+              </div>
+              <div><span>Subtotal</span><strong>{money(entry.subtotal)}</strong></div>
+              {Number(entry.tax) > 0 && (
+                <div><span>Tax</span><strong>{money(entry.tax)}</strong></div>
+              )}
+              <div className="sed__grand"><span>Total</span><strong>{money(entry.total)}</strong></div>
+            </div>
+          </>
+        )}
+
+        <style>{`
+          .sed { width: 560px; }
+          .sed__head {
+            display: flex; align-items: flex-start; gap: 12px;
+            padding-bottom: 14px; border-bottom: 1px solid var(--color-border);
+          }
+          .sed__meta {
+            display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;
+            padding: 14px 0; border-bottom: 1px solid var(--color-border-soft);
+          }
+          .sed__meta div { display: flex; flex-direction: column; gap: 2px; }
+          .sed__meta span { font-size: 11px; font-weight: 600; color: var(--color-text-muted); }
+          .sed__meta strong { font-size: 13.5px; }
+          .sed__rowhead, .sed__row { display: flex; align-items: center; gap: 10px; padding: 9px 0; }
+          .sed__rowhead {
+            font-size: 11px; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 0.04em; color: var(--color-text-muted);
+            border-bottom: 1px solid var(--color-border); margin-top: 6px;
+          }
+          .sed__row { font-size: 13px; border-bottom: 1px solid var(--color-border-soft); }
+          .sed__dish  { flex: 1; min-width: 0; font-weight: 600; }
+          .sed__rowhead .sed__dish { font-weight: 700; }
+          .sed__qty   { width: 50px; text-align: right; }
+          .sed__price { width: 90px; text-align: right; }
+          .sed__amt   { width: 95px; text-align: right; font-weight: 700; }
+          .sed__totals {
+            display: flex; flex-direction: column; gap: 4px; align-items: flex-end;
+            padding-top: 14px; font-size: 13px;
+          }
+          .sed__totals div { display: flex; gap: 20px; justify-content: space-between; min-width: 230px; }
+          .sed__totals span { color: var(--color-text-muted); }
+          .sed__grand { padding-top: 5px; border-top: 1px solid var(--color-border-soft); }
+          .sed__grand strong { font-size: 18px; }
+          .tnum { font-variant-numeric: tabular-nums; }
+          @media (max-width: 600px) {
+            .sed { width: 100vw; padding: 20px 16px; }
+            .sed__price { display: none; }
+          }
+        `}</style>
+      </div>
+    </>
   );
 }

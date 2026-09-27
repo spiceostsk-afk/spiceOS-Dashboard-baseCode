@@ -15,31 +15,62 @@ import { useOutlet } from '../context/OutletContext';
 
 const money = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
+export const HISTORY_PAGE_SIZE = 10;
+
 export function useSalesEntry() {
   const { outletId } = useOutlet();
 
   const [dishes, setDishes] = useState([]);
   const [tables, setTables] = useState([]);
   const [recent, setRecent] = useState([]);
+  const [recentTotal, setRecentTotal] = useState(0);
+  const [recentPage, setRecentPage] = useState(0);
   const [taxPct, setTaxPct] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  /**
+   * One page of what has been entered here, newest first.
+   *
+   * Picked out by the session's `backdated` flag rather than the order's note:
+   * an individual order saved with a note of its own carries no "Day sheet"
+   * or "after the fact" wording, and matching on text is what kept those out
+   * of the list. Paged on the server, so days further back stay reachable.
+   */
+  const loadHistory = useCallback(async (page) => {
+    const from = page * HISTORY_PAGE_SIZE;
+    const { data, count, error: histError } = await supabase
+      .from('orders')
+      .select(
+        'id, created_at, total, notes, order_items(quantity), '
+        + 'customer_sessions!inner(customer_name, metadata)',
+        { count: 'exact' },
+      )
+      .eq('customer_sessions.metadata->>backdated', 'true')
+      .order('created_at', { ascending: false })
+      .range(from, from + HISTORY_PAGE_SIZE - 1);
+    if (histError) throw histError;
+    setRecent(data || []);
+    setRecentTotal(count || 0);
+  }, []);
+
+  useEffect(() => {
+    loadHistory(recentPage).catch((err) => {
+      console.error('Error loading sales entry history:', err);
+      setError(err.message);
+    });
+  }, [recentPage, loadHistory]);
+
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [dishRes, tableRes, settingRes, recentRes] = await Promise.all([
+      const [dishRes, tableRes, settingRes] = await Promise.all([
         supabase
           .from('menu_items')
           .select('id, item_name, price, category_id, is_available')
           .order('item_name'),
         supabase.from('restaurant_tables').select('id, table_number').order('table_number'),
         supabase.from('restaurant_settings').select('value').eq('key', 'tax').maybeSingle(),
-        supabase
-          .from('orders')
-          .select('id, created_at, total, notes, order_items(quantity)')
-          .order('created_at', { ascending: false })
-          .limit(40),
       ]);
 
       if (dishRes.error) throw dishRes.error;
@@ -48,7 +79,6 @@ export function useSalesEntry() {
       setDishes(dishRes.data || []);
       setTables(tableRes.data || []);
       setTaxPct(Number(settingRes?.data?.value?.gstRate) || 0);
-      setRecent(recentRes.data || []);
       setError(null);
     } catch (err) {
       console.error('Error loading sales entry data:', err);
@@ -115,12 +145,32 @@ export function useSalesEntry() {
       if (rpcError) throw rpcError;
 
       await refresh();
+      // A new entry is the newest, so it lands on the first page.
+      if (recentPage === 0) await loadHistory(0);
+      else setRecentPage(0);
       return { success: true, result: data };
     } catch (err) {
       console.error('Error recording sale:', err);
       return { success: false, error: err.message };
     }
-  }, [outletId, taxPct, refresh]);
+  }, [outletId, taxPct, refresh, recentPage, loadHistory]);
+
+  /** Everything behind one entry in the list: its dishes, bill and table. */
+  const loadEntry = useCallback(async (orderId) => {
+    const { data, error: entryError } = await supabase
+      .from('orders')
+      .select(`
+        id, created_at, subtotal, tax, total, notes,
+        restaurant_tables(table_number),
+        customer_sessions(customer_name, metadata),
+        bills(payment_method, grand_total),
+        order_items(id, quantity, item_price, total_price, menu_items(item_name))
+      `)
+      .eq('id', orderId)
+      .maybeSingle();
+    if (entryError) return { success: false, error: entryError.message };
+    return { success: true, entry: data };
+  }, []);
 
   /** What a set of lines is worth, for the running total on screen. */
   const priceLines = useCallback((lines) => {
@@ -137,7 +187,7 @@ export function useSalesEntry() {
   }, [dishes, taxPct]);
 
   return {
-    dishes, tables, recent, taxPct, loading, error,
-    refresh, recordSale, priceLines,
+    dishes, tables, recent, recentTotal, recentPage, setRecentPage, taxPct, loading, error,
+    refresh, recordSale, priceLines, loadEntry,
   };
 }
