@@ -24,7 +24,8 @@ async function loadFromSupabase() {
 async function saveToSupabase(key, value) {
   const { error } = await supabase
     .from('restaurant_settings')
-    .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+    // PK is (restaurant_id, key); restaurant_id defaults to current_restaurant_id().
+    .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: 'restaurant_id,key' });
   if (error) throw error;
 }
 
@@ -38,6 +39,8 @@ export function useSettingsData() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(null);
+  const [saved, setSaved] = useState(false);
 
   const refreshSettings = useCallback(async () => {
     setLoading(true);
@@ -75,29 +78,32 @@ export function useSettingsData() {
       ...prev,
       [section]: { ...prev[section], [field]: value },
     }));
+    setSaved(false);
   }, []);
 
   const saveSettings = useCallback(async () => {
     setSaving(true);
-    setError(null);
+    setSaveError(null);
+    setSaved(false);
     try {
       await db.setMeta('settings', settings);
       for (const key of Object.keys(settings)) {
-        try {
-          await saveToSupabase(key, settings[key]);
-        } catch {
-          // Supabase table may not exist — that's fine
-        }
+        await saveToSupabase(key, settings[key]);
       }
+      setSaved(true);
+      return { success: true };
     } catch (err) {
-      setError(err.message);
+      // Surface it: a silent failure here meant the next load pulled the old
+      // values back from Supabase and the edit looked like it "didn't stick".
+      setSaveError(err.message);
+      return { success: false, error: err.message };
     } finally {
       setSaving(false);
     }
   }, [settings]);
 
   return {
-    settings, loading, error, saving,
+    settings, loading, error, saving, saveError, saved,
     updateSetting, saveSettings, refreshSettings,
   };
 }

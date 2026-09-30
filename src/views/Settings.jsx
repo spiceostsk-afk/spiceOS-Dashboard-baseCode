@@ -63,7 +63,7 @@ function ToggleRow({ label, value, onChange }) {
 }
 
 export default function Settings() {
-  const { settings, loading, error, saving, updateSetting, saveSettings, refreshSettings } = useSettingsData();
+  const { settings, loading, error, saving, saveError, saved, updateSetting, saveSettings, refreshSettings } = useSettingsData();
 
   if (loading) {
     return (
@@ -180,6 +180,8 @@ export default function Settings() {
       </SectionCard>
 
       <div className="set-save">
+        {saveError && <span className="set-save__msg set-save__msg--err">Couldn’t save: {saveError}</span>}
+        {saved && !saveError && <span className="set-save__msg set-save__msg--ok">Saved</span>}
         <button className="btn btn--primary" onClick={saveSettings} disabled={saving}>
           <Save size={14} /> {saving ? 'Saving…' : 'Save changes'}
         </button>
@@ -199,7 +201,10 @@ export default function Settings() {
         }
         .set-toggle-row + .set-toggle-row { margin-top: 12px; }
 
-        .set-save { display: flex; justify-content: flex-end; }
+        .set-save { display: flex; justify-content: flex-end; align-items: center; gap: 12px; }
+        .set-save__msg { font-size: 13px; font-weight: 600; }
+        .set-save__msg--ok { color: var(--color-success); }
+        .set-save__msg--err { color: var(--color-danger); }
       `}</style>
     </div>
   );
