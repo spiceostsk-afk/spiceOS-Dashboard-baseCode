@@ -53,20 +53,29 @@ export function calcServiceCharge(subtotal, serviceChargePercent) {
   return subtotal * (Math.min(serviceChargePercent, 50) / 100);
 }
 
-export function calcTax(subtotal) {
-  return subtotal * TAX_RATE;
+// `rate` is a fraction (0.05 = 5%). The constants above are only the fallback
+// for a restaurant that has never saved a GST rate — the live rate comes from
+// Settings via useTaxRate().
+export function calcTax(subtotal, rate = TAX_RATE) {
+  return subtotal * rate;
 }
 
-export function calcCgst(subtotal) {
-  return subtotal * CGST_RATE;
+// GST splits evenly into central and state halves.
+export function calcCgst(subtotal, rate = TAX_RATE) {
+  return subtotal * (rate / 2);
 }
 
-export function calcSgst(subtotal) {
-  return subtotal * SGST_RATE;
+export function calcSgst(subtotal, rate = TAX_RATE) {
+  return subtotal * (rate / 2);
 }
 
-export function calcTotal(subtotal, discountAmount, serviceCharge) {
-  return Math.max(0, subtotal - discountAmount + serviceCharge + calcTax(subtotal));
+export function calcTotal(subtotal, discountAmount, serviceCharge, rate = TAX_RATE) {
+  return Math.max(0, subtotal - discountAmount + serviceCharge + calcTax(subtotal, rate));
+}
+
+/** "5" for 0.05, "2.5" for 0.025 — for labels like "Tax (5%)". */
+export function formatRatePct(rate) {
+  return String(Math.round(rate * 10000) / 100);
 }
 
 export const FORMAT_CURRENCY = new Intl.NumberFormat('en-IN', {

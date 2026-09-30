@@ -4,12 +4,13 @@ import { supabase } from '../lib/supabase';
 import { useOfflineSync } from './useOfflineSync';
 import * as db from '../lib/db';
 import {
-  TAX_RATE, CGST_RATE, SGST_RATE, TABLE_CLEANUP_DELAY_MS,
+  TABLE_CLEANUP_DELAY_MS,
   SESSION_STATUS, TABLE_STATUS, ORDER_STATUS,
   calcSubtotal, calcDiscountAmount, calcServiceCharge,
   calcTax, calcCgst, calcSgst, calcTotal,
-  FORMAT_CURRENCY,
+  FORMAT_CURRENCY, formatRatePct,
 } from '../lib/calculations';
+import { useTaxRate } from './useTaxRate';
 import { fmtDateTime } from '../lib/dates';
 import { readKotSent, writeKotSent, kotTicketHtml, writeTicket } from '../lib/kot';
 
@@ -102,7 +103,7 @@ function processTablesWithSessions(tablesData) {
   }));
 }
 
-async function updateOrderTotalOnline(orderId, items, { hasVoidLines = false } = {}) {
+async function updateOrderTotalOnline(orderId, items, taxRate, { hasVoidLines = false } = {}) {
   const orderItems = items.filter((i) => i.orderId === orderId);
   if (orderItems.length === 0) {
     // An order whose remaining lines are all Void KOT stays, at zero, as the
@@ -113,7 +114,7 @@ async function updateOrderTotalOnline(orderId, items, { hasVoidLines = false } =
     return supabase.from('orders').delete().eq('id', orderId);
   }
   const subtotal = orderItems.reduce((sum, item) => sum + item.price * item.qty, 0);
-  const tax = subtotal * TAX_RATE;
+  const tax = calcTax(subtotal, taxRate);
   const total = subtotal + tax;
   return supabase.from('orders').update({ subtotal, tax, total }).eq('id', orderId);
 }
@@ -122,6 +123,7 @@ export function useBillingData() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const { isOnline, syncing, syncProgress, lastSyncResult, syncNow, cacheFromSupabase } = useOfflineSync();
+  const taxRate = useTaxRate();
 
   const sessionId = searchParams.get('sessionId');
   const queryTab = searchParams.get('tab') || 'tables';
@@ -512,7 +514,8 @@ export function useBillingData() {
       const curTotal = calcTotal(
         calcSubtotal(sessionState.items) - calcDiscountAmount(calcSubtotal(sessionState.items), uiState.discountType, uiState.discountValue),
         0,
-        calcServiceCharge(calcSubtotal(sessionState.items) - calcDiscountAmount(calcSubtotal(sessionState.items), uiState.discountType, uiState.discountValue), uiState.showServiceCharge ? uiState.serviceChargePercent : 0)
+        calcServiceCharge(calcSubtotal(sessionState.items) - calcDiscountAmount(calcSubtotal(sessionState.items), uiState.discountType, uiState.discountValue), uiState.showServiceCharge ? uiState.serviceChargePercent : 0),
+        taxRate,
       );
       const isPartial = uiState.splitPayments.length > 0
         ? uiState.splitPayments.reduce((s, p) => s + p.amount, 0) < curTotal
@@ -531,6 +534,9 @@ export function useBillingData() {
         billSubtotal - billDiscount,
         uiState.showServiceCharge ? uiState.serviceChargePercent : 0,
       );
+      // Was sent as 0 while the total still included tax, so every bill's
+      // gst_amount read zero in the reports.
+      const billTax = calcTax(billSubtotal - billDiscount, taxRate);
 
       /**
        * Settling has always closed the session and never written a bill, so
@@ -547,7 +553,7 @@ export function useBillingData() {
           p_discount_type: uiState.discountType === 'none' ? null : uiState.discountType,
           p_discount_amount: billDiscount,
           p_service_charge: billService,
-          p_tax: 0,
+          p_tax: billTax,
           p_total: curTotal,
           p_paid: paid,
         });
@@ -658,7 +664,7 @@ export function useBillingData() {
     } finally {
       setLoadingAction(false);
     }
-  }, [sessionId, sessionState.session, state.activeTab, isOnline, uiState.splitPayments, uiState.amountPaid, uiState.discountType, uiState.discountValue, uiState.showServiceCharge, uiState.serviceChargePercent, sessionState.items, setSearchParams, fetchWorkspaceData, setLoadingAction]);
+  }, [sessionId, sessionState.session, state.activeTab, isOnline, uiState.splitPayments, uiState.amountPaid, uiState.discountType, uiState.discountValue, uiState.showServiceCharge, uiState.serviceChargePercent, sessionState.items, setSearchParams, fetchWorkspaceData, setLoadingAction, taxRate]);
 
   const handleAddManualItem = useCallback(
     async (name, qty, unitPrice) => {
@@ -667,7 +673,7 @@ export function useBillingData() {
       try {
         if (isOnline) {
           const subtotal = unitPrice * qty;
-          const tax = subtotal * TAX_RATE;
+          const tax = calcTax(subtotal, taxRate);
           const total = subtotal + tax;
           const { data: order, error: orderError } = await supabase
             .from('orders').insert([{ session_id: sessionId, order_status: 'preparing', subtotal, tax, total }]).select().single();
@@ -678,7 +684,7 @@ export function useBillingData() {
         } else {
           const orderTempId = db.generateTempId();
           const subtotal = unitPrice * qty;
-          const tax = subtotal * TAX_RATE;
+          const tax = calcTax(subtotal, taxRate);
           const total = subtotal + tax;
           await db.put('orders', {
             id: orderTempId, session_id: sessionId, order_status: 'preparing',
@@ -705,7 +711,7 @@ export function useBillingData() {
         setLoadingAction(false);
       }
     },
-    [sessionId, isOnline, fetchSessionData, setLoadingAction]
+    [sessionId, isOnline, fetchSessionData, setLoadingAction, taxRate]
   );
 
   const handleUpdateItemQty = useCallback(
@@ -746,7 +752,7 @@ export function useBillingData() {
             .map((i) => (i.id === itemId ? { ...i, qty: newQty } : i));
           const hasVoidLines = sentToKitchen
             || (sessionState.voidItems || []).some((i) => i.orderId === orderId);
-          const { error: totalError } = await updateOrderTotalOnline(orderId, remaining, { hasVoidLines });
+          const { error: totalError } = await updateOrderTotalOnline(orderId, remaining, taxRate, { hasVoidLines });
           if (totalError) throw totalError;
           await fetchSessionData();
         } else {
@@ -772,7 +778,7 @@ export function useBillingData() {
         setLoadingAction(false);
       }
     },
-    [sessionId, sessionState.items, sessionState.voidItems, fetchSessionData, isOnline, setLoadingAction]
+    [sessionId, sessionState.items, sessionState.voidItems, fetchSessionData, isOnline, setLoadingAction, taxRate]
   );
 
   const handleOpenMoveTable = useCallback(async () => {
@@ -1017,8 +1023,9 @@ export function useBillingData() {
     const afterDiscount = subtotal - discountAmount;
     const serviceCharge = calcServiceCharge(afterDiscount, uiState.showServiceCharge ? uiState.serviceChargePercent : 0);
     const taxableAmount = afterDiscount + serviceCharge;
-    const cgst = taxableAmount * (TAX_RATE / 2);
-    const sgst = taxableAmount * (TAX_RATE / 2);
+    const cgst = calcCgst(taxableAmount, taxRate);
+    const sgst = calcSgst(taxableAmount, taxRate);
+    const halfPct = formatRatePct(taxRate / 2);
     const total = taxableAmount + cgst + sgst;
 
     const formatCurrency = (v) => FORMAT_CURRENCY ? FORMAT_CURRENCY.format(v || 0) : '₹' + (v || 0).toFixed(2);
@@ -1077,8 +1084,8 @@ export function useBillingData() {
         <tr><td>Subtotal</td><td class="right">${formatCurrency(subtotal)}</td></tr>
         ${discountAmount > 0 ? `<tr><td>Discount${uiState.discountType === 'percentage' ? ` (${uiState.discountValue}%)` : ''}</td><td class="right">-${formatCurrency(discountAmount)}</td></tr>` : ''}
         ${uiState.showServiceCharge && serviceCharge > 0 ? `<tr><td>Service Charge (${uiState.serviceChargePercent}%)</td><td class="right">${formatCurrency(serviceCharge)}</td></tr>` : ''}
-        <tr class="gst-row"><td>CGST (5%)</td><td class="right">${formatCurrency(cgst)}</td></tr>
-        <tr class="gst-row"><td>SGST (5%)</td><td class="right">${formatCurrency(sgst)}</td></tr>
+        <tr class="gst-row"><td>CGST (${halfPct}%)</td><td class="right">${formatCurrency(cgst)}</td></tr>
+        <tr class="gst-row"><td>SGST (${halfPct}%)</td><td class="right">${formatCurrency(sgst)}</td></tr>
         <tr class="grand-total"><td>Grand Total</td><td class="right">${formatCurrency(total)}</td></tr>
       </table>
       <hr/>
@@ -1087,7 +1094,7 @@ export function useBillingData() {
       </body></html>`);
       win.document.close();
     }, 100);
-  }, [sessionState.session, sessionState.items, uiState.discountType, uiState.discountValue, uiState.showServiceCharge, uiState.serviceChargePercent]);
+  }, [sessionState.session, sessionState.items, uiState.discountType, uiState.discountValue, uiState.showServiceCharge, uiState.serviceChargePercent, taxRate]);
 
   printRef.current = handlePrint;
 
@@ -1347,10 +1354,10 @@ export function useBillingData() {
   const discountAmount = calcDiscountAmount(subtotal, uiState.discountType, uiState.discountValue);
   const taxableAmount = subtotal - discountAmount;
   const serviceCharge = calcServiceCharge(taxableAmount, uiState.showServiceCharge ? uiState.serviceChargePercent : 0);
-  const tax = calcTax(taxableAmount);
-  const cgst = calcCgst(taxableAmount);
-  const sgst = calcSgst(taxableAmount);
-  const total = calcTotal(taxableAmount, 0, serviceCharge);
+  const tax = calcTax(taxableAmount, taxRate);
+  const cgst = calcCgst(taxableAmount, taxRate);
+  const sgst = calcSgst(taxableAmount, taxRate);
+  const total = calcTotal(taxableAmount, 0, serviceCharge, taxRate);
   const remainingBalance = Math.max(0, total - uiState.amountPaid);
 
   const occupiedCount = state.tables.filter((t) => t.status === TABLE_STATUS.occupied).length;
@@ -1375,6 +1382,7 @@ export function useBillingData() {
     cgst,
     sgst,
     total,
+    taxRate,
     remainingBalance,
     occupiedCount,
     billingCount,

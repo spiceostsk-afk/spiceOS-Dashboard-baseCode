@@ -5,6 +5,7 @@ import {
   ArrowLeftRight, Split, LayoutGrid, RefreshCw, Coffee, FileText,
 } from 'lucide-react';
 import { fmtDate } from '../../lib/dates';
+import { TAX_RATE, formatRatePct } from '../../lib/calculations';
 
 const FORMAT_CURRENCY = new Intl.NumberFormat('en-IN', {
   style: 'currency', currency: 'INR', minimumFractionDigits: 2,
@@ -19,6 +20,9 @@ const minutesSince = (iso) => {
 };
 
 /* ------------------------------------------------------------------ header */
+
+// CGST and SGST are each half the GST rate from Settings.
+const halfRatePct = (rate) => formatRatePct((rate ?? TAX_RATE) / 2);
 
 function SessionHeader({ session, items, isPaid, onMoveTable, onSplit, onHold, onVoid, onClose }) {
   const min = minutesSince(session?.started_at);
@@ -193,7 +197,7 @@ function Adjustments({
 /* ------------------------------------------------------------------ totals */
 
 function Totals({
-  subtotal, discountAmount, serviceCharge, cgst, sgst, total,
+  subtotal, discountAmount, serviceCharge, cgst, sgst, total, taxRate,
   discountType, discountValue, showServiceCharge, serviceChargePercent,
 }) {
   return (
@@ -208,8 +212,8 @@ function Totals({
       {showServiceCharge && serviceCharge > 0 && (
         <div className="bd-total-row"><span>Service charge ({serviceChargePercent}%)</span><b>{fmt(serviceCharge)}</b></div>
       )}
-      <div className="bd-total-row"><span>CGST (5%)</span><b>{fmt(cgst)}</b></div>
-      <div className="bd-total-row"><span>SGST (5%)</span><b>{fmt(sgst)}</b></div>
+      <div className="bd-total-row"><span>CGST ({halfRatePct(taxRate)}%)</span><b>{fmt(cgst)}</b></div>
+      <div className="bd-total-row"><span>SGST ({halfRatePct(taxRate)}%)</span><b>{fmt(sgst)}</b></div>
       <div className="bd-total-row bd-total-row--grand"><span>Grand total</span><span>{fmt(total)}</span></div>
     </div>
   );
@@ -217,7 +221,7 @@ function Totals({
 
 /* ---------------------------------------------------------------- invoice */
 
-function InvoicePreview({ session, items, subtotal, discountAmount, serviceCharge, cgst, sgst, total, discountType, discountValue, showServiceCharge, serviceChargePercent }) {
+function InvoicePreview({ session, items, subtotal, discountAmount, serviceCharge, cgst, sgst, total, taxRate, discountType, discountValue, showServiceCharge, serviceChargePercent }) {
   return (
     <div className="bd-receipt">
       <div className="bd-receipt__logo">
@@ -249,8 +253,8 @@ function InvoicePreview({ session, items, subtotal, discountAmount, serviceCharg
         {showServiceCharge && serviceCharge > 0 && (
           <div className="bd-receipt__row"><span>Service charge ({serviceChargePercent}%)</span><span>{fmt(serviceCharge)}</span></div>
         )}
-        <div className="bd-receipt__row"><span>CGST (5%)</span><span>{fmt(cgst)}</span></div>
-        <div className="bd-receipt__row"><span>SGST (5%)</span><span>{fmt(sgst)}</span></div>
+        <div className="bd-receipt__row"><span>CGST ({halfRatePct(taxRate)}%)</span><span>{fmt(cgst)}</span></div>
+        <div className="bd-receipt__row"><span>SGST ({halfRatePct(taxRate)}%)</span><span>{fmt(sgst)}</span></div>
         <div className="bd-receipt__row bd-receipt__row--total"><span>Grand total</span><span>{fmt(total)}</span></div>
       </div>
     </div>
@@ -378,7 +382,7 @@ function PaymentBlock({ paymentMethod, total, isPaid, itemsEmpty, loadingAction,
 
 export default function BillingDetails({
   sessionId, session, items, voidItems = [], loading, error, isPaid,
-  subtotal, discountAmount, serviceCharge, cgst, sgst, total,
+  subtotal, discountAmount, serviceCharge, cgst, sgst, total, taxRate,
   paymentMethod, isEditingQuantities, loadingAction,
   discountType, discountValue, showServiceCharge, serviceChargePercent, splitPayments,
   onCloseSession, onNavigateMenu, onEditItem, onUpdateQty, onDeleteItem, onToggleEdit,
@@ -538,6 +542,7 @@ export default function BillingDetails({
         serviceCharge={serviceCharge}
         cgst={cgst}
         sgst={sgst}
+        taxRate={taxRate}
         total={total}
         discountType={discountType}
         discountValue={discountValue}
@@ -607,6 +612,7 @@ export default function BillingDetails({
           serviceCharge={serviceCharge}
           cgst={cgst}
           sgst={sgst}
+          taxRate={taxRate}
           total={total}
           discountType={discountType}
           discountValue={discountValue}

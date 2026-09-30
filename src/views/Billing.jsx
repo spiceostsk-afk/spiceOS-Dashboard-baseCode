@@ -171,6 +171,7 @@ export default function Billing() {
     serviceCharge,
     cgst,
     sgst,
+    taxRate,
     total,
     filteredTables,
     closeModals,
@@ -400,6 +401,7 @@ export default function Billing() {
           serviceCharge={serviceCharge}
           cgst={cgst}
           sgst={sgst}
+          taxRate={taxRate}
           total={total}
           paymentMethod={uiState.paymentMethod}
           isEditingQuantities={uiState.isEditingQuantities}

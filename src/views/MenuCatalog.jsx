@@ -10,10 +10,10 @@ import {
   MENU_CSV_COLUMNS, menuToCsv, csvToMenuRows, planMenuImport, downloadCsv,
 } from '../lib/menuCsv';
 import { readKotSent, writeKotSent, kotTicketHtml, writeTicket } from '../lib/kot';
+import { useTaxRate } from '../hooks/useTaxRate';
+import { formatRatePct } from '../lib/calculations';
 
 const FOOD_PLACEHOLDER = 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'400\' height=\'200\'%3E%3Crect width=\'400\' height=\'200\' fill=\'%23F0F1F4\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' dominant-baseline=\'middle\' text-anchor=\'middle\' font-size=\'48\' opacity=\'0.35\'%3E%F0%9F%8D%BD%EF%B8%8F%3C/text%3E%3C/svg%3E';
-
-const TAX_RATE = 0.1;
 
 const inr = (n) => `₹${Number(n || 0).toFixed(2)}`;
 
@@ -229,6 +229,7 @@ const MenuCatalog = () => {
   const [categories, setCategories] = useState([]);
   const [menuItems, setMenuItems] = useState([]);
   const [orderItems, setOrderItems] = useState([]);
+  const taxRate = useTaxRate();
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [manageMode, setManageMode] = useState(false);
@@ -354,7 +355,7 @@ const MenuCatalog = () => {
 
     try {
       const sub = orderItems.reduce((acc, item) => acc + item.price * item.qty, 0);
-      const t = sub * TAX_RATE;
+      const t = sub * taxRate;
       const tot = sub + t;
 
       if (getOnlineStatus()) {
@@ -593,7 +594,7 @@ const MenuCatalog = () => {
   };
 
   const subtotal = orderItems.reduce((acc, item) => acc + item.price * item.qty, 0);
-  const tax = subtotal * TAX_RATE;
+  const tax = subtotal * taxRate;
   const total = subtotal + tax;
 
   const q = search.trim().toLowerCase();
@@ -902,7 +903,7 @@ const MenuCatalog = () => {
 
           <div className="menu-order__totals tnum">
             <div className="menu-order__total-row"><span>Subtotal</span><b>{inr(subtotal)}</b></div>
-            <div className="menu-order__total-row"><span>Tax (10%)</span><b>{inr(tax)}</b></div>
+            <div className="menu-order__total-row"><span>Tax ({formatRatePct(taxRate)}%)</span><b>{inr(tax)}</b></div>
             <div className="menu-order__total-row menu-order__total-row--grand">
               <span>Total</span><span>{inr(total)}</span>
             </div>
