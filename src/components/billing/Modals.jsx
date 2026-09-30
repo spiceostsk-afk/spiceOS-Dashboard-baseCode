@@ -55,13 +55,12 @@ export function AssignTableModal({ table, customerData, loadingAction, onClose, 
     <Modal onClose={onClose} title={`Open table ${table.table_number}`}>
       <form onSubmit={onSubmit} className="modal__body">
         <div className="field">
-          <label>Guest name</label>
+          <label>Guest name (optional)</label>
           <input
             type="text"
             placeholder="e.g. Rajesh Kumar"
             value={customerData.name}
             onChange={(e) => onUpdateField('name', e.target.value)}
-            required
           />
         </div>
         <div className="field">

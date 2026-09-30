@@ -250,7 +250,7 @@ const Header = () => {
         .from('customer_sessions')
         .insert([{
           table_id: customerData.tableId,
-          customer_name: customerData.name,
+          customer_name: customerData.name.trim() || 'Walk-in Guest',  // column is NOT NULL
           phone_number: customerData.phone,
           guest_count: customerData.guests,
           session_status: 'active',
@@ -462,13 +462,12 @@ const Header = () => {
 
               <div className="field-row">
                 <div className="field">
-                  <label>Customer name</label>
+                  <label>Customer name (optional)</label>
                   <input
                     type="text"
                     placeholder="e.g. Rajesh Kumar"
                     value={customerData.name}
                     onChange={(e) => setCustomerData({ ...customerData, name: e.target.value })}
-                    required
                   />
                 </div>
                 <div className="field">
