@@ -5,11 +5,12 @@ import { isNetworkError, reportNetworkFailure } from './connectivity';
 /**
  * Takeaway orders.
  *
- * A takeaway still sits on a packing counter (restaurant_tables.kind =
- * 'packing') underneath. Every part of the POS — offline sync, settle, the
- * captain panel, resolve-table — assumes a session has a table, and
- * customer_sessions.table_id is NOT NULL. So the counter is picked for the
- * cashier instead of removed, and the customer is given a token number.
+ * A takeaway is filed under a packing counter (restaurant_tables.kind =
+ * 'packing') because customer_sessions.table_id is NOT NULL and offline sync,
+ * settle and the bill all expect a table. The counter is only a filing place:
+ * it is never occupied, any number of takeaways can be open on it at once,
+ * and the customer is known by a token number. Settling one closes that
+ * session only — nothing closes "every session on the counter".
  *
  * The token and the order type live in customer_sessions.metadata:
  *   { order_type: 'takeaway', token: 12 }
@@ -67,15 +68,54 @@ export async function nextTakeawayToken({ online }) {
   return highest + 1;
 }
 
+export const isPackingCounter = (table) => table?.kind === 'packing';
+
+const counterNo = (t) => Number(String(t.table_number).replace(/\D/g, '')) || 0;
+
 /**
- * A packing counter free for a new takeaway. Only 'available' ones: a counter
- * in 'cleaning' still has its settle-time cleanup timer running, which closes
- * every open session on it — a new order put there would be closed under the
- * cashier a minute later.
+ * The counter new takeaways are filed under: the lowest-numbered one. It is
+ * never busy, so there is no "free" counter to look for.
  */
-export function pickFreeCounter(tables) {
-  const natural = (t) => Number(String(t.table_number).replace(/\D/g, '')) || 0;
+export function pickTakeawayCounter(tables) {
+  const seen = new Set();
   return (tables || [])
-    .filter((t) => t.kind === 'packing' && t.status === 'available' && !t.active_session && !t.held_session)
-    .sort((a, b) => natural(a) - natural(b))[0] || null;
+    .filter((t) => isPackingCounter(t) && !seen.has(t.id) && seen.add(t.id))
+    .sort((a, b) => counterNo(a) - counterNo(b))[0] || null;
+}
+
+/**
+ * The floor's rows. A dine-in table is one row. Packing counters become one
+ * row per open takeaway (and per held one), plus a single "New takeaway" row,
+ * so the floor and Running Orders list every takeaway rather than one per
+ * counter. A takeaway row carries `rowKey` = its session id.
+ */
+export function expandTakeawayRows(tables, { isOpen, isHeld }) {
+  const rows = [];
+  let newRowAdded = false;
+  const counters = (tables || []).filter(isPackingCounter).sort((a, b) => counterNo(a) - counterNo(b));
+
+  for (const table of tables || []) {
+    if (!isPackingCounter(table)) { rows.push(table); continue; }
+    const sessions = table.customer_sessions || [];
+    for (const s of sessions.filter(isOpen)) {
+      rows.push({
+        ...table, status: 'occupied', rowKey: s.id,
+        active_session: s, held_session: null, completed_session: null,
+      });
+    }
+    for (const s of sessions.filter(isHeld)) {
+      rows.push({
+        ...table, status: 'available', rowKey: s.id,
+        active_session: null, held_session: s, completed_session: null,
+      });
+    }
+    if (!newRowAdded && table.id === counters[0]?.id) {
+      newRowAdded = true;
+      rows.push({
+        ...table, status: 'available', rowKey: `new-${table.id}`, isNewTakeaway: true,
+        active_session: null, held_session: null,
+      });
+    }
+  }
+  return rows;
 }

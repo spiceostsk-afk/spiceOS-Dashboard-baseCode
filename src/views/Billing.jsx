@@ -220,8 +220,12 @@ export default function Billing() {
 
   const onTableClick = useCallback(
     (table) => {
-      if (table.status === 'available' && table.kind === 'packing') {
-        // A free packing counter opens a takeaway on that counter.
+      if (table.isNewTakeaway) {
+        handleOpenTakeaway(table);
+      } else if (table.kind === 'packing' && table.held_session) {
+        handleResumeBill(table.held_session.id);
+      } else if (table.kind === 'packing' && !table.active_session) {
+        // A packing counter is never opened directly; takeaways come in via "New takeaway".
         handleOpenTakeaway(table);
       } else if (table.status === 'available') {
         setModalState((prev) => ({
@@ -237,7 +241,7 @@ export default function Billing() {
         window.dispatchEvent(new PopStateEvent('popstate'));
       }
     },
-    [state.activeTab, setModalState, updateTab, handleOpenTakeaway]
+    [state.activeTab, setModalState, updateTab, handleOpenTakeaway, handleResumeBill]
   );
 
   const hasPackingCounters = state.tables.some((t) => t.kind === 'packing');

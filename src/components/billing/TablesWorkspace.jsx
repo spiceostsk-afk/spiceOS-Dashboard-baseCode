@@ -24,8 +24,10 @@ const minutesSince = (iso) => {
 const KIND_LABEL = { packing: 'Packing', car: 'Car bay' };
 
 function TableCard({ table, isSelected, onClick, onFreeTable }) {
-  const session = table.active_session;
   const isCounter = table.kind === 'packing' || table.kind === 'car';
+  const isPacking = table.kind === 'packing';
+  // A held takeaway is still somebody's order, so its card shows it.
+  const session = table.active_session || (isPacking ? table.held_session : null);
   const raw = String(table.table_number ?? '');
   const label = /^[A-Za-z]/.test(raw) ? raw : `T${raw}`;
   const s = STATUS[table.status] || STATUS.available;
@@ -45,7 +47,7 @@ function TableCard({ table, isSelected, onClick, onFreeTable }) {
               as-is — "TG1" would read as a typo. A plain number still gets the
               familiar T, so restaurants that never adopted prefixes are
               unchanged. */}
-          <div className="tw-id">{label}</div>
+          <div className="tw-id">{isPacking ? (table.isNewTakeaway ? '+' : 'TA') : label}</div>
           <div
             className="tw-min tnum"
             style={{ color: late ? 'var(--color-danger)' : 'var(--color-text-muted)' }}
@@ -59,7 +61,7 @@ function TableCard({ table, isSelected, onClick, onFreeTable }) {
         </div>
 
         <div className="tw-guest">
-          {session
+          {table.isNewTakeaway ? 'New takeaway' : session
             ? (token != null
               // "Walk-in Guest" says nothing at a takeaway counter; the token is
               // what the customer is holding.
@@ -69,7 +71,9 @@ function TableCard({ table, isSelected, onClick, onFreeTable }) {
         </div>
 
         <div className="tw-foot">
-          <span className={`pill pill--sm ${s.tone}`}>{s.label}</span>
+          {table.isNewTakeaway
+            ? <span className="pill pill--sm tone-neutral">Tap to start</span>
+            : <span className={`pill pill--sm ${s.tone}`}>{isPacking && session ? (table.held_session ? 'On hold' : 'Open order') : s.label}</span>}
           {table.status === 'cleaning' && onFreeTable && (
             <button
               className="tw-free"
@@ -167,7 +171,7 @@ export default function TablesWorkspace({
       }
       const g = byId.get(key);
       g.tables.push(t);
-      if (t.active_session) g.busy += 1;
+      if (t.active_session || t.held_session) g.busy += 1;
     });
 
     // "G10" sorts before "G2" alphabetically, which is not how anybody reads a
@@ -231,19 +235,26 @@ export default function TablesWorkspace({
               <div className="tw-area__head">
                 <span className="tw-area__name">{group.name}</span>
                 <span className="tw-area__count">
-                  {group.tables.length}
-                  {group.tables.some((t) => t.kind === 'packing') ? ' counters'
-                    : group.tables.some((t) => t.kind === 'car') ? ' bays'
-                      : ' tables'}
-                  {group.busy > 0 && <em> · {group.busy} in use</em>}
+                  {group.tables.some((t) => t.kind === 'packing')
+                    // Takeaway rows are orders, not counters: no counter is ever "in use".
+                    ? (group.busy > 0 ? <em>{group.busy} open takeaway{group.busy === 1 ? '' : 's'}</em> : 'No open takeaways')
+                    : (
+                      <>
+                        {group.tables.length}
+                        {group.tables.some((t) => t.kind === 'car') ? ' bays' : ' tables'}
+                        {group.busy > 0 && <em> · {group.busy} in use</em>}
+                      </>
+                    )}
                 </span>
               </div>
               <div className="tw-grid">
                 {group.tables.map((t) => (
                   <TableCard
-                    key={t.id}
+                    key={t.rowKey || t.id}
                     table={t}
-                    isSelected={selectedSessionId && sessionTableId === t.id}
+                    isSelected={Boolean(selectedSessionId) && (t.kind === 'packing'
+                      ? t.active_session?.id === selectedSessionId
+                      : sessionTableId === t.id)}
                     onClick={onTableClick}
                     onFreeTable={onFreeTable}
                   />

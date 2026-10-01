@@ -13,7 +13,9 @@ import {
 import { useTaxRate } from './useTaxRate';
 import { fmtDateTime } from '../lib/dates';
 import { readKotSent, writeKotSent, kotTicketHtml, writeTicket } from '../lib/kot';
-import { nextTakeawayToken, pickFreeCounter, tokenOf } from '../lib/takeaway';
+import {
+  nextTakeawayToken, pickTakeawayCounter, expandTakeawayRows, isPackingCounter, tokenOf,
+} from '../lib/takeaway';
 import { resolveId, newUuid, hasPendingSync } from '../lib/sync';
 import { isNetworkError, reportNetworkFailure } from '../lib/connectivity';
 
@@ -56,8 +58,26 @@ const OPEN_SESSION_STATUSES = [
   SESSION_STATUS.hold,
 ];
 
-async function closeSessionsForTables(tableIds, { online }) {
-  if (!tableIds || tableIds.length === 0) return;
+/**
+ * Packing counters among these ids. Many takeaways share one counter, so
+ * "close everything on this table" would close other customers' orders.
+ */
+async function packingCounterIds(tableIds, { online }) {
+  if (online) {
+    const { data, error } = await supabase
+      .from('restaurant_tables').select('id').in('id', tableIds).eq('kind', 'packing');
+    if (error) throw error;
+    return new Set((data || []).map((t) => t.id));
+  }
+  const tables = (await db.getAll('tables')) || [];
+  return new Set(tables.filter((t) => tableIds.includes(t.id) && isPackingCounter(t)).map((t) => t.id));
+}
+
+async function closeSessionsForTables(allTableIds, { online }) {
+  if (!allTableIds || allTableIds.length === 0) return;
+  const skip = await packingCounterIds(allTableIds, { online });
+  const tableIds = allTableIds.filter((id) => !skip.has(id));
+  if (tableIds.length === 0) return;
   const ended_at = new Date().toISOString();
 
   if (online) {
@@ -134,9 +154,13 @@ async function loadLocalSession(sessionId) {
   };
 }
 
+const isOpenSession = (s) =>
+  s.session_status === SESSION_STATUS.active || s.session_status === SESSION_STATUS.billing;
+const isHeldSession = (s) => s.session_status === SESSION_STATUS.hold;
+
 function processTablesWithSessions(tablesData) {
   if (!tablesData) return [];
-  return tablesData.map((table) => ({
+  return expandTakeawayRows(tablesData.map((table) => ({
     ...table,
     active_session: (table.customer_sessions || []).find(
       (s) => s.session_status === SESSION_STATUS.active || s.session_status === SESSION_STATUS.billing
@@ -147,7 +171,7 @@ function processTablesWithSessions(tablesData) {
     completed_session: (table.customer_sessions || []).find(
       (s) => s.session_status === SESSION_STATUS.completed
     ),
-  }));
+  })), { isOpen: isOpenSession, isHeld: isHeldSession });
 }
 
 async function updateOrderTotalOnline(orderId, items, taxRate, { hasVoidLines = false } = {}) {
@@ -454,16 +478,21 @@ export function useBillingData() {
           ...(meta ? { metadata: meta } : {}),
         };
 
+        // A takeaway files under a packing counter without taking it.
+        const occupies = !isPackingCounter(table);
+
         const openLocally = async () => {
           await db.put('sessions', { id: newSessionId, ...sessionData });
-          await db.put('tables', { ...table, status: TABLE_STATUS.occupied });
           await db.enqueueSync({
             action: 'insert', table: 'customer_sessions', clientId: newSessionId, data: sessionData,
           });
-          await db.enqueueSync({
-            action: 'update', table: 'restaurant_tables',
-            data: { id: table.id, status: TABLE_STATUS.occupied },
-          });
+          if (occupies) {
+            await db.put('tables', { ...table, status: TABLE_STATUS.occupied });
+            await db.enqueueSync({
+              action: 'update', table: 'restaurant_tables',
+              data: { id: table.id, status: TABLE_STATUS.occupied },
+            });
+          }
         };
 
         let openedOnline = false;
@@ -474,11 +503,13 @@ export function useBillingData() {
               .insert([{ id: newSessionId, ...sessionData }]);
             if (sessionError) throw sessionError;
 
-            const { error: tableError } = await supabase
-              .from('restaurant_tables')
-              .update({ status: TABLE_STATUS.occupied })
-              .eq('id', table.id);
-            if (tableError) throw tableError;
+            if (occupies) {
+              const { error: tableError } = await supabase
+                .from('restaurant_tables')
+                .update({ status: TABLE_STATUS.occupied })
+                .eq('id', table.id);
+              if (tableError) throw tableError;
+            }
             openedOnline = true;
           } catch (err) {
             if (!isNetworkError(err)) throw err;
@@ -501,17 +532,14 @@ export function useBillingData() {
   );
 
   /**
-   * A takeaway: no table to choose. The first free packing counter is taken
-   * (or the one tapped, if the cashier tapped a counter) and the order gets
-   * today's next token number, which is what the customer is called by.
+   * A takeaway: no table to choose. It is filed under a packing counter,
+   * which stays free for the next one, and gets today's next token number,
+   * which is what the customer is called by.
    */
   const handleOpenTakeaway = useCallback(async (counter = null) => {
-    const target = counter || pickFreeCounter(state.tables);
+    const target = counter || pickTakeawayCounter(state.tables);
     if (!target) {
-      const hasCounters = state.tables.some((t) => t.kind === 'packing');
-      alert(hasCounters
-        ? 'Every packing counter is in use. Settle or free one, or add more packing counters in QR Codes.'
-        : 'Takeaway needs at least one packing counter. Add a Packing area with counters in QR Codes first.');
+      alert('Takeaway needs a packing counter. Add a Packing area with a counter in QR Codes first.');
       return;
     }
     setLoadingAction(true);
@@ -704,7 +732,7 @@ export function useBillingData() {
           }
           const tables = await db.getAll('tables');
           const targetTable = tables.find((t) => t.id === session.table_id);
-          if (targetTable) {
+          if (targetTable && !isPackingCounter(targetTable)) {
             await db.put('tables', { ...targetTable, status: TABLE_STATUS.cleaning });
             await db.enqueueSync({
               action: 'update', table: 'restaurant_tables',
@@ -748,11 +776,14 @@ export function useBillingData() {
             .update({ order_status: ORDER_STATUS.completed })
             .eq('session_id', sessionId)
             .neq('order_status', ORDER_STATUS.cancelled));
-          await must(supabase
-            .from('restaurant_tables')
-            .update({ status: TABLE_STATUS.cleaning })
-            .eq('id', sessionState.session?.table_id));
-          scheduleTableCleanup(sessionState.session?.table_id, TABLE_CLEANUP_DELAY_MS);
+          // A packing counter has nothing to clear: other takeaways are open on it.
+          if (!isPackingCounter(sessionState.session?.restaurant_tables)) {
+            await must(supabase
+              .from('restaurant_tables')
+              .update({ status: TABLE_STATUS.cleaning })
+              .eq('id', sessionState.session?.table_id));
+            scheduleTableCleanup(sessionState.session?.table_id, TABLE_CLEANUP_DELAY_MS);
+          }
         } else {
           await writeBill(false);
           await must(supabase
@@ -913,11 +944,12 @@ export function useBillingData() {
           .from('restaurant_tables')
           .select('*')
           .eq('status', TABLE_STATUS.available)
+          .neq('kind', 'packing')
           .order('table_number');
         if (!error) availableData = data;
       } else {
         const allTables = await db.getAll('tables');
-        availableData = allTables.filter((t) => t.status === TABLE_STATUS.available);
+        availableData = allTables.filter((t) => t.status === TABLE_STATUS.available && !isPackingCounter(t));
       }
 
       if (availableData) {

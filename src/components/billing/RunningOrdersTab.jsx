@@ -1,5 +1,14 @@
 import React from 'react';
 import { RefreshCw, FileText, RotateCcw } from 'lucide-react';
+import { tokenOf } from '../../lib/takeaway';
+
+/** A takeaway is known by its token; a table by its guest. */
+function rowName(session) {
+  const token = tokenOf(session);
+  const name = session?.customer_name;
+  if (token != null) return `Token ${token}${name && name !== 'Walk-in Guest' ? ` · ${name}` : ''}`;
+  return name || 'Walk-in guest';
+}
 
 function OrdersColumn({ label, count, countColor, rows, emptyNote, renderAction }) {
   return (
@@ -42,18 +51,18 @@ export default function RunningOrdersTab({ tables, loading, onResume, onReprint 
     .filter((t) => t.active_session?.session_status === 'active')
     .slice(0, 10)
     .map((t) => ({
-      key: t.id,
+      key: t.rowKey || t.id,
       table: t.table_number,
-      name: t.active_session?.customer_name || 'Walk-in guest',
+      name: rowName(t.active_session),
     }));
 
   const held = tables
     .filter((t) => t.held_session)
     .slice(0, 10)
     .map((t) => ({
-      key: t.id,
+      key: t.rowKey || t.id,
       table: t.table_number,
-      name: t.held_session?.customer_name || 'Walk-in guest',
+      name: rowName(t.held_session),
       payload: t.held_session,
     }));
 
@@ -61,9 +70,9 @@ export default function RunningOrdersTab({ tables, loading, onResume, onReprint 
     .filter((t) => t.completed_session)
     .slice(0, 10)
     .map((t) => ({
-      key: t.id,
+      key: t.rowKey || t.id,
       table: t.table_number,
-      name: t.completed_session?.customer_name || 'Walk-in guest',
+      name: rowName(t.completed_session),
       payload: t.completed_session,
     }));
 
