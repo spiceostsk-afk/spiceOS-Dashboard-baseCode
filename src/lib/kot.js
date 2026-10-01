@@ -52,7 +52,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => (
  * items: [{ qty, name }]
  * subtitle: "Kitchen Order Ticket · Round 2", "REPRINT — full table", …
  */
-export function kotTicketHtml({ tableNumber, billId, guests, items, subtitle }) {
+export function kotTicketHtml({ tableNumber, token = null, billId, guests, items, subtitle }) {
   const rows = items
     .map((i) => `<tr><td class="qty">${esc(i.qty)}</td><td>${esc(i.name)}</td></tr>`)
     .join('');
@@ -67,13 +67,18 @@ export function kotTicketHtml({ tableNumber, billId, guests, items, subtitle }) 
     td { padding: 5px 0; vertical-align: top; }
     .qty { width: 34px; font-weight: bold; font-size: 16px; }
     .meta { font-size: 12px; }
+    .token { text-align: center; font-size: 17px; font-weight: bold; border: 2px solid #000; padding: 5px 0; margin-bottom: 6px; }
     @media print { body { margin: 0; padding: 0.5rem; } @page { margin: 0; } }
   </style></head><body>
   <h2>KOT</h2>
   <div class="sub">${esc(subtitle)}</div>
   <hr/>
-  <div class="meta"><strong>Table:</strong> T-${esc(tableNumber || '—')} &nbsp; <strong>Bill #:</strong> ${esc(billId)}</div>
-  <div class="meta"><strong>Guests:</strong> ${esc(guests || '—')}</div>
+  ${token != null
+    // A takeaway is packed, not served: the kitchen calls it by token.
+    ? `<div class="token">TAKEAWAY · TOKEN ${esc(token)}</div>
+  <div class="meta"><strong>Counter:</strong> ${esc(tableNumber || '—')} &nbsp; <strong>Bill #:</strong> ${esc(billId)}</div>`
+    : `<div class="meta"><strong>Table:</strong> T-${esc(tableNumber || '—')} &nbsp; <strong>Bill #:</strong> ${esc(billId)}</div>
+  <div class="meta"><strong>Guests:</strong> ${esc(guests || '—')}</div>`}
   <div class="meta"><strong>Time:</strong> ${fmtDateTime(new Date())}</div>
   <hr/>
   <table>${rows}</table>

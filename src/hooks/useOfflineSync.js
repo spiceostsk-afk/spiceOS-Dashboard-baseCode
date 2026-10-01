@@ -1,81 +1,110 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { processSyncQueue, cacheSupabaseData } from '../lib/sync';
+import {
+  processSyncQueue, cacheSupabaseData, getFailedSyncItems, retryFailedSyncItems,
+} from '../lib/sync';
 import { getAll, putMany } from '../lib/db';
+import { isOnlineNow, subscribeConnectivity, isNetworkError, reportNetworkFailure } from '../lib/connectivity';
 
-function getOnlineStatus() {
-  return typeof navigator !== 'undefined' ? navigator.onLine : true;
-}
+const RETRY_EVERY_MS = 15000;
+
+// One sync at a time across every screen that uses this hook.
+let syncInFlight = null;
 
 export function useOfflineSync() {
-  const [isOnline, setIsOnline] = useState(getOnlineStatus);
+  const [isOnline, setIsOnline] = useState(isOnlineNow);
   const [syncing, setSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState({ current: 0, total: 0 });
   const [lastSyncResult, setLastSyncResult] = useState(null);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [failedCount, setFailedCount] = useState(0);
   const mountedRef = useRef(true);
 
   useEffect(() => {
     mountedRef.current = true;
-    const handleOnline = () => {
-      if (mountedRef.current) setIsOnline(true);
-    };
-    const handleOffline = () => {
-      if (mountedRef.current) setIsOnline(false);
-    };
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
+    const unsubscribe = subscribeConnectivity((online) => {
+      if (mountedRef.current) setIsOnline(online);
+    });
     return () => {
       mountedRef.current = false;
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
+      unsubscribe();
     };
   }, []);
 
+  const refreshCounts = useCallback(async () => {
+    try {
+      const [pending, failed] = await Promise.all([getAll('sync_queue'), getFailedSyncItems()]);
+      if (!mountedRef.current) return;
+      setPendingCount(pending.length);
+      setFailedCount(failed.length);
+    } catch { /* IndexedDB unavailable */ }
+  }, []);
+
   const syncNow = useCallback(async () => {
-    if (syncing) return { synced: 0, failed: 0, errors: [] };
+    if (syncInFlight) return syncInFlight;
     setSyncing(true);
     setSyncProgress({ current: 0, total: 0 });
-    try {
-      const result = await processSyncQueue((current, total) => {
-        setSyncProgress({ current, total });
-      });
-      setLastSyncResult(result);
-      return result;
-    } finally {
-      setSyncing(false);
-    }
-  }, [syncing]);
-
-  useEffect(() => {
-    if (!isOnline) return;
-    const pendingCheck = async () => {
-      const pending = await getAll('sync_queue');
-      if (pending.length > 0) {
-        syncNow();
+    syncInFlight = (async () => {
+      try {
+        const result = await processSyncQueue((current, total) => {
+          if (mountedRef.current) setSyncProgress({ current, total });
+        });
+        if (mountedRef.current) setLastSyncResult(result);
+        return result;
+      } finally {
+        syncInFlight = null;
+        if (mountedRef.current) setSyncing(false);
+        await refreshCounts();
       }
+    })();
+    return syncInFlight;
+  }, [refreshCounts]);
+
+  // Back online: push what was saved locally. While anything is still waiting
+  // (a server hiccup, a retry backing off), keep trying every few seconds.
+  useEffect(() => {
+    refreshCounts();
+    if (!isOnline) return undefined;
+    let cancelled = false;
+    const tick = async () => {
+      const pending = await getAll('sync_queue');
+      if (!cancelled && pending.length > 0) await syncNow();
+      else refreshCounts();
     };
-    pendingCheck();
-  }, [isOnline, syncNow]);
+    tick();
+    const t = setInterval(tick, RETRY_EVERY_MS);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [isOnline, syncNow, refreshCounts]);
+
+  const retryFailed = useCallback(async () => {
+    await retryFailedSyncItems();
+    await refreshCounts();
+    if (isOnlineNow()) await syncNow();
+  }, [syncNow, refreshCounts]);
 
   const cacheFromSupabase = useCallback(async (table, supabaseQuery) => {
-    if (!isOnline) return null;
     try {
       const data = await cacheSupabaseData(table, supabaseQuery);
       if (data && data.length > 0) {
         await putMany(table, data);
       }
       return data;
-    } catch {
+    } catch (err) {
+      if (isNetworkError(err)) reportNetworkFailure();
       const cached = await getAll(table);
       return cached;
     }
-  }, [isOnline]);
+  }, []);
 
   return {
     isOnline,
     syncing,
     syncProgress,
     lastSyncResult,
+    pendingCount,
+    failedCount,
     syncNow,
+    retryFailed,
+    refreshCounts,
     cacheFromSupabase,
   };
 }

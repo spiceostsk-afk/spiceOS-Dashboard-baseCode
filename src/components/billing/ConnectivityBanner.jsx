@@ -31,12 +31,33 @@ function Banner({ tone, children }) {
   );
 }
 
-export default function ConnectivityBanner({ isOnline, syncing, syncProgress, syncNow, lastSyncResult }) {
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+export default function ConnectivityBanner({
+  isOnline, syncing, syncProgress, syncNow, lastSyncResult,
+  pendingCount = 0, failedCount = 0, retryFailed,
+}) {
+  // Failures first: a change that could not be sent needs a person, and must
+  // never sit hidden behind a green "synced" message.
+  if (failedCount > 0 && !syncing) {
+    return (
+      <Banner tone="warning">
+        <AlertTriangle size={14} />
+        {plural(failedCount, 'change')} could not be sent to the server
+        {retryFailed && (
+          <button className="conn-banner__action" onClick={retryFailed} title="Try sending them again">
+            <RefreshCw size={13} />&nbsp;Retry
+          </button>
+        )}
+      </Banner>
+    );
+  }
+
   if (syncing) {
     return (
       <Banner tone="info">
         <RefreshCw size={14} className="spin" />
-        Syncing data…
+        Sending saved changes to the server…
         <span className="conn-banner__count tnum">
           {syncProgress.current}/{syncProgress.total}
         </span>
@@ -48,7 +69,21 @@ export default function ConnectivityBanner({ isOnline, syncing, syncProgress, sy
     return (
       <Banner tone="warning">
         <WifiOff size={14} />
-        Offline mode — changes sync automatically once you’re back online
+        No internet. Everything is being saved on this device
+        {pendingCount > 0 && <> ({plural(pendingCount, 'change')} waiting)</>}
+        {' '}and will be sent automatically when the connection is back.
+      </Banner>
+    );
+  }
+
+  if (pendingCount > 0) {
+    return (
+      <Banner tone="info">
+        <RefreshCw size={14} />
+        {plural(pendingCount, 'saved change')} waiting to be sent
+        <button className="conn-banner__action" onClick={syncNow} title="Send now">
+          <RefreshCw size={13} />
+        </button>
       </Banner>
     );
   }
@@ -57,15 +92,7 @@ export default function ConnectivityBanner({ isOnline, syncing, syncProgress, sy
     return (
       <Banner tone="success">
         <Wifi size={14} />
-        Synced {lastSyncResult.synced} item{lastSyncResult.synced > 1 ? 's' : ''} successfully
-        {lastSyncResult.failed > 0 && (
-          <span style={{ color: 'var(--color-danger)', display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 8 }}>
-            <AlertTriangle size={14} /> {lastSyncResult.failed} failed
-          </span>
-        )}
-        <button className="conn-banner__action" onClick={syncNow} title="Sync again">
-          <RefreshCw size={13} />
-        </button>
+        Back online. {plural(lastSyncResult.synced, 'saved change')} sent to the server
       </Banner>
     );
   }

@@ -32,28 +32,39 @@ describe('StatCard', () => {
 describe('ConnectivityBanner', () => {
   it('renders offline state', () => {
     render(<ConnectivityBanner isOnline={false} syncing={false} syncProgress={{ current: 0, total: 0 }} lastSyncResult={null} syncNow={() => {}} />);
-    expect(screen.getByText(/Offline mode/)).toBeInTheDocument();
+    expect(screen.getByText(/No internet\. Everything is being saved on this device/)).toBeInTheDocument();
   });
 
   it('renders syncing state', () => {
     render(<ConnectivityBanner isOnline={true} syncing={true} syncProgress={{ current: 3, total: 5 }} lastSyncResult={null} syncNow={() => {}} />);
-    expect(screen.getByText(/Syncing data/)).toBeInTheDocument();
+    expect(screen.getByText(/Sending saved changes to the server/)).toBeInTheDocument();
     expect(screen.getByText('3/5')).toBeInTheDocument();
   });
 
   it('renders synced state with item count', () => {
     render(<ConnectivityBanner isOnline={true} syncing={false} syncProgress={{ current: 0, total: 0 }} lastSyncResult={{ synced: 3, failed: 0 }} syncNow={() => {}} />);
-    expect(screen.getByText(/Synced 3 items/)).toBeInTheDocument();
+    expect(screen.getByText(/3 saved changes sent to the server/)).toBeInTheDocument();
   });
 
   it('renders single item synced correctly', () => {
     render(<ConnectivityBanner isOnline={true} syncing={false} syncProgress={{ current: 0, total: 0 }} lastSyncResult={{ synced: 1, failed: 0 }} syncNow={() => {}} />);
-    expect(screen.getByText(/Synced 1 item/)).toBeInTheDocument();
+    expect(screen.getByText(/1 saved change sent to the server/)).toBeInTheDocument();
   });
 
   it('shows failed count when present', () => {
-    render(<ConnectivityBanner isOnline={true} syncing={false} syncProgress={{ current: 0, total: 0 }} lastSyncResult={{ synced: 2, failed: 1 }} syncNow={() => {}} />);
-    expect(screen.getByText(/1 failed/)).toBeInTheDocument();
+    render(<ConnectivityBanner isOnline={true} syncing={false} syncProgress={{ current: 0, total: 0 }} lastSyncResult={{ synced: 2, failed: 1 }} syncNow={() => {}} failedCount={1} retryFailed={() => {}} />);
+    expect(screen.getByText(/1 change could not be sent to the server/)).toBeInTheDocument();
+    expect(screen.getByText(/Retry/)).toBeInTheDocument();
+  });
+
+  it('shows how many changes are waiting while offline', () => {
+    render(<ConnectivityBanner isOnline={false} syncing={false} syncProgress={{ current: 0, total: 0 }} lastSyncResult={null} syncNow={() => {}} pendingCount={4} />);
+    expect(screen.getByText(/4 changes waiting/)).toBeInTheDocument();
+  });
+
+  it('shows changes still waiting once back online', () => {
+    render(<ConnectivityBanner isOnline={true} syncing={false} syncProgress={{ current: 0, total: 0 }} lastSyncResult={null} syncNow={() => {}} pendingCount={1} />);
+    expect(screen.getByText(/1 saved change waiting to be sent/)).toBeInTheDocument();
   });
 
   it('returns null when online and no sync result', () => {

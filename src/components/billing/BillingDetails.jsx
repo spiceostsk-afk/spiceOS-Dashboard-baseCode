@@ -80,13 +80,11 @@ function ItemsList({
         <div className="empty-state__sub">
           {isOnline
             ? 'Add dishes from the menu to start this bill.'
-            : 'You’re offline — use manual order entry below to add items.'}
+            : 'You’re offline. Orders are saved on this device and sent to the server when the connection is back.'}
         </div>
-        {isOnline && (
-          <button className="btn btn--primary" style={{ marginTop: 12 }} onClick={onNavigateMenu} disabled={isPaid}>
-            Add items
-          </button>
-        )}
+        <button className="btn btn--primary" style={{ marginTop: 12 }} onClick={onNavigateMenu} disabled={isPaid}>
+          Add items
+        </button>
       </div>
     );
   }
@@ -569,7 +567,7 @@ export default function BillingDetails({
         >
           <Printer size={14} /> Reprint KOT
         </button>
-        <button className="btn btn--ghost btn--sm" onClick={onNavigateMenu} disabled={isPaid || !isOnline}>
+        <button className="btn btn--ghost btn--sm" onClick={onNavigateMenu} disabled={isPaid}>
           <Plus size={14} /> Add items
         </button>
         {isEditingQuantities && (

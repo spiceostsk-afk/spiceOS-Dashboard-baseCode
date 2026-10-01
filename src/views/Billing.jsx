@@ -1,6 +1,6 @@
 import React, { useCallback, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LayoutGrid, Activity, Globe, Sliders, X, RefreshCw } from 'lucide-react';
+import { LayoutGrid, Activity, Globe, Sliders, X, RefreshCw, ShoppingBag } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useBillingData } from '../hooks/useBillingData';
 import TablesWorkspace from '../components/billing/TablesWorkspace';
@@ -11,6 +11,7 @@ import BillingDetails from '../components/billing/BillingDetails';
 import ConnectivityBanner from '../components/billing/ConnectivityBanner';
 import {
   AssignTableModal,
+  TakeawayModal,
   MoveTableModal,
   MergeOrderModal,
   SplitBillModal,
@@ -187,6 +188,7 @@ export default function Billing() {
     updateTab,
     setActiveArea,
     handleStartSession,
+    handleOpenTakeaway,
     handleMarkAsPaid,
     handleAddManualItem,
     handleUpdateItemQty,
@@ -207,6 +209,9 @@ export default function Billing() {
     syncProgress,
     lastSyncResult,
     syncNow,
+    pendingCount,
+    failedCount,
+    retryFailed,
   } = useBillingData();
 
   const [showVoidModal, setShowVoidModal] = useState(false);
@@ -215,11 +220,15 @@ export default function Billing() {
 
   const onTableClick = useCallback(
     (table) => {
-      if (table.status === 'available') {
+      if (table.status === 'available' && table.kind === 'packing') {
+        // A free packing counter opens a takeaway on that counter.
+        handleOpenTakeaway(table);
+      } else if (table.status === 'available') {
         setModalState((prev) => ({
           ...prev,
           selectedTableForNewOrder: table,
           customerData: { name: '', phone: '', guests: table.capacity || 2 },
+          newSessionMetadata: null,
           showAssignModal: true,
         }));
       } else if (table.active_session) {
@@ -228,8 +237,10 @@ export default function Billing() {
         window.dispatchEvent(new PopStateEvent('popstate'));
       }
     },
-    [state.activeTab, setModalState, updateTab]
+    [state.activeTab, setModalState, updateTab, handleOpenTakeaway]
   );
+
+  const hasPackingCounters = state.tables.some((t) => t.kind === 'packing');
 
   const onNavigateMenu = useCallback(() => {
     if (!sessionState.session) return;
@@ -325,10 +336,24 @@ export default function Billing() {
         syncProgress={syncProgress}
         lastSyncResult={lastSyncResult}
         syncNow={syncNow}
+        pendingCount={pendingCount}
+        failedCount={failedCount}
+        retryFailed={retryFailed}
       />
     <div className="billing">
       <div className="billing__bar">
         <div className="spacer" />
+        {/* Only where there is somewhere to pack it: a restaurant without
+            packing counters never sees a button that can only fail. */}
+        {hasPackingCounters && (
+          <button
+            className="btn btn--primary"
+            onClick={() => handleOpenTakeaway()}
+            disabled={uiState.loadingAction}
+          >
+            <ShoppingBag size={15} /> New Takeaway
+          </button>
+        )}
         <button className="btn btn--ghost" onClick={() => setShowShiftModal(true)}>
           End Shift Report
         </button>
@@ -456,6 +481,20 @@ export default function Billing() {
         />
       )}
 
+      {modalState.showTakeawayModal && modalState.selectedTableForNewOrder && (
+        <TakeawayModal
+          counter={modalState.selectedTableForNewOrder}
+          token={modalState.newSessionMetadata?.token}
+          customerData={modalState.customerData}
+          loadingAction={uiState.loadingAction}
+          onClose={closeModals}
+          onUpdateField={(field, value) =>
+            setModalState((prev) => ({ ...prev, customerData: { ...prev.customerData, [field]: value } }))
+          }
+          onSubmit={handleStartSession}
+        />
+      )}
+
       {modalState.showMoveTableModal && (
         <MoveTableModal
           availableTables={modalState.availableTables}
@@ -542,7 +581,7 @@ export default function Billing() {
           box-sizing: border-box;
         }
 
-        .billing__bar { display: flex; align-items: center; }
+        .billing__bar { display: flex; align-items: center; gap: 8px; }
 
         .pos-billing-layout {
           display: grid;

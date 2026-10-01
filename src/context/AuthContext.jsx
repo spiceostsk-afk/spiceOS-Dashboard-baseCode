@@ -1,5 +1,19 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { isAuthRetryableFetchError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+
+/** The login Supabase keeps in localStorage (sb-<project>-auth-token). */
+function readStoredSession() {
+  try {
+    const key = Object.keys(window.localStorage)
+      .find((k) => k.startsWith('sb-') && k.endsWith('-auth-token'));
+    if (!key) return null;
+    const stored = JSON.parse(window.localStorage.getItem(key));
+    return stored?.access_token && stored?.user ? stored : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Auth + tenant context for the POS Dashboard.
@@ -51,13 +65,24 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     let active = true;
 
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(({ data, error }) => {
       if (!active) return;
-      setSession(data.session);
+      // Offline with an expired access token: the refresh can't reach the
+      // server, so getSession answers "no session" although the login is
+      // still saved (Supabase keeps it for exactly this case). Carry on with
+      // the saved one so the till opens offline instead of on a Login screen
+      // nobody can use; the client refreshes it once the line is back.
+      const offlineSession = !data.session && isAuthRetryableFetchError(error)
+        ? readStoredSession()
+        : null;
+      setSession(data.session || offlineSession);
       setLoading(false);
     });
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      // Only an actual sign-out clears the session; an empty INITIAL_SESSION
+      // while offline must not throw out the saved login set above.
+      if (!nextSession && event !== 'SIGNED_OUT') return;
       setSession(nextSession);
     });
 

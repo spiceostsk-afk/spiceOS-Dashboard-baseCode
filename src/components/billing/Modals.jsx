@@ -87,6 +87,61 @@ export function AssignTableModal({ table, customerData, loadingAction, onClose, 
   );
 }
 
+/**
+ * Opening a takeaway. No table and no guest count — the counter is already
+ * picked and the token already issued, so the cashier only adds a name or a
+ * phone if the customer gives one and goes straight to the items.
+ */
+export function TakeawayModal({ counter, token, customerData, loadingAction, onClose, onUpdateField, onSubmit }) {
+  return (
+    <Modal onClose={onClose} title="New takeaway">
+      <form onSubmit={onSubmit} className="modal__body">
+        <div className="ta-token">
+          <div className="ta-token__label">Token</div>
+          <div className="ta-token__num tnum">{token}</div>
+          <div className="ta-token__sub">Packed at counter {counter.table_number}</div>
+        </div>
+        <div className="field">
+          <label>Customer name (optional)</label>
+          <input
+            type="text"
+            placeholder="Called out when the order is ready"
+            value={customerData.name}
+            onChange={(e) => onUpdateField('name', e.target.value)}
+            autoFocus
+          />
+        </div>
+        <div className="field">
+          <label>Phone (optional)</label>
+          <input
+            type="tel"
+            placeholder="+91"
+            value={customerData.phone}
+            onChange={(e) => onUpdateField('phone', e.target.value)}
+          />
+        </div>
+        <div className="modal__actions">
+          <button type="button" className="btn btn--ghost" onClick={onClose}>Cancel</button>
+          <button type="submit" className="btn btn--primary" disabled={loadingAction}>
+            Add items <ArrowRight size={15} />
+          </button>
+        </div>
+      </form>
+      <style>{`
+        .ta-token {
+          text-align: center;
+          border: 1px dashed var(--color-border-strong);
+          border-radius: var(--radius-md);
+          padding: 14px 12px;
+        }
+        .ta-token__label { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--color-text-muted); }
+        .ta-token__num { font-size: 40px; font-weight: 800; line-height: 1.1; }
+        .ta-token__sub { font-size: 12px; color: var(--color-text-muted); }
+      `}</style>
+    </Modal>
+  );
+}
+
 export function MoveTableModal({ availableTables, selectedMoveTableId, loadingAction, onClose, onSelectTable, onConfirm }) {
   return (
     <Modal onClose={onClose} title="Move table">

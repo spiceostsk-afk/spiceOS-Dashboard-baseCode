@@ -13,6 +13,9 @@ import {
 import { useTaxRate } from './useTaxRate';
 import { fmtDateTime } from '../lib/dates';
 import { readKotSent, writeKotSent, kotTicketHtml, writeTicket } from '../lib/kot';
+import { nextTakeawayToken, pickFreeCounter, tokenOf } from '../lib/takeaway';
+import { resolveId, newUuid, hasPendingSync } from '../lib/sync';
+import { isNetworkError, reportNetworkFailure } from '../lib/connectivity';
 
 function flattenLines(sessionData) {
   if (!sessionData?.orders) return [];
@@ -20,7 +23,8 @@ function flattenLines(sessionData) {
     (order.order_items || []).map((item) => ({
       id: item.id,
       orderId: order.id,
-      name: item.menu_items?.item_name || 'Unknown Item',
+      // A manual line has no dish; its name is kept in notes.
+      name: item.menu_items?.item_name || (!item.menu_item_id && item.notes) || 'Unknown Item',
       qty: item.quantity,
       price: item.item_price,
       cancelled: Boolean(item.is_cancelled),
@@ -87,6 +91,49 @@ function buildItemAssignments(items) {
   return assignments;
 }
 
+/**
+ * The tables as this device knows them offline. The cached tables carry the
+ * sessions they had at the last fetch; anything opened, settled or moved here
+ * since lives in the local sessions store, so that wins.
+ */
+async function loadLocalTables() {
+  const [tables, sessions] = await Promise.all([db.getAll('tables'), db.getAll('sessions')]);
+  return (tables || []).map((table) => {
+    const byId = new Map((table.customer_sessions || []).map((s) => [s.id, s]));
+    (sessions || [])
+      .filter((s) => s.table_id === table.id)
+      .forEach((s) => byId.set(s.id, { ...byId.get(s.id), ...s }));
+    return { ...table, customer_sessions: [...byId.values()] };
+  });
+}
+
+/** One session with its orders and lines, from the local stores. */
+async function loadLocalSession(sessionId) {
+  const session = await db.getById('sessions', sessionId);
+  if (!session) return null;
+  const [orders, orderItems, menuItems, tables] = await Promise.all([
+    db.getAll('orders'), db.getAll('order_items'), db.getAll('menu_items'), db.getAll('tables'),
+  ]);
+  // Lines saved offline hold only a menu_item_id; the name comes from the
+  // cached menu, or the bill reads "Unknown Item" for every dish.
+  const nameOf = new Map((menuItems || []).map((m) => [m.id, m.item_name]));
+  const table = (tables || []).find((t) => t.id === session.table_id);
+  return {
+    ...session,
+    restaurant_tables: session.restaurant_tables || (table ? { table_number: table.table_number, kind: table.kind } : null),
+    orders: (orders || [])
+      .filter((o) => o.session_id === sessionId)
+      .map((o) => ({
+        ...o,
+        order_items: (orderItems || [])
+          .filter((oi) => oi.order_id === o.id || oi.orderId === o.id)
+          .map((oi) => (oi.menu_items?.item_name || !oi.menu_item_id
+            ? oi
+            : { ...oi, menu_items: { item_name: nameOf.get(oi.menu_item_id) || oi.item_name || 'Unknown Item' } })),
+      })),
+  };
+}
+
 function processTablesWithSessions(tablesData) {
   if (!tablesData) return [];
   return tablesData.map((table) => ({
@@ -122,7 +169,10 @@ async function updateOrderTotalOnline(orderId, items, taxRate, { hasVoidLines = 
 export function useBillingData() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { isOnline, syncing, syncProgress, lastSyncResult, syncNow, cacheFromSupabase } = useOfflineSync();
+  const {
+    isOnline, syncing, syncProgress, lastSyncResult, syncNow, cacheFromSupabase,
+    pendingCount, failedCount, retryFailed,
+  } = useOfflineSync();
   const taxRate = useTaxRate();
 
   const sessionId = searchParams.get('sessionId');
@@ -167,7 +217,10 @@ export function useBillingData() {
     showMergeOrderModal: false,
     showSplitBillModal: false,
     showEditItemModal: false,
+    showTakeawayModal: false,
     selectedTableForNewOrder: null,
+    // Set only when the session being opened is a takeaway: { order_type, token }.
+    newSessionMetadata: null,
     availableTables: [],
     occupiedSessions: [],
     selectedMoveTableId: '',
@@ -189,6 +242,7 @@ export function useBillingData() {
       showMergeOrderModal: false,
       showSplitBillModal: false,
       showEditItemModal: false,
+      showTakeawayModal: false,
     }));
   }, []);
 
@@ -251,14 +305,16 @@ export function useBillingData() {
     setState((prev) => ({ ...prev, activeArea: area }));
   }, []);
 
-  const fetchWorkspaceData = useCallback(async () => {
-    setState((prev) => ({ ...prev, loadingWorkspace: true, workspaceError: null }));
+  // silent: a background refresh (a realtime event) keeps what is on screen
+  // instead of flashing the loading state over it.
+  const fetchWorkspaceData = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setState((prev) => ({ ...prev, loadingWorkspace: true, workspaceError: null }));
     try {
       if (isOnline) {
         const sectionsPromise = supabase.from('restaurant_sections').select('*').order('section_name');
         const tablesPromise = supabase
           .from('restaurant_tables')
-          .select('*, customer_sessions(id, customer_name, guest_count, started_at, session_status, ended_at)')
+          .select('*, customer_sessions(id, customer_name, guest_count, started_at, session_status, ended_at, metadata)')
           .order('table_number');
 
         const sectionsData = await cacheFromSupabase('sections', sectionsPromise);
@@ -281,7 +337,7 @@ export function useBillingData() {
           loadingWorkspace: false,
         }));
       } else {
-        const cachedTables = (await db.getAll('tables')) || [];
+        const cachedTables = await loadLocalTables();
         const cachedSections = (await db.getAll('sections')) || [];
         setState((prev) => ({
           ...prev,
@@ -291,7 +347,8 @@ export function useBillingData() {
         }));
       }
     } catch (err) {
-      const cachedTables = (await db.getAll('tables')) || [];
+      if (isNetworkError(err)) reportNetworkFailure();
+      const cachedTables = await loadLocalTables();
       const cachedSections = (await db.getAll('sections')) || [];
       if (cachedTables.length > 0) {
         setState((prev) => ({
@@ -310,27 +367,33 @@ export function useBillingData() {
     }
   }, [isOnline, cacheFromSupabase]);
 
-  const fetchSessionData = useCallback(async () => {
+  const fetchSessionData = useCallback(async ({ silent = false } = {}) => {
     if (!sessionId || sessionId === 'undefined' || sessionId === 'null') {
       setSessionState({ session: null, items: [], isPaid: false, loadingSession: false, sessionError: null });
       return;
     }
 
-    setSessionState((prev) => ({ ...prev, loadingSession: true, sessionError: null }));
+    if (!silent) setSessionState((prev) => ({ ...prev, loadingSession: true, sessionError: null }));
     try {
       let sessionData;
 
-      if (isOnline) {
+      // A temp id that has synced since the URL was set: use the real one.
+      const liveId = await resolveId(sessionId);
+      let fetchedOnline = false;
+
+      if (isOnline && !liveId.startsWith('temp_')) {
         const { data, error } = await supabase
           .from('customer_sessions')
           .select(
-            `*, restaurant_tables(table_number), orders(id, total, subtotal, tax, order_items(id, menu_item_id, quantity, item_price, is_cancelled, cancel_reason, menu_items(item_name)))`
+            `*, restaurant_tables(table_number, kind), orders(id, total, subtotal, tax, order_items(id, menu_item_id, quantity, item_price, notes, is_cancelled, cancel_reason, menu_items(item_name)))`
           )
-          .eq('id', sessionId)
+          .eq('id', liveId)
           .single();
 
-        if (error) throw error;
-        sessionData = data;
+        if (error && !isNetworkError(error)) throw error;
+        if (error) reportNetworkFailure();
+        sessionData = error ? null : data;
+        fetchedOnline = !error;
 
         if (sessionData) {
           await db.put('sessions', sessionData);
@@ -342,21 +405,9 @@ export function useBillingData() {
             await db.putMany('order_items', orderItems);
           }
         }
-      } else {
-        sessionData = await db.getById('sessions', sessionId);
-        if (sessionData) {
-          const orders = await db.getAll('orders');
-          const relatedOrders = orders.filter((o) => o.session_id === sessionId);
-          sessionData.orders = relatedOrders.map((o) => ({
-            ...o,
-            order_items: [],
-          }));
-          const orderItems = await db.getAll('order_items');
-          sessionData.orders = sessionData.orders.map((o) => ({
-            ...o,
-            order_items: orderItems.filter((oi) => oi.order_id === o.id || oi.orderId === o.id),
-          }));
-        }
+      }
+      if (!fetchedOnline) {
+        sessionData = await loadLocalSession(liveId);
       }
 
       const items = flattenOrderItems(sessionData);
@@ -389,79 +440,96 @@ export function useBillingData() {
 
       setLoadingAction(true);
       try {
-        if (isOnline) {
-          const { data: newSession, error: sessionError } = await supabase
-            .from('customer_sessions')
-            .insert([
-              {
-                table_id: table.id,
-                customer_name: modalState.customerData.name || 'Walk-in Guest',
-                phone_number: modalState.customerData.phone,
-                guest_count: modalState.customerData.guests,
-                session_status: SESSION_STATUS.active,
-              },
-            ])
-            .select()
-            .single();
+        // The id is made here so a retry after a lost reply is recognised,
+        // not written as a second session on the same table.
+        const newSessionId = newUuid();
+        const meta = modalState.newSessionMetadata;
+        const sessionData = {
+          table_id: table.id,
+          customer_name: modalState.customerData.name || 'Walk-in Guest',
+          phone_number: modalState.customerData.phone,
+          guest_count: modalState.customerData.guests,
+          session_status: SESSION_STATUS.active,
+          started_at: new Date().toISOString(),
+          ...(meta ? { metadata: meta } : {}),
+        };
 
-          if (sessionError) throw sessionError;
-
-          await supabase
-            .from('restaurant_tables')
-            .update({ status: TABLE_STATUS.occupied })
-            .eq('id', table.id);
-
-          closeModals();
-          await fetchWorkspaceData();
-          navigate(`/menu?sessionId=${newSession.id}&tableId=${table.id}`);
-        } else {
-          const tempId = db.generateTempId();
-          const sessionData = {
-            id: tempId,
-            table_id: table.id,
-            customer_name: modalState.customerData.name || 'Walk-in Guest',
-            phone_number: modalState.customerData.phone,
-            guest_count: modalState.customerData.guests,
-            session_status: SESSION_STATUS.active,
-            started_at: new Date().toISOString(),
-          };
-
-          await db.put('sessions', sessionData);
-
-          const updatedTable = { ...table, status: TABLE_STATUS.occupied };
-          await db.put('tables', updatedTable);
-
+        const openLocally = async () => {
+          await db.put('sessions', { id: newSessionId, ...sessionData });
+          await db.put('tables', { ...table, status: TABLE_STATUS.occupied });
           await db.enqueueSync({
-            action: 'insert',
-            table: 'customer_sessions',
-            tempId,
-            data: {
-              table_id: table.id,
-              customer_name: sessionData.customer_name,
-              phone_number: sessionData.phone_number,
-              guest_count: sessionData.guest_count,
-              session_status: SESSION_STATUS.active,
-            },
+            action: 'insert', table: 'customer_sessions', clientId: newSessionId, data: sessionData,
           });
-
           await db.enqueueSync({
-            action: 'update',
-            table: 'restaurant_tables',
+            action: 'update', table: 'restaurant_tables',
             data: { id: table.id, status: TABLE_STATUS.occupied },
           });
+        };
 
-          closeModals();
-          await fetchWorkspaceData();
-          setSearchParams({ tab: 'tables', sessionId: tempId });
+        let openedOnline = false;
+        if (isOnline && !(await hasPendingSync())) {
+          try {
+            const { error: sessionError } = await supabase
+              .from('customer_sessions')
+              .insert([{ id: newSessionId, ...sessionData }]);
+            if (sessionError) throw sessionError;
+
+            const { error: tableError } = await supabase
+              .from('restaurant_tables')
+              .update({ status: TABLE_STATUS.occupied })
+              .eq('id', table.id);
+            if (tableError) throw tableError;
+            openedOnline = true;
+          } catch (err) {
+            if (!isNetworkError(err)) throw err;
+            reportNetworkFailure();
+          }
         }
+        if (!openedOnline) await openLocally();
+
+        closeModals();
+        await fetchWorkspaceData();
+        // Straight to the menu either way: it works offline from the saved menu.
+        navigate(`/menu?sessionId=${newSessionId}&tableId=${table.id}`);
       } catch (err) {
         alert('Error starting session: ' + err.message);
       } finally {
         setLoadingAction(false);
       }
     },
-    [modalState.selectedTableForNewOrder, modalState.customerData, closeModals, fetchWorkspaceData, navigate, isOnline, setSearchParams, setLoadingAction]
+    [modalState.selectedTableForNewOrder, modalState.customerData, modalState.newSessionMetadata, closeModals, fetchWorkspaceData, navigate, isOnline, setLoadingAction]
   );
+
+  /**
+   * A takeaway: no table to choose. The first free packing counter is taken
+   * (or the one tapped, if the cashier tapped a counter) and the order gets
+   * today's next token number, which is what the customer is called by.
+   */
+  const handleOpenTakeaway = useCallback(async (counter = null) => {
+    const target = counter || pickFreeCounter(state.tables);
+    if (!target) {
+      const hasCounters = state.tables.some((t) => t.kind === 'packing');
+      alert(hasCounters
+        ? 'Every packing counter is in use. Settle or free one, or add more packing counters in QR Codes.'
+        : 'Takeaway needs at least one packing counter. Add a Packing area with counters in QR Codes first.');
+      return;
+    }
+    setLoadingAction(true);
+    try {
+      const token = await nextTakeawayToken({ online: isOnline });
+      setModalState((prev) => ({
+        ...prev,
+        selectedTableForNewOrder: target,
+        customerData: { name: '', phone: '', guests: 1 },
+        newSessionMetadata: { order_type: 'takeaway', token },
+        showTakeawayModal: true,
+      }));
+    } catch (err) {
+      alert('Could not start a takeaway: ' + err.message);
+    } finally {
+      setLoadingAction(false);
+    }
+  }, [state.tables, isOnline, setLoadingAction]);
 
   const scheduleTableCleanup = useCallback(
     (tableId, delayMs) => {
@@ -545,165 +613,219 @@ export function useBillingData() {
        * idempotent on the session, so a partial payment followed by the rest
        * updates one row rather than making two.
        */
+      const billParams = (paid) => ({
+        p_session_id: sessionId,
+        p_payment_method: uiState.paymentMethod || 'cash',
+        p_subtotal: billSubtotal,
+        p_discount_type: uiState.discountType === 'none' ? null : uiState.discountType,
+        p_discount_amount: billDiscount,
+        p_service_charge: billService,
+        p_tax: billTax,
+        p_total: curTotal,
+        p_paid: paid,
+      });
+
       const writeBill = async (paid) => {
-        const { error: billError } = await supabase.rpc('record_bill', {
-          p_session_id: sessionId,
-          p_payment_method: uiState.paymentMethod || 'cash',
-          p_subtotal: billSubtotal,
-          p_discount_type: uiState.discountType === 'none' ? null : uiState.discountType,
-          p_discount_amount: billDiscount,
-          p_service_charge: billService,
-          p_tax: billTax,
-          p_total: curTotal,
-          p_paid: paid,
-        });
-        // A bill that fails to save must not strand a paid table on the floor;
+        const { error: billError } = await supabase.rpc('record_bill', billParams(paid));
+        // Lost connection: let the caller save the whole settle locally.
+        if (billError && isNetworkError(billError)) throw billError;
+        // A bill the server rejects must not strand a paid table on the floor;
         // the settle itself is what the staff are waiting on.
         if (billError) console.error('Could not record the bill:', billError);
       };
 
-      if (isOnline) {
+      // Supabase reports failures in the result rather than throwing; without
+      // this a dropped connection mid-settle looked like a clean settle.
+      const must = async (query) => {
+        const { error } = await query;
+        if (error) throw error;
+      };
+
+      /**
+       * The same settle, saved on this device and queued for the server,
+       * bill included. It used to queue only "session completed", so every
+       * table settled offline was missing from sales, payment-mode and GST
+       * reports for good.
+       */
+      const settleLocally = async () => {
+        const session = sessionState.session || (await db.getById('sessions', sessionId));
+        if (!session) throw new Error('This table is not saved on this device, so it cannot be settled offline.');
+        const settledAt = new Date().toISOString();
+        const status = isFullyPaid ? SESSION_STATUS.completed : SESSION_STATUS.billing;
+
+        await db.put('sessions', {
+          ...session,
+          session_status: status,
+          ended_at: isFullyPaid ? settledAt : session.ended_at,
+          metadata: {
+            ...(session.metadata || {}),
+            discountType: uiState.discountType,
+            discountValue: uiState.discountValue,
+            showServiceCharge: uiState.showServiceCharge,
+            serviceChargePercent: uiState.serviceChargePercent,
+            amountPaid: uiState.amountPaid,
+            splitPayments: uiState.splitPayments,
+            paymentMethod: uiState.paymentMethod,
+            subtotal: billSubtotal,
+            discountAmount: billDiscount,
+            serviceCharge: billService,
+            tax: billTax,
+            total: curTotal,
+            settledOffline: true,
+          },
+        });
+
+        // The bill first, as online. p_paid_at keeps it on the day it was
+        // paid, not the day the line came back.
+        await db.enqueueSync({
+          action: 'rpc', fn: 'record_bill',
+          params: { ...billParams(isFullyPaid), ...(isFullyPaid ? { p_paid_at: settledAt } : {}) },
+        });
+        await db.enqueueSync({
+          action: 'update', table: 'customer_sessions',
+          data: {
+            id: sessionId,
+            session_status: status,
+            ...(isFullyPaid ? { ended_at: settledAt } : {}),
+          },
+        });
+
+        if (isFullyPaid) {
+          // The same closing of the orders as the online path, queued to sync.
+          const cachedOrders = (await db.getAll('orders')) || [];
+          for (const o of cachedOrders.filter(
+            (x) => x.session_id === sessionId && x.order_status !== ORDER_STATUS.cancelled,
+          )) {
+            await db.put('orders', { ...o, order_status: ORDER_STATUS.completed });
+            await db.enqueueSync({
+              action: 'update', table: 'orders',
+              data: { id: o.id, order_status: ORDER_STATUS.completed },
+            });
+          }
+          const tables = await db.getAll('tables');
+          const targetTable = tables.find((t) => t.id === session.table_id);
+          if (targetTable) {
+            await db.put('tables', { ...targetTable, status: TABLE_STATUS.cleaning });
+            await db.enqueueSync({
+              action: 'update', table: 'restaurant_tables',
+              data: { id: targetTable.id, status: TABLE_STATUS.cleaning },
+            });
+            scheduleTableCleanup(targetTable.id, TABLE_CLEANUP_DELAY_MS);
+          }
+        }
+
+        setSessionState((prev) => ({ ...prev, isPaid: isFullyPaid }));
+        if (isFullyPaid) printRef.current?.('bill');
+        const when = isOnline ? 'in a moment' : 'when the connection is back';
+        alert(isFullyPaid
+          ? `Payment saved on this device. It will be sent to the server automatically ${when}.`
+          : `Partial payment saved on this device. It will be sent to the server automatically ${when}.`);
+        setUiState((prev) => ({ ...prev, splitPayments: [], amountPaid: 0 }));
+        setSearchParams({ tab: state.activeTab });
+        await fetchWorkspaceData();
+      };
+
+      if (!isOnline || String(sessionId).startsWith('temp_') || (await hasPendingSync())) {
+        // Offline, a table opened offline that hasn't reached the server yet,
+        // or older changes still queued: the queue keeps them in order.
+        await settleLocally();
+        return;
+      }
+
+      try {
         if (isFullyPaid) {
           await writeBill(true);
-          await supabase
+          await must(supabase
             .from('customer_sessions')
             .update({ session_status: SESSION_STATUS.completed, ended_at: new Date().toISOString() })
-            .eq('id', sessionId);
+            .eq('id', sessionId));
           // Close the orders as well. Settling used to end the session and
           // leave its orders at 'preparing' for ever, so the dashboard went on
           // counting them as live and reported the table as open and unbilled
           // long after it had been paid and cleared.
-          await supabase
+          await must(supabase
             .from('orders')
             .update({ order_status: ORDER_STATUS.completed })
             .eq('session_id', sessionId)
-            .neq('order_status', ORDER_STATUS.cancelled);
-          await supabase
+            .neq('order_status', ORDER_STATUS.cancelled));
+          await must(supabase
             .from('restaurant_tables')
             .update({ status: TABLE_STATUS.cleaning })
-            .eq('id', sessionState.session?.table_id);
+            .eq('id', sessionState.session?.table_id));
           scheduleTableCleanup(sessionState.session?.table_id, TABLE_CLEANUP_DELAY_MS);
         } else {
           await writeBill(false);
-          const { error: partialError } = await supabase
+          await must(supabase
             .from('customer_sessions')
             .update({ session_status: SESSION_STATUS.billing })
-            .eq('id', sessionId);
-          if (partialError) throw partialError;
+            .eq('id', sessionId));
         }
-        setSessionState((prev) => ({ ...prev, isPaid: isFullyPaid }));
-        // The customer's copy, printed off the same figures that were just
-        // recorded. A part payment prints nothing: the bill is not final yet.
-        if (isFullyPaid) printRef.current?.('bill');
-        alert(isFullyPaid ? 'Payment marked as successful!' : `Partial payment of ${FORMAT_CURRENCY.format(uiState.amountPaid || curTotal)} recorded.`);
-        setSearchParams({ tab: state.activeTab });
-        await fetchWorkspaceData();
-      } else {
-          if (sessionState.session) {
-            const metadata = {
-              discountType: uiState.discountType,
-              discountValue: uiState.discountValue,
-              showServiceCharge: uiState.showServiceCharge,
-              serviceChargePercent: uiState.serviceChargePercent,
-              amountPaid: uiState.amountPaid,
-              splitPayments: uiState.splitPayments,
-              subtotal: subtotal,
-              discountAmount: discountAmount,
-              serviceCharge: serviceCharge,
-              tax: tax,
-              total: total,
-            };
-            const updatedSession = {
-              ...sessionState.session,
-              session_status: isFullyPaid ? SESSION_STATUS.completed : SESSION_STATUS.billing,
-              ended_at: isFullyPaid ? new Date().toISOString() : sessionState.session.ended_at,
-              metadata,
-            };
-            await db.put('sessions', updatedSession);
-          await db.enqueueSync({
-            action: 'update',
-            table: 'customer_sessions',
-            data: {
-              id: sessionId,
-              session_status: isFullyPaid ? SESSION_STATUS.completed : SESSION_STATUS.billing,
-              ended_at: isFullyPaid ? new Date().toISOString() : undefined,
-            },
-          });
-          if (isFullyPaid) {
-            // The same closing of the orders as the online path, queued to sync.
-            const cachedOrders = (await db.getAll('orders')) || [];
-            for (const o of cachedOrders.filter(
-              (x) => x.session_id === sessionId && x.order_status !== ORDER_STATUS.cancelled,
-            )) {
-              await db.put('orders', { ...o, order_status: ORDER_STATUS.completed });
-              await db.enqueueSync({
-                action: 'update', table: 'orders',
-                data: { id: o.id, order_status: ORDER_STATUS.completed },
-              });
-            }
-            const tables = await db.getAll('tables');
-            const targetTable = tables.find((t) => t.id === sessionState.session.table_id);
-            if (targetTable) {
-              await db.put('tables', { ...targetTable, status: TABLE_STATUS.cleaning });
-              await db.enqueueSync({
-                action: 'update', table: 'restaurant_tables',
-                data: { id: targetTable.id, status: TABLE_STATUS.cleaning },
-              });
-              scheduleTableCleanup(targetTable.id, TABLE_CLEANUP_DELAY_MS);
-            }
-          }
-          setSessionState((prev) => ({ ...prev, isPaid: isFullyPaid }));
-          alert(isFullyPaid
-            ? 'Payment recorded offline. Will sync when connected.'
-            : 'Partial payment recorded offline.');
-          setUiState((prev) => ({ ...prev, splitPayments: [], amountPaid: 0 }));
-        }
+      } catch (err) {
+        // The line dropped part-way. Every step is safe to repeat (record_bill
+        // is idempotent on the session, the rest are plain status writes), so
+        // replaying the whole settle from the queue is correct.
+        if (!isNetworkError(err)) throw err;
+        reportNetworkFailure();
+        await settleLocally();
+        return;
       }
+
+      setSessionState((prev) => ({ ...prev, isPaid: isFullyPaid }));
+      // The customer's copy, printed off the same figures that were just
+      // recorded. A part payment prints nothing: the bill is not final yet.
+      if (isFullyPaid) printRef.current?.('bill');
+      alert(isFullyPaid ? 'Payment marked as successful!' : `Partial payment of ${FORMAT_CURRENCY.format(uiState.amountPaid || curTotal)} recorded.`);
+      setSearchParams({ tab: state.activeTab });
+      await fetchWorkspaceData();
     } catch (err) {
       alert('Payment processing error: ' + err.message);
     } finally {
       setLoadingAction(false);
     }
-  }, [sessionId, sessionState.session, state.activeTab, isOnline, uiState.splitPayments, uiState.amountPaid, uiState.discountType, uiState.discountValue, uiState.showServiceCharge, uiState.serviceChargePercent, sessionState.items, setSearchParams, fetchWorkspaceData, setLoadingAction, taxRate]);
+  }, [sessionId, sessionState.session, state.activeTab, isOnline, uiState.splitPayments, uiState.amountPaid, uiState.discountType, uiState.discountValue, uiState.showServiceCharge, uiState.serviceChargePercent, uiState.paymentMethod, sessionState.items, setSearchParams, fetchWorkspaceData, setLoadingAction, taxRate, scheduleTableCleanup]);
 
   const handleAddManualItem = useCallback(
     async (name, qty, unitPrice) => {
       if (!sessionId || !name || qty < 1 || unitPrice < 0) return;
       setLoadingAction(true);
       try {
-        if (isOnline) {
-          const subtotal = unitPrice * qty;
-          const tax = calcTax(subtotal, taxRate);
-          const total = subtotal + tax;
-          const { data: order, error: orderError } = await supabase
-            .from('orders').insert([{ session_id: sessionId, order_status: 'preparing', subtotal, tax, total }]).select().single();
-          if (orderError) throw orderError;
-          const { error: itemError } = await supabase
-            .from('order_items').insert([{ order_id: order.id, menu_item_id: null, quantity: qty, item_price: unitPrice, total_price: unitPrice * qty }]);
-          if (itemError) throw itemError;
-        } else {
-          const orderTempId = db.generateTempId();
-          const subtotal = unitPrice * qty;
-          const tax = calcTax(subtotal, taxRate);
-          const total = subtotal + tax;
-          await db.put('orders', {
-            id: orderTempId, session_id: sessionId, order_status: 'preparing',
-            subtotal, tax, total, created_at: new Date().toISOString(),
-          });
-          await db.enqueueSync({
-            action: 'insert', table: 'orders', tempId: orderTempId,
-            data: { session_id: sessionId, order_status: 'preparing', subtotal, tax, total },
-          });
-          const itemTempId = db.generateTempId();
-          await db.put('order_items', {
-            id: itemTempId, order_id: orderTempId, menu_item_id: null,
-            quantity: qty, item_price: unitPrice, total_price: unitPrice * qty,
-          });
-          await db.enqueueSync({
-            action: 'insert', table: 'order_items', tempId: itemTempId,
-            data: { order_id: orderTempId, menu_item_id: null, quantity: qty, item_price: unitPrice, total_price: unitPrice * qty },
-          });
+        const subtotal = unitPrice * qty;
+        const tax = calcTax(subtotal, taxRate);
+        const total = subtotal + tax;
+        const orderId = newUuid();
+        const lineId = newUuid();
+        const orderData = {
+          session_id: sessionId, order_status: 'preparing', subtotal, tax, total,
+          created_at: new Date().toISOString(),
+        };
+        // No dish behind a manual line, so its name goes in notes; it used to
+        // be dropped and the bill read "Unknown Item".
+        const lineData = {
+          order_id: orderId, menu_item_id: null, quantity: qty,
+          item_price: unitPrice, total_price: unitPrice * qty, notes: name,
+        };
+
+        const addLocally = async () => {
+          await db.put('orders', { id: orderId, ...orderData });
+          await db.enqueueSync({ action: 'insert', table: 'orders', clientId: orderId, data: orderData });
+          await db.put('order_items', { id: lineId, ...lineData });
+          await db.enqueueSync({ action: 'insert', table: 'order_items', clientId: lineId, data: lineData });
+        };
+
+        let addedOnline = false;
+        if (isOnline && !String(sessionId).startsWith('temp_') && !(await hasPendingSync())) {
+          try {
+            const { error: orderError } = await supabase.from('orders').insert([{ id: orderId, ...orderData }]);
+            if (orderError) throw orderError;
+            const { error: itemError } = await supabase.from('order_items').insert([{ id: lineId, ...lineData }]);
+            if (itemError) throw itemError;
+            addedOnline = true;
+          } catch (err) {
+            if (!isNetworkError(err)) throw err;
+            reportNetworkFailure();
+          }
         }
+        if (!addedOnline) await addLocally();
         await fetchSessionData();
       } catch (err) {
         alert('Error adding item: ' + err.message);
@@ -1017,6 +1139,7 @@ export function useBillingData() {
       : null;
 
     const tableNumber = sess.restaurant_tables?.table_number || '—';
+    const token = tokenOf(sess);
     const billId = (sess.id || '').slice(0, 4).toUpperCase();
     const subtotal = calcSubtotal(items);
     const discountAmount = calcDiscountAmount(subtotal, uiState.discountType, uiState.discountValue);
@@ -1038,6 +1161,7 @@ export function useBillingData() {
       if (isKot) {
         writeTicket(win, kotTicketHtml({
           tableNumber,
+          token,
           billId,
           guests: sess.guest_count,
           items,
@@ -1066,13 +1190,18 @@ export function useBillingData() {
         .grand-total td { font-size: 14px; font-weight: bold; border-top: 2px solid #333; padding-top: 4px; }
         .footer { text-align: center; font-size: 10px; color: #555; margin-top: 12px; }
         .gst-row td { font-size: 10px; color: #555; }
+        .token { text-align: center; font-size: 15px; font-weight: bold; border: 1px solid #333; padding: 4px 0; margin-bottom: 6px; }
         @media print { body { margin: 0; padding: 0.5rem; } @page { margin: 0; } }
       </style></head><body>
       <h2>SPICE OS</h2>
       <div class="sub">123 Downtown St, Metro | Tel: +91 90812 01234</div>
       <hr/>
-      <div><strong>Bill #:</strong> ${billId} &nbsp; <strong>Table:</strong> T-${tableNumber}</div>
-      <div><strong>Customer:</strong> ${sess.customer_name || 'Walk-in'} &nbsp; <strong>Guests:</strong> ${sess.guest_count || '—'}</div>
+      ${token != null
+        ? `<div class="token">TAKEAWAY · TOKEN ${token}</div>
+      <div><strong>Bill #:</strong> ${billId} &nbsp; <strong>Counter:</strong> ${tableNumber}</div>
+      <div><strong>Customer:</strong> ${sess.customer_name || 'Walk-in'}${sess.phone_number ? ` &nbsp; <strong>Ph:</strong> ${sess.phone_number}` : ''}</div>`
+        : `<div><strong>Bill #:</strong> ${billId} &nbsp; <strong>Table:</strong> T-${tableNumber}</div>
+      <div><strong>Customer:</strong> ${sess.customer_name || 'Walk-in'} &nbsp; <strong>Guests:</strong> ${sess.guest_count || '—'}</div>`}
       <div><strong>Date:</strong> ${fmtDateTime(new Date())}</div>
       <hr/>
       <table>
@@ -1333,6 +1462,40 @@ export function useBillingData() {
     };
   }, [fetchWorkspaceData, isOnline]);
 
+  /**
+   * Orders placed from the diner's phone (QR menu) land on the session like
+   * any other order, but nothing told this screen. A new session, order or
+   * line now refreshes the floor and the open bill, so the cashier sees the
+   * diner's items arrive and only has to print and settle.
+   *
+   * RLS scopes what realtime delivers to this restaurant. Bursts (an order and
+   * its lines arrive together) are folded into one refresh.
+   */
+  const refreshRef = useRef({ fetchWorkspaceData, fetchSessionData });
+  refreshRef.current = { fetchWorkspaceData, fetchSessionData };
+
+  useEffect(() => {
+    if (!isOnline) return undefined;
+    let timer = null;
+    const refresh = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        refreshRef.current.fetchWorkspaceData({ silent: true });
+        refreshRef.current.fetchSessionData({ silent: true });
+      }, 400);
+    };
+    const channel = supabase
+      .channel('orders-realtime-billing')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_sessions' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, refresh)
+      .subscribe();
+    return () => {
+      clearTimeout(timer);
+      supabase.removeChannel(channel);
+    };
+  }, [isOnline]);
+
   useEffect(() => {
     fetchSessionData();
   }, [sessionId, fetchSessionData]);
@@ -1341,10 +1504,12 @@ export function useBillingData() {
     if (!isOnline) return;
     fetchWorkspaceData();
     if (!sessionId || !sessionId.startsWith('temp_')) return;
+    // The local record is renamed once synced, so looking it up by the temp
+    // id found nothing; the id map knows where it went.
     const resolveTempId = async () => {
-      const localSession = await db.getById('sessions', sessionId);
-      if (localSession && localSession.id !== sessionId) {
-        setSearchParams({ tab: state.activeTab, sessionId: localSession.id });
+      const realId = await resolveId(sessionId);
+      if (realId !== sessionId) {
+        setSearchParams({ tab: state.activeTab, sessionId: realId });
       }
     };
     resolveTempId();
@@ -1393,6 +1558,9 @@ export function useBillingData() {
     syncProgress,
     lastSyncResult,
     syncNow,
+    pendingCount,
+    failedCount,
+    retryFailed,
     closeModals,
     setPaymentMethod,
     setEditingQuantities,
@@ -1409,6 +1577,7 @@ export function useBillingData() {
     fetchWorkspaceData,
     fetchSessionData,
     handleStartSession,
+    handleOpenTakeaway,
     handleMarkAsPaid,
     handleAddManualItem,
     handleUpdateItemQty,

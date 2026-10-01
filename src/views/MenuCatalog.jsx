@@ -10,15 +10,20 @@ import {
   MENU_CSV_COLUMNS, menuToCsv, csvToMenuRows, planMenuImport, downloadCsv,
 } from '../lib/menuCsv';
 import { readKotSent, writeKotSent, kotTicketHtml, writeTicket } from '../lib/kot';
+import { tokenOf } from '../lib/takeaway';
 import { useTaxRate } from '../hooks/useTaxRate';
+import { isOnlineNow, subscribeConnectivity, isNetworkError, reportNetworkFailure } from '../lib/connectivity';
+import { resolveId, newUuid, hasPendingSync } from '../lib/sync';
 import { formatRatePct } from '../lib/calculations';
 
 const FOOD_PLACEHOLDER = 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'400\' height=\'200\'%3E%3Crect width=\'400\' height=\'200\' fill=\'%23F0F1F4\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' dominant-baseline=\'middle\' text-anchor=\'middle\' font-size=\'48\' opacity=\'0.35\'%3E%F0%9F%8D%BD%EF%B8%8F%3C/text%3E%3C/svg%3E';
 
 const inr = (n) => `₹${Number(n || 0).toFixed(2)}`;
 
+// Shared with Billing: "online" means Supabase actually answers, not just
+// that the browser has a network interface up.
 function getOnlineStatus() {
-  return typeof navigator !== 'undefined' && navigator.onLine;
+  return isOnlineNow();
 }
 
 function FormModal({ title, fields, onSave, onClose, initial }) {
@@ -238,16 +243,7 @@ const MenuCatalog = () => {
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef(null);
 
-  useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, []);
+  useEffect(() => subscribeConnectivity(setIsOnline), []);
 
   useEffect(() => {
     fetchMenuData();
@@ -357,82 +353,125 @@ const MenuCatalog = () => {
       const sub = orderItems.reduce((acc, item) => acc + item.price * item.qty, 0);
       const t = sub * taxRate;
       const tot = sub + t;
+      const placedAt = new Date().toISOString();
+      // A table opened offline that has synced since: use its real id.
+      const liveSessionId = await resolveId(validSessionId);
 
-      if (getOnlineStatus()) {
-        const orderPayload = { session_id: validSessionId, order_status: 'preparing', subtotal: sub, tax: t, total: tot };
-        if (validTableId) orderPayload.table_id = validTableId;
+      // Ids are made here, not by the server. If the line drops after the
+      // server saved the order but before its reply arrives, the retry from
+      // the offline queue carries the same ids and is recognised instead of
+      // writing the order twice.
+      const orderId = newUuid();
+      const lines = orderItems.map((item) => ({
+        id: newUuid(), order_id: orderId, menu_item_id: item.id, quantity: item.qty,
+        item_price: item.price, total_price: item.price * item.qty,
+      }));
 
-        const { data: order, error: orderError } = await supabase
-          .from('orders').insert([orderPayload]).select().single();
-        if (orderError) throw orderError;
+      /**
+       * Save the order on this device and queue it for the server. created_at
+       * travels with it: stock is deducted on the order's date, and without it
+       * an order taken offline would be costed to the day it synced.
+       */
+      const saveOrderLocally = async () => {
+        const orderData = {
+          session_id: validSessionId, table_id: validTableId || null,
+          order_status: 'preparing', subtotal: sub, tax: t, total: tot, created_at: placedAt,
+        };
+        await db.put('orders', { id: orderId, ...orderData });
+        await db.enqueueSync({ action: 'insert', table: 'orders', clientId: orderId, data: orderData });
 
-        const orderItemsToInsert = orderItems.map((item) => ({
-          order_id: order.id, menu_item_id: item.id, quantity: item.qty,
-          item_price: item.price, total_price: item.price * item.qty,
-        }));
+        for (const line of lines) {
+          const { id, ...lineData } = line;
+          const dish = orderItems.find((i) => i.id === line.menu_item_id);
+          await db.put('order_items', {
+            ...line, session_id: validSessionId, menu_items: { item_name: dish?.name },
+          });
+          await db.enqueueSync({ action: 'insert', table: 'order_items', clientId: id, data: lineData });
+        }
 
-        const { data: insertedLines, error: itemsError } = await supabase
-          .from('order_items').insert(orderItemsToInsert).select('id');
-        if (itemsError) throw itemsError;
-
+        // The kitchen still needs the ticket while the line is down.
         if (withKot) {
           const sent = readKotSent(validSessionId);
-          (insertedLines || []).forEach((l) => sent.add(String(l.id)));
+          lines.forEach((l) => sent.add(String(l.id)));
           writeKotSent(validSessionId, sent);
-
-          const [{ data: sess }, { count: rounds }] = await Promise.all([
-            supabase.from('customer_sessions')
-              .select('guest_count, restaurant_tables ( table_number )')
-              .eq('id', validSessionId).maybeSingle(),
-            supabase.from('orders')
-              .select('id', { count: 'exact', head: true })
-              .eq('session_id', validSessionId)
-              .neq('order_status', 'cancelled'),
+          const [cachedSession, cachedTables] = await Promise.all([
+            db.getById('sessions', validSessionId), db.getAll('tables'),
           ]);
-
-          const printed = writeTicket(kotWin, kotTicketHtml({
-            tableNumber: sess?.restaurant_tables?.table_number,
-            billId: validSessionId.slice(0, 4).toUpperCase(),
-            guests: sess?.guest_count,
-            items: ticketLines,
-            subtitle: `Kitchen Order Ticket · Round ${rounds || 1}`,
-          }));
-          if (!printed) {
-            alert('Order placed, but the KOT window was blocked. Allow pop-ups for this site, then use Send KOT on the Billing screen.');
-          }
-        }
-      } else {
-        const orderTempId = db.generateTempId();
-        const orderData = {
-          id: orderTempId, session_id: validSessionId, table_id: validTableId || null,
-          order_status: 'preparing', subtotal: sub, tax: t, total: tot, created_at: new Date().toISOString(),
-        };
-        await db.put('orders', orderData);
-        await db.enqueueSync({ action: 'insert', table: 'orders', tempId: orderTempId, data: { session_id: validSessionId, table_id: validTableId || null, order_status: 'preparing', subtotal: sub, tax: t, total: tot } });
-
-        for (const item of orderItems) {
-          const itemTempId = db.generateTempId();
-          await db.put('order_items', { id: itemTempId, order_id: orderTempId, menu_item_id: item.id, quantity: item.qty, item_price: item.price, total_price: item.price * item.qty, session_id: validSessionId });
-          await db.enqueueSync({ action: 'insert', table: 'order_items', tempId: itemTempId, data: { order_id: orderTempId, menu_item_id: item.id, quantity: item.qty, item_price: item.price, total_price: item.price * item.qty } });
-        }
-
-        // The kitchen still needs the ticket while the line is down. Lines are
-        // not marked sent: their ids are temporary until they sync.
-        if (withKot) {
+          const table = (cachedTables || []).find((tb) => tb.id === (validTableId || cachedSession?.table_id));
           writeTicket(kotWin, kotTicketHtml({
-            tableNumber: '—',
+            tableNumber: table?.table_number || '—',
+            token: tokenOf(cachedSession),
             billId: validSessionId.slice(0, 4).toUpperCase(),
+            guests: cachedSession?.guest_count,
             items: ticketLines,
             subtitle: 'Kitchen Order Ticket · offline',
           }));
         }
 
-        alert('Order saved offline! It will sync when you reconnect.');
+        alert(getOnlineStatus()
+          ? 'Order saved on this device. It will be sent to the server automatically in a moment.'
+          : 'No internet. Order saved on this device and will be sent to the server automatically when the connection is back.');
+      };
+
+      // Offline, a table not yet on the server, or older changes still queued:
+      // save locally so everything reaches the server in the order it happened.
+      if (getOnlineStatus() && !liveSessionId.startsWith('temp_') && !(await hasPendingSync())) {
+        let placedOnline = false;
+        try {
+          const orderPayload = {
+            id: orderId, session_id: liveSessionId, order_status: 'preparing',
+            subtotal: sub, tax: t, total: tot,
+          };
+          if (validTableId) orderPayload.table_id = validTableId;
+
+          const { error: orderError } = await supabase.from('orders').insert([orderPayload]);
+          if (orderError) throw orderError;
+
+          const { error: itemsError } = await supabase.from('order_items').insert(lines);
+          if (itemsError) throw itemsError;
+          placedOnline = true;
+        } catch (err) {
+          if (!isNetworkError(err)) throw err;
+          reportNetworkFailure();
+          await saveOrderLocally();
+        }
+
+        if (placedOnline) {
+          if (withKot) {
+            const sent = readKotSent(liveSessionId);
+            lines.forEach((l) => sent.add(String(l.id)));
+            writeKotSent(liveSessionId, sent);
+
+            const [{ data: sess }, { count: rounds }] = await Promise.all([
+              supabase.from('customer_sessions')
+                .select('guest_count, metadata, restaurant_tables ( table_number )')
+                .eq('id', liveSessionId).maybeSingle(),
+              supabase.from('orders')
+                .select('id', { count: 'exact', head: true })
+                .eq('session_id', liveSessionId)
+                .neq('order_status', 'cancelled'),
+            ]);
+
+            const printed = writeTicket(kotWin, kotTicketHtml({
+              tableNumber: sess?.restaurant_tables?.table_number,
+              token: tokenOf(sess),
+              billId: liveSessionId.slice(0, 4).toUpperCase(),
+              guests: sess?.guest_count,
+              items: ticketLines,
+              subtitle: `Kitchen Order Ticket · Round ${rounds || 1}`,
+            }));
+            if (!printed) {
+              alert('Order placed, but the KOT window was blocked. Allow pop-ups for this site, then use Send KOT on the Billing screen.');
+            }
+          }
+        }
+      } else {
+        await saveOrderLocally();
       }
 
       setOrderItems([]);
       // Back to this table's bill, where the next round and the settlement happen.
-      navigate(`/billing?tab=tables&sessionId=${validSessionId}`);
+      navigate(`/billing?tab=tables&sessionId=${liveSessionId}`);
     } catch (error) {
       if (kotWin && !kotWin.closed) kotWin.close();
       alert('Error creating order: ' + error.message);

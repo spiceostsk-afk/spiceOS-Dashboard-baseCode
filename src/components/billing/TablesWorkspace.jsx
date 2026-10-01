@@ -1,5 +1,6 @@
 import React from 'react';
 import { RefreshCw, LayoutGrid } from 'lucide-react';
+import { tokenOf } from '../../lib/takeaway';
 
 /**
  * Table status → the strip colour and pill tone used across the POS.
@@ -30,6 +31,7 @@ function TableCard({ table, isSelected, onClick, onFreeTable }) {
   const s = STATUS[table.status] || STATUS.available;
   const min = session ? minutesSince(session.started_at) : null;
   const late = min !== null && min > STALE_MINUTES;
+  const token = tokenOf(session);
 
   return (
     <div
@@ -58,7 +60,11 @@ function TableCard({ table, isSelected, onClick, onFreeTable }) {
 
         <div className="tw-guest">
           {session
-            ? (session.customer_name || 'Walk-in guest')
+            ? (token != null
+              // "Walk-in Guest" says nothing at a takeaway counter; the token is
+              // what the customer is holding.
+              ? `Token ${token}${session.customer_name && session.customer_name !== 'Walk-in Guest' ? ` · ${session.customer_name}` : ''}`
+              : (session.customer_name || 'Walk-in guest'))
             : (isCounter ? 'Free' : 'Vacant')}
         </div>
 

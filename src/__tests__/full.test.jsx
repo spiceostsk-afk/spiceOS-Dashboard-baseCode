@@ -296,24 +296,24 @@ describe('Components — Rendering & States', () => {
 
     it('shows offline message when !isOnline', () => {
       render(<ConnectivityBanner isOnline={false} syncing={false} lastSyncResult={null} {...baseProps} />);
-      expect(screen.getByText(/Offline mode/)).toBeInTheDocument();
+      expect(screen.getByText(/No internet\. Everything is being saved on this device/)).toBeInTheDocument();
     });
     it('shows syncing state with progress', () => {
       render(<ConnectivityBanner isOnline={true} syncing={true} lastSyncResult={null} {...baseProps} syncProgress={{ current: 3, total: 5 }} />);
-      expect(screen.getByText(/Syncing data/)).toBeInTheDocument();
+      expect(screen.getByText(/Sending saved changes to the server/)).toBeInTheDocument();
       expect(screen.getByText('3/5')).toBeInTheDocument();
     });
     it('shows synced count after success', () => {
       render(<ConnectivityBanner isOnline={true} syncing={false} lastSyncResult={{ synced: 5, failed: 0 }} {...baseProps} />);
-      expect(screen.getByText(/Synced 5 items/)).toBeInTheDocument();
+      expect(screen.getByText(/5 saved changes sent to the server/)).toBeInTheDocument();
     });
     it('shows failed count when present', () => {
-      render(<ConnectivityBanner isOnline={true} syncing={false} lastSyncResult={{ synced: 3, failed: 2 }} {...baseProps} />);
-      expect(screen.getByText(/2 failed/)).toBeInTheDocument();
+      render(<ConnectivityBanner isOnline={true} syncing={false} lastSyncResult={{ synced: 3, failed: 2 }} {...baseProps} failedCount={2} />);
+      expect(screen.getByText(/2 changes could not be sent to the server/)).toBeInTheDocument();
     });
     it('handles singular "item" for count of 1', () => {
       render(<ConnectivityBanner isOnline={true} syncing={false} lastSyncResult={{ synced: 1, failed: 0 }} {...baseProps} />);
-      expect(screen.getByText(/Synced 1 item/)).toBeInTheDocument();
+      expect(screen.getByText(/1 saved change sent to the server/)).toBeInTheDocument();
     });
     it('returns null when online with no sync result', () => {
       const { container } = render(<ConnectivityBanner isOnline={true} syncing={false} lastSyncResult={null} {...baseProps} />);
