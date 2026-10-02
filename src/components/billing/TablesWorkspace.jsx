@@ -1,5 +1,5 @@
 import React from 'react';
-import { RefreshCw, LayoutGrid } from 'lucide-react';
+import { RefreshCw, LayoutGrid, Lock, Unlock } from 'lucide-react';
 import { tokenOf } from '../../lib/takeaway';
 
 /**
@@ -138,6 +138,9 @@ export default function TablesWorkspace({
   selectedSessionId,
   sessionTableId,
   onSelectArea,
+  lockedArea,
+  onLockArea,
+  onUnlockArea,
   onTableClick,
   onFreeTable,
 }) {
@@ -192,22 +195,54 @@ export default function TablesWorkspace({
 
   return (
     <div className="tw">
-      <div className="chip-row">
-        <button
-          className={`chip ${activeArea === 'all' ? 'on' : ''}`}
-          onClick={() => onSelectArea('all')}
-        >
-          All areas
-        </button>
-        {sections.map((s) => (
-          <button
-            key={s.id}
-            className={`chip ${activeArea === s.id ? 'on' : ''}`}
-            onClick={() => onSelectArea(s.id)}
-          >
-            {s.section_name}
-          </button>
-        ))}
+      <div className="chip-row tw-areabar">
+        {lockedArea ? (
+          // Locked: this till shows its own floor only, so the other floors'
+          // chips are not offered at all.
+          <>
+            <button className="chip on" type="button">
+              <Lock size={12} /> {sections.find((s) => s.id === lockedArea)?.section_name || 'Locked area'}
+            </button>
+            <span className="tw-lock-note">Locked on this computer</span>
+            <button
+              type="button"
+              className="tw-lock-btn"
+              onClick={() => {
+                if (window.confirm('Unlock this computer? It will show every floor again.')) onUnlockArea();
+              }}
+            >
+              <Unlock size={13} /> Unlock
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              className={`chip ${activeArea === 'all' ? 'on' : ''}`}
+              onClick={() => onSelectArea('all')}
+            >
+              All areas
+            </button>
+            {sections.map((s) => (
+              <button
+                key={s.id}
+                className={`chip ${activeArea === s.id ? 'on' : ''}`}
+                onClick={() => onSelectArea(s.id)}
+              >
+                {s.section_name}
+              </button>
+            ))}
+            {activeArea !== 'all' && onLockArea && (
+              <button
+                type="button"
+                className="tw-lock-btn"
+                title="Keep this computer on this floor, even after a refresh"
+                onClick={() => onLockArea(activeArea)}
+              >
+                <Lock size={13} /> Lock {sections.find((s) => s.id === activeArea)?.section_name || 'this area'}
+              </button>
+            )}
+          </>
+        )}
       </div>
 
       {loading ? (
@@ -267,6 +302,20 @@ export default function TablesWorkspace({
 
       <style>{`
         .tw { display: flex; flex-direction: column; gap: 14px; }
+        .tw-areabar { align-items: center; }
+        .tw-areabar .chip svg { vertical-align: -1px; margin-right: 4px; }
+        .tw-lock-note { font-size: 12px; color: var(--color-text-muted); }
+        .tw-lock-btn {
+          margin-left: auto;
+          display: inline-flex; align-items: center; gap: 6px;
+          border: 1px solid var(--color-border);
+          background: var(--color-surface);
+          border-radius: var(--radius-pill);
+          padding: 6px 12px;
+          font-size: 12.5px; font-weight: 600;
+          color: var(--color-text-soft);
+        }
+        .tw-lock-btn:hover { background: var(--color-canvas); }
         .tw-areas { display: flex; flex-direction: column; gap: 18px; }
         .tw-area__head {
           display: flex; align-items: baseline; gap: 10px;

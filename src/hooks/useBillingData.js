@@ -17,6 +17,7 @@ import {
   nextTakeawayToken, pickTakeawayCounter, expandTakeawayRows, isPackingCounter, tokenOf,
 } from '../lib/takeaway';
 import { resolveId, newUuid, hasPendingSync } from '../lib/sync';
+import { groupBillLines, planLineQtyChange } from '../lib/billLines';
 import { isNetworkError, reportNetworkFailure } from '../lib/connectivity';
 
 function flattenLines(sessionData) {
@@ -25,6 +26,7 @@ function flattenLines(sessionData) {
     (order.order_items || []).map((item) => ({
       id: item.id,
       orderId: order.id,
+      menuItemId: item.menu_item_id || null,
       // A manual line has no dish; its name is kept in notes.
       name: item.menu_items?.item_name || (!item.menu_item_id && item.notes) || 'Unknown Item',
       qty: item.quantity,
@@ -158,6 +160,31 @@ const isOpenSession = (s) =>
   s.session_status === SESSION_STATUS.active || s.session_status === SESSION_STATUS.billing;
 const isHeldSession = (s) => s.session_status === SESSION_STATUS.hold;
 
+/**
+ * A till can be locked to one floor. Each floor runs its own copy of the
+ * POS, and the Basement till should open on the Basement every time — after
+ * a refresh, a crash or a logout — without staff picking it again. It is a
+ * property of this machine, so it lives in localStorage, per restaurant.
+ */
+const areaLockKey = () => `spiceos.billing.areaLock.${db.getDbTenant()}`;
+
+function readAreaLock() {
+  try {
+    return window.localStorage.getItem(areaLockKey()) || null;
+  } catch {
+    return null; // storage off: the till simply isn't locked
+  }
+}
+
+function writeAreaLock(areaId) {
+  try {
+    if (areaId) window.localStorage.setItem(areaLockKey(), areaId);
+    else window.localStorage.removeItem(areaLockKey());
+  } catch {
+    /* the lock holds for this visit only */
+  }
+}
+
 function processTablesWithSessions(tablesData) {
   if (!tablesData) return [];
   return expandTakeawayRows(tablesData.map((table) => ({
@@ -202,14 +229,16 @@ export function useBillingData() {
   const sessionId = searchParams.get('sessionId');
   const queryTab = searchParams.get('tab') || 'tables';
 
-  const [state, setState] = useState({
+  const [lockedArea, setLockedArea] = useState(readAreaLock);
+
+  const [state, setState] = useState(() => ({
     activeTab: queryTab,
-    activeArea: 'all',
+    activeArea: readAreaLock() || 'all',
     tables: [],
     sections: [],
     loadingWorkspace: true,
     workspaceError: null,
-  });
+  }));
 
   const [sessionState, setSessionState] = useState({
     session: null,
@@ -326,7 +355,21 @@ export function useBillingData() {
   );
 
   const setActiveArea = useCallback((area) => {
+    // A locked till stays on its floor.
+    if (lockedArea) return;
     setState((prev) => ({ ...prev, activeArea: area }));
+  }, [lockedArea]);
+
+  const lockArea = useCallback((areaId) => {
+    if (!areaId || areaId === 'all') return;
+    writeAreaLock(areaId);
+    setLockedArea(areaId);
+    setState((prev) => ({ ...prev, activeArea: areaId }));
+  }, []);
+
+  const unlockArea = useCallback(() => {
+    writeAreaLock(null);
+    setLockedArea(null);
   }, []);
 
   // silent: a background refresh (a realtime event) keeps what is on screen
@@ -868,7 +911,8 @@ export function useBillingData() {
   );
 
   const handleUpdateItemQty = useCallback(
-    async (itemId, orderId, newQty) => {
+    async (itemId, orderId, newQty, opts = {}) => {
+      const items = opts.items || sessionState.items;
       setLoadingAction(true);
       try {
         if (isOnline) {
@@ -878,7 +922,7 @@ export function useBillingData() {
           // mistake and is deleted, which returns its stock.
           const sentToKitchen = newQty <= 0 && readKotSent(sessionId).has(String(itemId));
           if (sentToKitchen) {
-            const reason = window.prompt('This item has gone to the kitchen. Reason for Void KOT:');
+            const reason = opts.voidReason ?? window.prompt('This item has gone to the kitchen. Reason for Void KOT:');
             if (reason === null) return;           // backed out — change nothing
             if (!reason.trim()) throw new Error('A reason is needed to void a KOT item.');
             const { error } = await supabase
@@ -890,7 +934,7 @@ export function useBillingData() {
             const { error } = await supabase.from('order_items').delete().eq('id', itemId);
             if (error) throw error;
           } else {
-            const item = sessionState.items.find((i) => i.id === itemId);
+            const item = items.find((i) => i.id === itemId);
             if (!item) throw new Error('Item not found');
             const totalPrice = item.price * newQty;
             const { error } = await supabase.from('order_items').update({ quantity: newQty, total_price: totalPrice }).eq('id', itemId);
@@ -900,7 +944,7 @@ export function useBillingData() {
           // from before it meant deleting an order's last line left the order
           // behind with no items and its old total: the table could not be
           // settled, and the dashboard counted the stale total as a sale.
-          const remaining = sessionState.items
+          const remaining = items
             .filter((i) => i.orderId === orderId && !(newQty <= 0 && i.id === itemId))
             .map((i) => (i.id === itemId ? { ...i, qty: newQty } : i));
           const hasVoidLines = sentToKitchen
@@ -913,7 +957,7 @@ export function useBillingData() {
             await db.remove('order_items', itemId);
             await db.enqueueSync({ action: 'delete', table: 'order_items', data: { id: itemId } });
           } else {
-            const item = sessionState.items.find((i) => i.id === itemId);
+            const item = items.find((i) => i.id === itemId);
             if (!item) throw new Error('Item not found');
             const totalPrice = item.price * newQty;
             await db.put('order_items', { id: itemId, quantity: newQty, total_price: totalPrice });
@@ -933,6 +977,36 @@ export function useBillingData() {
     },
     [sessionId, sessionState.items, sessionState.voidItems, fetchSessionData, isOnline, setLoadingAction, taxRate]
   );
+
+  /**
+   * A quantity change on a merged bill line (the same dish ordered in more
+   * than one round). Applied to the real rows newest-first; a Void KOT reason
+   * is asked once for the whole line rather than once per round.
+   */
+  const handleUpdateLineQty = useCallback(async (line, newQty) => {
+    const changes = planLineQtyChange(line, newQty);
+    if (changes.length === 0) return;
+
+    const sent = readKotSent(sessionId);
+    let voidReason;
+    if (isOnline && changes.some((c) => c.qty <= 0 && sent.has(String(c.id)))) {
+      voidReason = window.prompt('This item has gone to the kitchen. Reason for Void KOT:');
+      if (voidReason === null) return;
+      if (!voidReason.trim()) {
+        alert('A reason is needed to void a KOT item.');
+        return;
+      }
+      voidReason = voidReason.trim();
+    }
+
+    let working = sessionState.items;
+    for (const c of changes) {
+      await handleUpdateItemQty(c.id, c.orderId, c.qty, { items: working, voidReason });
+      working = c.qty <= 0
+        ? working.filter((i) => i.id !== c.id)
+        : working.map((i) => (i.id === c.id ? { ...i, qty: c.qty } : i));
+    }
+  }, [sessionId, isOnline, sessionState.items, handleUpdateItemQty]);
 
   const handleOpenMoveTable = useCallback(async () => {
     setModalState((prev) => ({ ...prev, showMoveTableModal: true }));
@@ -1203,7 +1277,7 @@ export function useBillingData() {
       }
 
       let itemRows = '';
-      for (const item of items) {
+      for (const item of groupBillLines(items)) {
         itemRows += `<tr><td>${item.name}</td><td class="center">${item.qty}</td><td class="right">${formatCurrency(item.price)}</td><td class="right">${formatCurrency(item.price * item.qty)}</td></tr>`;
       }
 
@@ -1479,6 +1553,15 @@ export function useBillingData() {
   }, [queryTab]);
 
   useEffect(() => {
+    if (!lockedArea || state.loadingWorkspace || state.sections.length === 0) return;
+    if (!state.sections.some((sec) => sec.id === lockedArea)) {
+      writeAreaLock(null);
+      setLockedArea(null);
+      setState((prev) => ({ ...prev, activeArea: 'all' }));
+    }
+  }, [lockedArea, state.sections, state.loadingWorkspace]);
+
+  useEffect(() => {
     fetchWorkspaceData();
     if (!isOnline) return;
 
@@ -1606,6 +1689,9 @@ export function useBillingData() {
     setHoldNote,
     updateTab,
     setActiveArea,
+    lockedArea,
+    lockArea,
+    unlockArea,
     fetchWorkspaceData,
     fetchSessionData,
     handleStartSession,
@@ -1613,6 +1699,8 @@ export function useBillingData() {
     handleMarkAsPaid,
     handleAddManualItem,
     handleUpdateItemQty,
+    handleUpdateLineQty,
+    billLines: groupBillLines(sessionState.items),
     handleOpenMoveTable,
     handleConfirmMoveTable,
     handleOpenMergeOrder,

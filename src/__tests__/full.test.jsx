@@ -343,6 +343,34 @@ describe('Components — Rendering & States', () => {
       render(<TablesWorkspace tables={[]} sections={sections} activeArea="all" loading={false} error={null} selectedSessionId={null} sessionTableId={null} onSelectArea={() => {}} onTableClick={() => {}} />);
       expect(screen.getByText(/No tables in this area/)).toBeInTheDocument();
     });
+
+    describe('floor lock', () => {
+      const floors = [{ id: 'g', section_name: 'Ground Floor' }, { id: 'b', section_name: 'Basement' }];
+
+      it('offers to lock the floor being viewed', () => {
+        const onLockArea = vi.fn();
+        render(<TablesWorkspace tables={[]} sections={floors} activeArea="b" loading={false} error={null} onSelectArea={() => {}} onTableClick={() => {}} lockedArea={null} onLockArea={onLockArea} onUnlockArea={() => {}} />);
+        fireEvent.click(screen.getByText(/Lock Basement/));
+        expect(onLockArea).toHaveBeenCalledWith('b');
+      });
+
+      it('does not offer a lock on "All areas"', () => {
+        render(<TablesWorkspace tables={[]} sections={floors} activeArea="all" loading={false} error={null} onSelectArea={() => {}} onTableClick={() => {}} lockedArea={null} onLockArea={() => {}} onUnlockArea={() => {}} />);
+        expect(screen.queryByText(/^Lock /)).toBeNull();
+      });
+
+      it('when locked, shows only its own floor and an Unlock', () => {
+        const onUnlockArea = vi.fn();
+        const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+        render(<TablesWorkspace tables={[]} sections={floors} activeArea="b" loading={false} error={null} onSelectArea={() => {}} onTableClick={() => {}} lockedArea="b" onLockArea={() => {}} onUnlockArea={onUnlockArea} />);
+        expect(screen.getByText('Basement')).toBeInTheDocument();
+        expect(screen.queryByText('Ground Floor')).toBeNull();
+        expect(screen.queryByText('All areas')).toBeNull();
+        fireEvent.click(screen.getByText('Unlock'));
+        expect(onUnlockArea).toHaveBeenCalled();
+        confirmSpy.mockRestore();
+      });
+    });
     it('renders all table cards with statuses', () => {
       render(<TablesWorkspace tables={mockTables} sections={sections} activeArea="all" loading={false} error={null} selectedSessionId={null} sessionTableId={null} onSelectArea={() => {}} onTableClick={() => {}} onFreeTable={() => {}} />);
       expect(screen.getByText('T1')).toBeInTheDocument();

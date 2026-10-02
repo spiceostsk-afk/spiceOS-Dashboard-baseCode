@@ -6,6 +6,7 @@ import { useOrdersData } from '../hooks/useOrdersData';
 import { useOrderAdmin } from '../hooks/useOrderAdmin';
 import { EditOrderModal, VoidOrderModal, DeleteOrderModal } from './OrderAdminModals';
 import { fmtDate, fmtDateTime, fmtDateWithWeekday, fmtTime } from '../lib/dates';
+import { groupBillLines } from '../lib/billLines';
 
 const DATE_RANGES = [
   { key: 'today', label: 'Today' },
@@ -83,14 +84,61 @@ function buildTimeline(order) {
   return events;
 }
 
-function ExpandedRow({ order, formatCurrency, onPrintKot, admin, onAdminAction }) {
-  const items = (order.orders || []).flatMap((o) =>
-    (o.order_items || []).map((oi) => ({
-      name: oi.menu_items?.item_name || 'Unknown item',
-      qty: oi.quantity,
-      amount: oi.total_price || oi.item_price * oi.quantity || 0,
-    })),
+/** The modes a settled bill can be corrected to — the same ones Billing settles with. */
+const EDITABLE_MODES = [
+  { key: 'cash', label: 'Cash' },
+  { key: 'card', label: 'Card' },
+  { key: 'qr', label: 'UPI' },
+  { key: 'zomato', label: 'Zomato' },
+  { key: 'swiggy', label: 'Swiggy' },
+  { key: 'home_delivery', label: 'Home delivery' },
+  { key: 'other', label: 'Other' },
+];
+
+/**
+ * Paid by, editable for an owner on a settled bill. Saved with the owner
+ * check and an audit entry in the database (admin_set_payment_method).
+ */
+function PaymentEditor({ order, admin, onSaved }) {
+  const current = order.paymentMethod === 'upi' ? 'qr' : (order.paymentMethod || '');
+  const [mode, setMode] = useState(current);
+  const [error, setError] = useState(null);
+  const dirty = mode && mode !== current;
+
+  const save = async () => {
+    setError(null);
+    const res = await admin.setPaymentMethod(order.id, mode);
+    if (!res.success) setError(res.error);
+    else onSaved?.(EDITABLE_MODES.find((m) => m.key === mode)?.label || mode);
+  };
+
+  return (
+    <div className="oh-pay">
+      <span className="oh-pay__label">Paid by</span>
+      <select value={mode} onChange={(e) => setMode(e.target.value)} disabled={admin.busy}>
+        {!current && <option value="">Not recorded</option>}
+        {EDITABLE_MODES.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
+      </select>
+      <button className="btn btn--primary btn--sm" disabled={!dirty || admin.busy} onClick={save}>
+        Save
+      </button>
+      {error && <span className="oh-pay__err">{error}</span>}
+    </div>
   );
+}
+
+function ExpandedRow({ order, formatCurrency, onPrintKot, admin, onAdminAction, onPaymentSaved }) {
+  // One line per dish: a dish ordered in two rounds is two rows underneath,
+  // and was listed twice here.
+  const items = groupBillLines((order.orders || []).flatMap((o) =>
+    (o.order_items || []).map((oi) => ({
+      id: oi.id,
+      orderId: o.id,
+      name: oi.menu_items?.item_name || 'Unknown item',
+      qty: Number(oi.quantity) || 0,
+      price: Number(oi.item_price) || 0,
+    })),
+  )).map((l) => ({ name: l.name, qty: l.qty, amount: l.price * l.qty }));
 
   const timeline = buildTimeline(order);
 
@@ -109,11 +157,26 @@ function ExpandedRow({ order, formatCurrency, onPrintKot, admin, onAdminAction }
           ))
         )}
 
+        {order.discountAmount > 0.005 && (
+          <div className="oh-expand__row">
+            <span className="muted">Discount</span>
+            <span className="tnum">−{formatCurrency(order.discountAmount)}</span>
+          </div>
+        )}
+        <div className="oh-expand__row">
+          <span className="strong">Bill total</span>
+          <span className="tnum strong">{formatCurrency(order.totalAmount)}</span>
+        </div>
+
         <div className="oh-expand__meta">
           <span className="muted">
             {order.customerName} · {order.guests || '—'} guests · opened {fmtDateTime(order.startedAt)}
           </span>
         </div>
+
+        {admin.canAdminister && order.status === 'completed' && (
+          <PaymentEditor key={`${order.id}-${order.paymentMethod}`} order={order} admin={admin} onSaved={onPaymentSaved} />
+        )}
 
         <button className="btn btn--ghost btn--sm" style={{ marginTop: 12 }} onClick={() => onPrintKot(order)}>
           <Printer size={13} /> Reprint KOT
@@ -553,6 +616,7 @@ export default function Orders() {
                   onPrintKot={handlePrintKot}
                   admin={admin}
                   onAdminAction={openAdmin}
+                  onPaymentSaved={(label) => flash(`#${o.billId} is now recorded as paid by ${label}.`)}
                 />
               )}
             </div>
@@ -610,6 +674,14 @@ export default function Orders() {
 
       <style>{`
         .oh-filters { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .oh-pay { display: flex; align-items: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+        .oh-pay__label { font-size: 12px; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: .04em; }
+        .oh-pay select {
+          height: 32px; padding: 0 10px;
+          border: 1px solid var(--color-border); border-radius: var(--radius-sm);
+          background: var(--color-surface); font-size: 13px;
+        }
+        .oh-pay__err { font-size: 12px; color: var(--color-danger); }
 
         .oh-bill { width: 90px; }
         .oh-dt { width: 130px; font-size: 12.5px; }

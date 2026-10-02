@@ -103,8 +103,15 @@ export function useOrdersData() {
       let results = (data || []).map((s) => {
         const orderList = s.orders || [];
         const itemCount = orderList.reduce((sum, o) => sum + (o.order_items?.length || 0), 0);
-        const totalAmount = orderList.reduce((sum, o) => sum + Number(o.total || 0), 0);
+        const ordersTotal = orderList.reduce((sum, o) => sum + Number(o.total || 0), 0);
         const bill = billBySession.get(s.id);
+        // What the customer paid is the bill: after discount, service charge
+        // and tax. The orders' own totals are before any discount, so a bill
+        // taken at 100% off still read as the full amount here. Only a table
+        // with no bill row falls back to them.
+        const totalAmount = bill && bill.grand_total !== null && bill.grand_total !== undefined
+          ? Number(bill.grand_total)
+          : ordersTotal;
         return {
           id: s.id,
           billId: s.id?.slice(0, 4).toUpperCase(),
@@ -121,6 +128,7 @@ export function useOrdersData() {
           // real gap worth seeing, not something to paper over with "Cash".
           paymentMethod: bill?.payment_method || null,
           paymentStatus: bill?.payment_status || null,
+          discountAmount: Math.max(0, ordersTotal - totalAmount),
           orders: orderList,
         };
       });

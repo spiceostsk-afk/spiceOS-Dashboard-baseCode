@@ -73,7 +73,15 @@ export function useOrderAdmin(onChanged) {
     });
   }, [run]);
 
-  return { canAdminister, busy, voidOrder, editOrder, deleteOrder };
+  /** How a settled bill was paid — e.g. Cash tapped when it was UPI. */
+  const setPaymentMethod = useCallback(
+    (sessionId, method, reason) => run('admin_set_payment_method', {
+      p_session_id: sessionId, p_method: method, p_reason: reason || null,
+    }),
+    [run],
+  );
+
+  return { canAdminister, busy, voidOrder, editOrder, deleteOrder, setPaymentMethod };
 }
 
 /** The trail of what was changed after the fact, and why. */

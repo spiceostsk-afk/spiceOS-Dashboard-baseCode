@@ -187,11 +187,15 @@ export default function Billing() {
     setVoidReason,
     updateTab,
     setActiveArea,
+    lockedArea,
+    lockArea,
+    unlockArea,
     handleStartSession,
     handleOpenTakeaway,
     handleMarkAsPaid,
     handleAddManualItem,
-    handleUpdateItemQty,
+    handleUpdateLineQty,
+    billLines,
     handleOpenMoveTable,
     handleConfirmMoveTable,
     handleOpenMergeOrder,
@@ -263,18 +267,20 @@ export default function Billing() {
     [setModalState]
   );
 
+  // The bill shows one line per dish (billLines); a change to it is spread
+  // over the rounds that make it up.
   const onUpdateQty = useCallback(
-    (item, newQty) => {
-      handleUpdateItemQty(item.id, item.orderId, newQty);
+    (line, newQty) => {
+      handleUpdateLineQty(line, newQty);
     },
-    [handleUpdateItemQty]
+    [handleUpdateLineQty]
   );
 
   const onDeleteItem = useCallback(
-    (item) => {
-      handleUpdateItemQty(item.id, item.orderId, 0);
+    (line) => {
+      handleUpdateLineQty(line, 0);
     },
-    [handleUpdateItemQty]
+    [handleUpdateLineQty]
   );
 
   const onCloseSession = useCallback(() => {
@@ -393,6 +399,9 @@ export default function Billing() {
             selectedSessionId={sessionState.session?.id}
             sessionTableId={sessionState.session?.table_id}
             onSelectArea={setActiveArea}
+            lockedArea={lockedArea}
+            onLockArea={lockArea}
+            onUnlockArea={unlockArea}
             onTableClick={onTableClick}
             onFreeTable={handleFreeTable}
           />
@@ -420,7 +429,7 @@ export default function Billing() {
         <BillingDetails
           sessionId={state.loadingWorkspace ? null : sessionState.session?.id}
           session={sessionState.session}
-          items={sessionState.items}
+          items={billLines}
           voidItems={sessionState.voidItems}
           loading={sessionState.loadingSession}
           error={sessionState.sessionError}
@@ -547,11 +556,11 @@ export default function Billing() {
           onClose={closeModals}
           onSetQty={(qty) => setModalState((prev) => ({ ...prev, editQty: qty }))}
           onDelete={() => {
-            handleUpdateItemQty(modalState.selectedEditItem.id, modalState.selectedEditItem.orderId, 0);
+            handleUpdateLineQty(modalState.selectedEditItem, 0);
             closeModals();
           }}
           onSave={() => {
-            handleUpdateItemQty(modalState.selectedEditItem.id, modalState.selectedEditItem.orderId, modalState.editQty);
+            handleUpdateLineQty(modalState.selectedEditItem, modalState.editQty);
             closeModals();
           }}
         />

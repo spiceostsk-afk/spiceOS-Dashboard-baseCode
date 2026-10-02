@@ -11,6 +11,10 @@ export function setDbTenant(id) {
   dbTenantId = id || 'default';
 }
 
+export function getDbTenant() {
+  return dbTenantId;
+}
+
 function currentDbName() {
   return `${DB_NAME_BASE}_${dbTenantId}`;
 }
