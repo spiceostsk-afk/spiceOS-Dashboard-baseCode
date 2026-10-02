@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import * as db from '../lib/db';
+import { kotTicketHtml, printTicket } from '../lib/kot';
+import { dayOpens, dayCloses, tradingToday } from '../lib/businessDay';
 
 const FORMAT_CURRENCY = new Intl.NumberFormat('en-IN', {
   style: 'currency', currency: 'INR', minimumFractionDigits: 2,
@@ -13,23 +15,26 @@ const isoDay = (d) => {
   return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
 };
 
+// Ranges run on the restaurant's trading days (lib/businessDay.js), so a
+// bill settled at 1am sits with the night it belongs to.
 function getDateRange(range, custom) {
   const now = new Date();
-  if (range === 'today') return { start: new Date(now.getFullYear(), now.getMonth(), now.getDate()), end: now };
+  const today = tradingToday();
+  if (range === 'today') return { start: dayOpens(today), end: now };
   if (range === 'week') {
-    const dayOfWeek = now.getDay();
-    return { start: new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek), end: now };
+    const dayOfWeek = today.getDay();
+    return { start: dayOpens(new Date(today.getFullYear(), today.getMonth(), today.getDate() - dayOfWeek)), end: now };
   }
-  if (range === 'month') return { start: new Date(now.getFullYear(), now.getMonth(), 1), end: now };
+  if (range === 'month') return { start: dayOpens(new Date(today.getFullYear(), today.getMonth(), 1)), end: now };
   if (range === 'custom') {
     if (!custom?.from || !custom?.to) return { start: new Date(0), end: now };
     const a = new Date(`${custom.from}T00:00:00`);
-    const b = new Date(`${custom.to}T23:59:59.999`);
+    const b = new Date(`${custom.to}T00:00:00`);
     // Dates picked back to front are a slip, not an empty result — swap them
     // rather than showing the till operator a blank screen.
     return a <= b
-      ? { start: a, end: b }
-      : { start: new Date(`${custom.to}T00:00:00`), end: new Date(`${custom.from}T23:59:59.999`) };
+      ? { start: dayOpens(a), end: dayCloses(b) }
+      : { start: dayOpens(b), end: dayCloses(a) };
   }
   return { start: new Date(0), end: now };
 }
@@ -42,13 +47,13 @@ export function useOrdersData() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [dateRange, setDateRange] = useState('all');
   const [customRange, setCustomRange] = useState(() => {
-    const today = new Date();
+    const today = tradingToday();
     const weekAgo = new Date(today);
     weekAgo.setDate(today.getDate() - 6);
     return { from: isoDay(weekAgo), to: isoDay(today) };
   });
   const [selectedOrder, setSelectedOrder] = useState(null);
-  const [kotOrder, setKotOrder] = useState(null);
+  const [kotOrder] = useState(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -159,51 +164,23 @@ export function useOrdersData() {
     fetchData();
   }, [fetchData]);
 
+  // The same kitchen ticket Billing prints, reprinted for the whole table.
+  // It used to be its own copy with a placeholder restaurant name and
+  // address, and prices a kitchen ticket should never carry.
   const handlePrintKot = useCallback((order) => {
-    setKotOrder(order);
-    setTimeout(() => {
-      const win = window.open('', '_blank');
-      if (!win) return;
-      win.document.write(`
-        <html><head><title>KOT - ${order.billId}</title>
-        <style>
-          body { font-family: monospace; font-size: 14px; width: 300px; margin: 0 auto; padding: 1rem; }
-          h1 { font-size: 18px; text-align: center; margin-bottom: 4px; }
-          .sub { text-align: center; font-size: 12px; color: #666; margin-bottom: 1rem; }
-          hr { border-top: 1px dashed #333; }
-          table { width: 100%; border-collapse: collapse; }
-          th { text-align: left; font-size: 11px; text-transform: uppercase; padding: 4px 0; }
-          td { padding: 4px 0; font-size: 13px; }
-          .right { text-align: right; }
-          .total { font-weight: bold; border-top: 1px dashed #333; padding-top: 6px; }
-          .footer { text-align: center; font-size: 11px; margin-top: 1rem; color: #666; }
-          @media print { body { margin: 0; padding: 0.5rem; } }
-        </style>
-        </head><body>
-        <h1>SPICE OS</h1>
-        <div class="sub">123 Downtown St, Metro | Tel: +91 90812 01234</div>
-        <hr/>
-        <div><strong>KOT:</strong> ${order.billId}</div>
-        <div><strong>Table:</strong> T-${order.tableNumber} | <strong>Guest:</strong> ${order.customerName}</div>
-        <hr/>
-        <table>
-          <tr><th>Item</th><th class="right">Qty</th><th class="right">Price</th></tr>
-          ${order.orders.map(o => (o.order_items || []).map(oi => `
-            <tr>
-              <td>${oi.menu_items?.item_name || 'Item'}</td>
-              <td class="right">${oi.quantity}</td>
-              <td class="right">${FORMAT_CURRENCY.format(oi.total_price || oi.item_price * oi.quantity || 0)}</td>
-            </tr>
-          `).join('')).join('')}
-        </table>
-        <hr/>
-        <div class="footer">Thank You • Visit Again</div>
-        <script>window.print();window.close();</script>
-        </body></html>
-      `);
-      win.document.close();
-      setKotOrder(null);
-    }, 100);
+    const items = (order.orders || [])
+      .filter((o) => o.order_status !== 'cancelled')
+      .flatMap((o) => (o.order_items || []).map((oi) => ({
+        qty: oi.quantity,
+        name: oi.menu_items?.item_name || 'Item',
+      })));
+    printTicket(kotTicketHtml({
+      tableNumber: order.tableNumber,
+      billId: order.billId,
+      guests: order.guests,
+      items,
+      subtitle: 'REPRINT — full table',
+    }));
   }, []);
 
   return {

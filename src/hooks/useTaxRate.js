@@ -19,8 +19,12 @@ function toRate(pct) {
  *
  * Note: a saved 0 is a real rate, not "unset" — hence the explicit null checks.
  */
+// The last rate read, so moving between Billing and the menu starts on the
+// real rate instead of showing totals at the default until the read returns.
+let lastKnownRate = null;
+
 export function useTaxRate() {
-  const [rate, setRate] = useState(TAX_RATE);
+  const [rate, setRate] = useState(() => lastKnownRate ?? TAX_RATE);
 
   useEffect(() => {
     let cancelled = false;
@@ -42,6 +46,7 @@ export function useTaxRate() {
         } catch { /* no local copy either */ }
       }
 
+      if (found !== null) lastKnownRate = found;
       if (!cancelled && found !== null) setRate(found);
     })();
     return () => { cancelled = true; };

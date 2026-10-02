@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useReportPeriod, useSalesData } from '../../hooks/useSalesReports';
 import { ReportPage, ReportTable, money, num } from './ReportShell';
 import { fmtDate, fmtDateTime } from '../../lib/dates';
+import { tradingDayKey } from '../../lib/businessDay';
 
 /**
  * Discount Report — every rupee given away at the till.
@@ -18,12 +19,8 @@ import { fmtDate, fmtDateTime } from '../../lib/dates';
 
 /** yyyy-mm-dd in LOCAL time. `toISOString` would push an 11pm sale onto the
  *  next day, which is not the trading day the restaurant was in. */
-const dayOf = (iso) => {
-  if (!iso) return '';
-  const d = new Date(iso);
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-};
+// The trading day, which may end after midnight (lib/businessDay.js).
+const dayOf = (iso) => tradingDayKey(iso);
 
 
 const round = (n, dp = 2) => {

@@ -20,15 +20,11 @@ import {
   ReprintBillModal,
 } from '../components/billing/Modals';
 import { fmtDate, fmtTime } from '../lib/dates';
+import { dayOpens, tradingToday } from '../lib/businessDay';
 
 const FORMAT_CURRENCY = new Intl.NumberFormat('en-IN', {
   style: 'currency', currency: 'INR', minimumFractionDigits: 2,
 });
-
-function getTodayStr() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
 
 function EndShiftModal({ onClose }) {
   const [data, setData] = useState(null);
@@ -38,12 +34,15 @@ function EndShiftModal({ onClose }) {
     const fetch = async () => {
       setLoading(true);
       try {
-        const today = getTodayStr();
+        // From the opening of the trading day as an instant. A bare
+        // yyyy-mm-dd here was read by the database as UTC midnight, 5:30am
+        // IST, so the shift report missed everything settled before that.
+        const since = dayOpens(tradingToday()).toISOString();
         const { data: sessions, error: sesErr } = await supabase
           .from('customer_sessions')
           .select('id, customer_name, guest_count, started_at, ended_at, table_id, restaurant_tables(table_number)')
           .eq('session_status', 'completed')
-          .gte('ended_at', today)
+          .gte('ended_at', since)
           .order('ended_at', { ascending: false });
         if (sesErr) throw sesErr;
 
@@ -82,7 +81,7 @@ function EndShiftModal({ onClose }) {
     <div className="overlay" onClick={onClose}>
       <div className="modal shift-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal__head">
-          <div className="modal__title">Shift summary · {fmtDate(new Date())}</div>
+          <div className="modal__title">Shift summary · {fmtDate(tradingToday())}</div>
           <button className="modal__close" onClick={onClose}><X size={17} /></button>
         </div>
 

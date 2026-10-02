@@ -7,6 +7,7 @@ import { useOrderAdmin } from '../hooks/useOrderAdmin';
 import { EditOrderModal, VoidOrderModal, DeleteOrderModal } from './OrderAdminModals';
 import { fmtDate, fmtDateTime, fmtDateWithWeekday, fmtTime } from '../lib/dates';
 import { groupBillLines } from '../lib/billLines';
+import { tradingDayKey } from '../lib/businessDay';
 
 const DATE_RANGES = [
   { key: 'today', label: 'Today' },
@@ -49,12 +50,8 @@ function PaymentPill({ method }) {
 
 /** yyyy-mm-dd in LOCAL time. `toISOString` would push an 11pm bill onto the
  *  next day, which is not the trading day it was taken in. */
-const dayKey = (iso) => {
-  if (!iso) return '';
-  const d = new Date(iso);
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-};
+// The trading day, which may end after midnight (lib/businessDay.js).
+const dayKey = (iso) => tradingDayKey(iso);
 
 
 /** Flatten a session's orders into one KOT-by-KOT timeline. */

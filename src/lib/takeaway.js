@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import * as db from './db';
 import { isNetworkError, reportNetworkFailure } from './connectivity';
+import { dayOpens, tradingToday } from './businessDay';
 
 /**
  * Takeaway orders.
@@ -22,11 +23,13 @@ export const isTakeaway = (session) => session?.metadata?.order_type === 'takeaw
 
 export const tokenOf = (session) => (isTakeaway(session) ? session.metadata.token ?? null : null);
 
-/** Local midnight — tokens start again at 1 every day, as a counter's do. */
+/**
+ * When today's trading day opened — tokens start again at 1 every day, as a
+ * counter's do. With the day ending at 3am, a 1am takeaway carries on the
+ * night's numbering instead of starting again at 1 mid-service.
+ */
 function startOfToday() {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
+  return dayOpens(tradingToday());
 }
 
 const tokenIn = (s) => {

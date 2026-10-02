@@ -1,12 +1,17 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import * as db from '../lib/db';
+import { forgetReceiptProfile } from '../lib/print';
+import { rememberDayClose } from '../lib/businessDay';
 
 const DEFAULTS = {
   restaurant: { name: 'Spice OS', address: '', phone: '', email: '', gstin: '' },
   tax: { gstRate: 10 },
   serviceCharge: { enabled: false, defaultRate: 10 },
   receipt: { footerText: 'Thank you for dining with us!', showGst: true },
+  // The hour the trading day ends: 0 is midnight, 3 means a 1am bill still
+  // counts towards the night before. See lib/businessDay.js.
+  businessDay: { closeHour: 0 },
 };
 
 async function loadFromSupabase() {
@@ -90,6 +95,8 @@ export function useSettingsData() {
       for (const key of Object.keys(settings)) {
         await saveToSupabase(key, settings[key]);
       }
+      forgetReceiptProfile();
+      rememberDayClose(db.getDbTenant(), settings.businessDay?.closeHour ?? 0);
       setSaved(true);
       return { success: true };
     } catch (err) {

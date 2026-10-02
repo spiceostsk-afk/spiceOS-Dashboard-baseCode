@@ -47,6 +47,16 @@ function Field({ label, value, onChange, type, placeholder, span }) {
   );
 }
 
+const DAY_CLOSE_OPTIONS = [
+  { value: 0, label: '12:00 AM (midnight)' },
+  { value: 1, label: '1:00 AM' },
+  { value: 2, label: '2:00 AM' },
+  { value: 3, label: '3:00 AM' },
+  { value: 4, label: '4:00 AM' },
+  { value: 5, label: '5:00 AM' },
+  { value: 6, label: '6:00 AM' },
+];
+
 function ToggleRow({ label, value, onChange }) {
   return (
     <div className="set-toggle-row">
@@ -162,6 +172,27 @@ export default function Settings() {
         />
       </SectionCard>
 
+      <SectionCard glyph="🕒" title="Business day">
+        <div className="field-grid">
+          <div className="field">
+            <label>Day ends at</label>
+            <select
+              value={settings.businessDay?.closeHour ?? 0}
+              onChange={(e) => updateSetting('businessDay', 'closeHour', Number(e.target.value))}
+            >
+              {DAY_CLOSE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div className="set-note">
+          Sales up to this hour count towards the previous day. With 3:00 AM, a bill
+          settled at 1:00 AM on the 5th is reported under the 4th — on the dashboard,
+          in reports, and in order history.
+        </div>
+      </SectionCard>
+
       <SectionCard glyph="🧾" title="Receipts">
         <div className="field-grid" style={{ marginBottom: 16 }}>
           <Field
@@ -200,6 +231,8 @@ export default function Settings() {
           color: var(--color-text);
         }
         .set-toggle-row + .set-toggle-row { margin-top: 12px; }
+
+        .set-note { margin-top: 10px; font-size: 12.5px; color: var(--color-text-muted); line-height: 1.45; }
 
         .set-save { display: flex; justify-content: flex-end; align-items: center; gap: 12px; }
         .set-save__msg { font-size: 13px; font-weight: 600; }

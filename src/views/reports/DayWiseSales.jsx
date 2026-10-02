@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { useReportPeriod, useSalesData } from '../../hooks/useSalesReports';
 import { ReportPage, ReportTable, money, num } from './ReportShell';
 import { fmtDate, fmtDateTime } from '../../lib/dates';
+import { tradingDayKey } from '../../lib/businessDay';
 
 /**
  * One row per day: the sales register a manager reconciles the till against.
@@ -35,7 +36,7 @@ export default function DayWiseSales() {
     }
 
     sessions.forEach((s) => {
-      const k = localKey(new Date(s.ended_at));
+      const k = tradingDayKey(s.ended_at);
       if (!byDay.has(k)) {
         byDay.set(k, { id: k, day: k, label: fmtDate(k), bills: 0, qty: 0, gross: 0, tax: 0 });
       }

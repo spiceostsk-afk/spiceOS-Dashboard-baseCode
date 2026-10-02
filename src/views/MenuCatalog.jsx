@@ -9,7 +9,7 @@ import {
 import {
   MENU_CSV_COLUMNS, menuToCsv, csvToMenuRows, planMenuImport, downloadCsv,
 } from '../lib/menuCsv';
-import { readKotSent, writeKotSent, kotTicketHtml, writeTicket } from '../lib/kot';
+import { readKotSent, writeKotSent, kotTicketHtml, printTicket } from '../lib/kot';
 import { tokenOf } from '../lib/takeaway';
 import { useTaxRate } from '../hooks/useTaxRate';
 import { isOnlineNow, subscribeConnectivity, isNetworkError, reportNetworkFailure } from '../lib/connectivity';
@@ -246,52 +246,75 @@ const MenuCatalog = () => {
   useEffect(() => subscribeConnectivity(setIsOnline), []);
 
   useEffect(() => {
-    fetchMenuData();
+    fetchMenuData({ fromCache: true });
   }, []);
 
-  const fetchMenuData = async () => {
-    try {
-      setLoading(true);
-      setLoadError(null);
+  /**
+   * The menu this device saved last time goes on screen at once, so punching
+   * an order never waits on the network; the server's copy replaces it a
+   * moment later. Only a device that has never loaded the menu waits.
+   *
+   * Only on opening the screen: after an edit here the saved copy is older
+   * than what was just changed, and showing it would flash the old values.
+   */
+  const fetchMenuData = async ({ fromCache = false } = {}) => {
+    setLoadError(null);
 
-      if (getOnlineStatus()) {
-        const { data: catsData, error: catsError } = await supabase
-          .from('menu_categories').select('*').order('category_name');
-        if (catsError) throw catsError;
-
-        const { data: itemsData, error: itemsError } = await supabase
-          .from('menu_items').select('*');
-        if (itemsError) throw itemsError;
-
-        const safeCats = catsData || [];
-        const safeItems = itemsData || [];
-
-        await db.putMany('menu_categories', safeCats);
-        await db.putMany('menu_items', safeItems);
-
-        setCategories(safeCats);
-        setMenuItems(safeItems);
-        if (safeCats.length > 0) setActiveCategory((prev) => prev ?? safeCats[0].id);
-      } else {
-        const cachedCats = (await db.getAll('menu_categories')) || [];
-        const cachedItems = (await db.getAll('menu_items')) || [];
-
-        if (cachedCats.length === 0) {
-          setLoadError('Menu not available offline. Connect to the internet to load menu data first.');
-        } else {
-          setCategories(cachedCats);
-          setMenuItems(cachedItems);
-          setActiveCategory((prev) => prev ?? cachedCats[0].id);
-        }
+    /** Puts this device's saved menu on screen; false when there is none. */
+    const showCached = async () => {
+      try {
+        const [cachedCats, cachedItems] = await Promise.all([
+          db.getAll('menu_categories'), db.getAll('menu_items'),
+        ]);
+        if (!cachedCats?.length) return false;
+        const sortedCats = [...cachedCats].sort((a, b) =>
+          String(a.category_name || '').localeCompare(String(b.category_name || '')));
+        setCategories(sortedCats);
+        setMenuItems(cachedItems || []);
+        setActiveCategory((prev) => prev ?? sortedCats[0].id);
+        setLoading(false);
+        return true;
+      } catch {
+        return false;
       }
+    };
+
+    const online = getOnlineStatus();
+    const shownFromCache = (fromCache || !online) && (await showCached());
+
+    if (!online) {
+      if (!shownFromCache) {
+        setLoadError('Menu not available offline. Connect to the internet to load menu data first.');
+      }
+      setLoading(false);
+      return;
+    }
+
+    try {
+      if (!shownFromCache) setLoading(true);
+      const [
+        { data: catsData, error: catsError },
+        { data: itemsData, error: itemsError },
+      ] = await Promise.all([
+        supabase.from('menu_categories').select('*').order('category_name'),
+        supabase.from('menu_items').select('*'),
+      ]);
+      if (catsError) throw catsError;
+      if (itemsError) throw itemsError;
+
+      const safeCats = catsData || [];
+      const safeItems = itemsData || [];
+
+      setCategories(safeCats);
+      setMenuItems(safeItems);
+      setActiveCategory((prev) => (prev && safeCats.some((c) => c.id === prev) ? prev : safeCats[0]?.id ?? null));
+
+      await Promise.all([
+        db.putMany('menu_categories', safeCats),
+        db.putMany('menu_items', safeItems),
+      ]);
     } catch (error) {
-      const cachedCats = (await db.getAll('menu_categories')) || [];
-      const cachedItems = (await db.getAll('menu_items')) || [];
-      if (cachedCats.length > 0) {
-        setCategories(cachedCats);
-        setMenuItems(cachedItems);
-        setActiveCategory((prev) => prev ?? cachedCats[0].id);
-      } else {
+      if (!shownFromCache && !(await showCached())) {
         setLoadError('Failed to load menu: ' + (error.message || 'Unknown error'));
       }
     } finally {
@@ -344,9 +367,8 @@ const MenuCatalog = () => {
       return;
     }
 
-    // Opened now, inside the click, because a window opened after the network
-    // round trip is no longer "from a click" and the browser blocks it.
-    const kotWin = withKot ? window.open('', '_blank') : null;
+    // The ticket prints from a hidden frame on this page (lib/print.js), which
+    // the browser never blocks however long the order takes to save.
     const ticketLines = orderItems.map((i) => ({ qty: i.qty, name: i.name }));
 
     try {
@@ -398,7 +420,7 @@ const MenuCatalog = () => {
             db.getById('sessions', validSessionId), db.getAll('tables'),
           ]);
           const table = (cachedTables || []).find((tb) => tb.id === (validTableId || cachedSession?.table_id));
-          writeTicket(kotWin, kotTicketHtml({
+          await printTicket(kotTicketHtml({
             tableNumber: table?.table_number || '—',
             token: tokenOf(cachedSession),
             billId: validSessionId.slice(0, 4).toUpperCase(),
@@ -452,7 +474,7 @@ const MenuCatalog = () => {
                 .neq('order_status', 'cancelled'),
             ]);
 
-            const printed = writeTicket(kotWin, kotTicketHtml({
+            const printed = await printTicket(kotTicketHtml({
               tableNumber: sess?.restaurant_tables?.table_number,
               token: tokenOf(sess),
               billId: liveSessionId.slice(0, 4).toUpperCase(),
@@ -461,7 +483,7 @@ const MenuCatalog = () => {
               subtitle: `Kitchen Order Ticket · Round ${rounds || 1}`,
             }));
             if (!printed) {
-              alert('Order placed, but the KOT window was blocked. Allow pop-ups for this site, then use Send KOT on the Billing screen.');
+              alert('Order placed, but the KOT could not be printed. Use Send KOT on the Billing screen.');
             }
           }
         }
@@ -473,7 +495,6 @@ const MenuCatalog = () => {
       // Back to this table's bill, where the next round and the settlement happen.
       navigate(`/billing?tab=tables&sessionId=${liveSessionId}`);
     } catch (error) {
-      if (kotWin && !kotWin.closed) kotWin.close();
       alert('Error creating order: ' + error.message);
     }
   };
@@ -838,6 +859,8 @@ const MenuCatalog = () => {
                       <img
                         src={item.image_url || FOOD_PLACEHOLDER}
                         alt={item.item_name}
+                        loading="lazy"
+                        decoding="async"
                         onError={(e) => { e.target.onerror = null; e.target.src = FOOD_PLACEHOLDER; }}
                       />
                     </div>

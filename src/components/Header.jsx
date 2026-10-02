@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase';
 import { useOutlet } from '../context/OutletContext';
 import { useAuth } from '../context/AuthContext';
 import { fmtDate } from '../lib/dates';
+import { tradingToday } from '../lib/businessDay';
 
 const SHIFT_KEY = 'lumiere_shift_active';
 
@@ -158,8 +159,13 @@ const Header = () => {
 
   const [currentDate, setCurrentDate] = useState('');
 
+  // The trading day, kept current: set once on load, a till left open
+  // overnight went on showing yesterday's date.
   useEffect(() => {
-    setCurrentDate(fmtDate(new Date()));
+    const tick = () => setCurrentDate(fmtDate(tradingToday()));
+    tick();
+    const t = setInterval(tick, 60 * 1000);
+    return () => clearInterval(t);
   }, []);
 
   const handleEndShift = () => {
@@ -193,6 +199,8 @@ const Header = () => {
       const { data: tables } = await supabase
         .from('restaurant_tables')
         .select('table_number, status, customer_sessions(started_at, session_status)')
+        // Only the open session matters here, not every meal the table has had.
+        .eq('customer_sessions.session_status', 'active')
         .order('table_number');
 
       const found = [];

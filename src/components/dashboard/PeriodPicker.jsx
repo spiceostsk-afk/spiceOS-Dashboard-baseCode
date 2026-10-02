@@ -1,5 +1,6 @@
 import React from 'react';
 import { Calendar } from 'lucide-react';
+import { tradingDayKey } from '../../lib/businessDay';
 
 
 /** The periods offered, in the order a manager tends to want them. */
@@ -17,13 +18,12 @@ const DASHBOARD_PERIODS = [
  * The custom inputs appear only when Custom is chosen, so the common case —
  * "how did today go" — stays a single click rather than two date fields.
  *
- * Dates are plain local days. A sale at 11pm belongs to that evening's trade,
- * not to tomorrow, so the boundaries are the restaurant's own midnight rather
- * than UTC's.
+ * Dates are the restaurant's trading days (lib/businessDay.js): a sale at
+ * 11pm, or at 1am before the day closes, belongs to that evening's trade.
  */
 export default function PeriodPicker({ period, onPeriod, customRange, onCustomRange, rangeLabel }) {
-  const today = new Date();
-  const maxDay = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  // The trading day, which at 1am is still the evening before.
+  const maxDay = tradingDayKey(new Date());
 
   return (
     <div className="pp">

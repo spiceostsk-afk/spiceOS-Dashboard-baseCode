@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { fmtDayShort, fmtWeekday } from '../lib/dates';
-
-const TODAY_START = new Date();
-TODAY_START.setHours(0, 0, 0, 0);
+import {
+  dayOpens, dayCloses, tradingDate, tradingDayKey, tradingToday,
+} from '../lib/businessDay';
 
 const STATUS_FILTERS = {
   active: 'active',
@@ -24,17 +24,19 @@ const FINISHED_ORDER_STATUSES = ['completed', 'cancelled'];
 /**
  * The periods the dashboard can report on.
  *
- * Boundaries are LOCAL, not UTC: "today" has to mean the trading day the
- * restaurant is actually in, or a sale at 11pm IST lands on tomorrow's figures.
+ * Boundaries are the restaurant's TRADING days, not UTC and not midnight:
+ * "today" is the day the restaurant is actually in. A day that ends at 3am
+ * runs 03:00 to 02:59 the next morning, so a 1am bill is still tonight's,
+ * and at 1am "today" is still the evening that began the day before.
  * Each range is converted to an instant only at the point of querying.
  */
 
-const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
-const endOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+const startOfDay = dayOpens;
+const endOfDay = dayCloses;
 
 /** Returns { from, to } as Date objects covering the whole period. */
 export function resolvePeriod(period, custom) {
-  const now = new Date();
+  const now = tradingToday();
 
   switch (period) {
     case 'yesterday': {
@@ -44,14 +46,14 @@ export function resolvePeriod(period, custom) {
     }
     case 'this_month':
       return {
-        from: new Date(now.getFullYear(), now.getMonth(), 1),
+        from: startOfDay(new Date(now.getFullYear(), now.getMonth(), 1)),
         to: endOfDay(now),
       };
     case 'last_month': {
       const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
       // Day 0 of this month is the last day of the previous one.
       const last = new Date(now.getFullYear(), now.getMonth(), 0);
-      return { from: first, to: endOfDay(last) };
+      return { from: startOfDay(first), to: endOfDay(last) };
     }
     case 'custom': {
       if (!custom?.from || !custom?.to) return { from: startOfDay(now), to: endOfDay(now) };
@@ -121,7 +123,9 @@ function buildDailyTrend(orders, from, to) {
   const days = Math.min(span, 31);
 
   const daysMap = {};
-  const last = new Date(to);
+  // `to` is the closing instant, which falls on the next calendar morning
+  // when the day ends after midnight; the day it closes is the one wanted.
+  const last = tradingDate(to);
   for (let i = days - 1; i >= 0; i -= 1) {
     const d = new Date(last);
     d.setDate(last.getDate() - i);
@@ -140,7 +144,7 @@ function buildDailyTrend(orders, from, to) {
     // A sale belongs to the day it was settled, the same day Reports files it.
     const at = o.customer_sessions?.ended_at || o.created_at;
     if (!at) return;
-    const key = localKey(new Date(at));
+    const key = tradingDayKey(at);
     if (daysMap[key]) daysMap[key].total += Number(o.total || 0);
   });
 
@@ -265,7 +269,8 @@ function minutesOpen(createdAt) {
  * Things a manager should look at right now, newest problem first. Derived from
  * the orders already in hand — no extra round trip.
  */
-function buildAlerts(orders, todayStr) {
+function buildAlerts(orders) {
+  const todayKey = tradingDayKey(new Date());
   if (!orders || orders.length === 0) return [];
   const alerts = [];
 
@@ -287,7 +292,7 @@ function buildAlerts(orders, todayStr) {
   });
 
   const voided = orders.filter(
-    (o) => o.order_status === STATUS_FILTERS.cancelled && (o.created_at || '').startsWith(todayStr),
+    (o) => o.order_status === STATUS_FILTERS.cancelled && tradingDayKey(o.created_at) === todayKey,
   );
 
   if (voided.length > 0) {
@@ -311,7 +316,7 @@ export function useDashboardData() {
   // floor right now, not about a date range.
   const [period, setPeriod] = useState('today');
   const [customRange, setCustomRange] = useState(() => {
-    const t = new Date();
+    const t = tradingToday();
     const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const weekAgo = new Date(t);
     weekAgo.setDate(t.getDate() - 6);
@@ -337,116 +342,130 @@ export function useDashboardData() {
     liveOrders: [],
     alerts: [],
     loading: true,
+    refreshing: false,
     error: null,
   });
 
-  const fetchData = useCallback(async () => {
-    setState((prev) => ({ ...prev, loading: true, error: null }));
-    const todayStr = TODAY_START.toISOString().slice(0, 10);
+  // silent: a refresh of the same period keeps the figures on screen while
+  // the new ones load, instead of blanking every card. A new period does not —
+  // the old period's numbers must never sit under the new period's label.
+  const fetchData = useCallback(async ({ silent = false } = {}) => {
+    setState((prev) => ({
+      ...prev, loading: !silent, refreshing: silent, error: null,
+    }));
 
     try {
       const { from, to } = resolvePeriod(period, customRange);
 
-      // Filtered in the database, not after fetching. Pulling every order ever
-      // placed and discarding most of them worked while there were seven of
-      // them; it will not at seven thousand.
-      const { data: orders, error: ordersError } = await supabase
-        .from('orders')
-        .select(`
-          total,
-          subtotal,
-          order_status,
-          created_at,
-          table_id,
-          restaurant_tables(
-            table_number,
-            restaurant_sections(section_name)
-          )
-        `)
-        .gte('created_at', from.toISOString())
-        .lte('created_at', to.toISOString());
+      const fromIso = from.toISOString();
+      const toIso = to.toISOString();
 
-      if (ordersError) throw ordersError;
+      // None of these depends on another, so they go out together. One after
+      // the other they cost eight round trips to the server — seconds, at the
+      // till, every time the screen opened or refreshed.
+      const [
+        recentRes, settledRes, liveRes, activeRes, occupiedRes, billsRes, itemsRes, customersRes,
+      ] = await Promise.all([
+        // Recent activity shows the latest five orders of the period, so only
+        // those five are fetched.
+        supabase
+          .from('orders')
+          .select(`
+            id,
+            total,
+            order_status,
+            created_at,
+            restaurant_tables ( table_number )
+          `)
+          .gte('created_at', fromIso)
+          .lte('created_at', toIso)
+          .order('created_at', { ascending: false })
+          .limit(5),
 
-      // What counts as a sale. A KOT is not proof of sale; a settled bill is.
-      // Orders on a table still eating, and orders on a table that is voided
-      // or abandoned, earn nothing until the bill is settled. Filed under the
-      // day it was settled, which is how Reports and Payments already count,
-      // so the dashboard and the reports agree.
-      const { data: settledOrders, error: settledError } = await supabase
-        .from('orders')
-        .select(`
-          total,
-          subtotal,
-          restaurant_tables(
-            restaurant_sections(section_name)
-          ),
-          customer_sessions!inner ( session_status, ended_at )
-        `)
-        .eq('customer_sessions.session_status', 'completed')
-        .gte('customer_sessions.ended_at', from.toISOString())
-        .lte('customer_sessions.ended_at', to.toISOString())
-        .neq('order_status', 'cancelled');
+        // What counts as a sale. A KOT is not proof of sale; a settled bill is.
+        // Orders on a table still eating, and orders on a table that is voided
+        // or abandoned, earn nothing until the bill is settled. Filed under the
+        // day it was settled, which is how Reports and Payments already count,
+        // so the dashboard and the reports agree.
+        supabase
+          .from('orders')
+          .select(`
+            total,
+            subtotal,
+            restaurant_tables(
+              restaurant_sections(section_name)
+            ),
+            customer_sessions!inner ( session_status, ended_at )
+          `)
+          .eq('customer_sessions.session_status', 'completed')
+          .gte('customer_sessions.ended_at', fromIso)
+          .lte('customer_sessions.ended_at', toIso)
+          .neq('order_status', 'cancelled'),
 
-      if (settledError) throw settledError;
+        // Anything still open belongs to the floor, whatever period is selected —
+        // a table stuck since yesterday is still stuck while you look at
+        // last month.
+        supabase
+          .from('orders')
+          .select(`
+            id, total, order_status, created_at, table_id,
+            restaurant_tables ( table_number )
+          `)
+          .not('order_status', 'in', '("completed","cancelled")'),
 
-      // Anything still open belongs to the floor, whatever period is selected —
-      // a table stuck since yesterday is still stuck while you look at
-      // last month.
-      const { data: liveOrderRows, error: liveError } = await supabase
-        .from('orders')
-        .select(`
-          id, total, order_status, created_at, table_id,
-          restaurant_tables ( table_number )
-        `)
-        .not('order_status', 'in', '("completed","cancelled")');
+        supabase
+          .from('customer_sessions')
+          .select('*', { count: 'exact', head: true })
+          .eq('session_status', STATUS_FILTERS.active),
 
-      if (liveError) throw liveError;
+        supabase
+          .from('restaurant_tables')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', STATUS_FILTERS.occupied),
 
-      const { count: activeSessions } = await supabase
-        .from('customer_sessions')
-        .select('*', { count: 'exact', head: true })
-        .eq('session_status', STATUS_FILTERS.active);
+        // The payment-mode split. Filtered on paid_at rather than created_at: a
+        // bill raised before midnight and settled after belongs to the day the
+        // money actually landed.
+        supabase
+          .from('bills')
+          .select('grand_total, payment_method, payment_status, paid_at')
+          .eq('payment_status', 'paid')
+          .gte('paid_at', fromIso)
+          .lte('paid_at', toIso),
 
-      const { count: occupiedCount } = await supabase
-        .from('restaurant_tables')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', STATUS_FILTERS.occupied);
+        // The item-wise split. Reached through the order and its session rather
+        // than filtered on the line's own timestamp, so a line added late still
+        // counts against the bill it was settled on — and an unsettled one not at all.
+        supabase
+          .from('order_items')
+          .select(`
+            quantity, item_price, total_price, is_cancelled,
+            menu_items ( item_name, menu_categories ( category_name ) ),
+            orders!inner ( order_status, customer_sessions!inner ( session_status, ended_at ) )
+          `)
+          .eq('orders.customer_sessions.session_status', 'completed')
+          .gte('orders.customer_sessions.ended_at', fromIso)
+          .lte('orders.customer_sessions.ended_at', toIso)
+          .neq('orders.order_status', 'cancelled'),
 
-      // The payment-mode split. Filtered on paid_at rather than created_at: a
-      // bill raised before midnight and settled after belongs to the day the
-      // money actually landed.
-      const { data: periodBills, error: billsError } = await supabase
-        .from('bills')
-        .select('grand_total, payment_method, payment_status, paid_at')
-        .eq('payment_status', 'paid')
-        .gte('paid_at', from.toISOString())
-        .lte('paid_at', to.toISOString());
+        supabase
+          .from('customer_sessions')
+          .select('*', { count: 'exact', head: true })
+          .gte('started_at', fromIso)
+          .lte('started_at', toIso),
+      ]);
 
-      if (billsError) throw billsError;
+      const failed = [recentRes, settledRes, liveRes, billsRes, itemsRes].find((r) => r.error);
+      if (failed) throw failed.error;
 
-      // The item-wise split. Reached through the order and its session rather
-      // than filtered on the line's own timestamp, so a line added late still
-      // counts against the bill it was settled on — and an unsettled one not at all.
-      const { data: periodItems, error: itemsError } = await supabase
-        .from('order_items')
-        .select(`
-          quantity, item_price, total_price, is_cancelled,
-          menu_items ( item_name, menu_categories ( category_name ) ),
-          orders!inner ( order_status, customer_sessions!inner ( session_status, ended_at ) )
-        `)
-        .eq('orders.customer_sessions.session_status', 'completed')
-        .gte('orders.customer_sessions.ended_at', from.toISOString())
-        .lte('orders.customer_sessions.ended_at', to.toISOString())
-        .neq('orders.order_status', 'cancelled');
-
-      if (itemsError) throw itemsError;
-
-      const { count: periodCustomers } = await supabase
-        .from('customer_sessions')
-        .select('*', { count: 'exact', head: true })
-        .gte('started_at', from.toISOString())
-        .lte('started_at', to.toISOString());
+      const orders = recentRes.data;
+      const settledOrders = settledRes.data;
+      const liveOrderRows = liveRes.data;
+      const periodBills = billsRes.data;
+      const periodItems = itemsRes.data;
+      const activeSessions = activeRes.count;
+      const occupiedCount = occupiedRes.count;
+      const periodCustomers = customersRes.count;
 
       const { totalSales, netSales, orderCount } = parseOrders(settledOrders);
       const averageOrderValue = calcAov(totalSales, orderCount);
@@ -469,15 +488,17 @@ export function useDashboardData() {
         dailyTrend: buildDailyTrend(settledOrders, from, to),
         recentOrders: buildRecentOrders(orders),
         liveOrders: buildLiveOrders(liveOrderRows),
-        alerts: buildAlerts(liveOrderRows, todayStr),
+        alerts: buildAlerts(liveOrderRows),
         range: { from, to },
         loading: false,
+        refreshing: false,
         error: null,
       });
     } catch (err) {
       setState((prev) => ({
         ...prev,
         loading: false,
+        refreshing: false,
         error: err.message || 'Failed to load dashboard data',
       }));
     }
@@ -487,9 +508,11 @@ export function useDashboardData() {
     fetchData();
   }, [fetchData]);
 
+  const refresh = useCallback(() => fetchData({ silent: true }), [fetchData]);
+
   return {
     ...state,
-    refresh: fetchData,
+    refresh,
     period,
     setPeriod,
     customRange,

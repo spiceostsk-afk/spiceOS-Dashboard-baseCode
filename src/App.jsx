@@ -9,6 +9,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { OutletProvider } from './context/OutletContext';
 import { setDbTenant } from './lib/db';
+import { loadCachedDayClose, refreshDayClose } from './lib/businessDay';
 import Dashboard from './views/Dashboard';
 import Branding from './views/Branding';
 import SuperAdmin from './views/SuperAdmin';
@@ -130,6 +131,40 @@ function AppShell() {
   );
 }
 
+/**
+ * Holds the app until it knows when this restaurant's trading day ends, since
+ * every sales figure is filed by it. A device that has seen it before starts
+ * straight away on the saved hour and checks the server in the background;
+ * only a first visit waits, and never for long — offline, midnight stands.
+ */
+function BusinessDayGate({ restaurantId, children }) {
+  const [ready, setReady] = React.useState(() => loadCachedDayClose(restaurantId));
+
+  React.useEffect(() => {
+    let cancelled = false;
+    const done = () => { if (!cancelled) setReady(true); };
+    const timer = setTimeout(done, 4000);
+    refreshDayClose(restaurantId).catch(() => {}).finally(() => {
+      clearTimeout(timer);
+      done();
+    });
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [restaurantId]);
+
+  if (!ready) {
+    return (
+      <div style={{
+        height: '100vh', display: 'flex', alignItems: 'center',
+        justifyContent: 'center', color: 'var(--color-text-muted)',
+        fontWeight: 600,
+      }}>
+        Loading…
+      </div>
+    );
+  }
+  return children;
+}
+
 /** Login / Signup toggle shown when there's no session. */
 function AuthFlow() {
   const [view, setView] = React.useState('login');
@@ -161,11 +196,13 @@ function Gate() {
   // with the right per-tenant name.
   setDbTenant(restaurantId);
   return (
-    <ThemeProvider>
-      <OutletProvider>
-        <AppShell />
-      </OutletProvider>
-    </ThemeProvider>
+    <BusinessDayGate restaurantId={restaurantId}>
+      <ThemeProvider>
+        <OutletProvider>
+          <AppShell />
+        </OutletProvider>
+      </ThemeProvider>
+    </BusinessDayGate>
   );
 }
 

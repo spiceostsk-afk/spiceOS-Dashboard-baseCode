@@ -3,7 +3,8 @@ import { Info } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useReportPeriod } from '../../hooks/useSalesReports';
 import { ReportPage, ReportTable, money, num } from './ReportShell';
-import { fmtDate, fmtDateTime, isoDay } from '../../lib/dates';
+import { fmtDate, fmtDateTime } from '../../lib/dates';
+import { tradingDayKey } from '../../lib/businessDay';
 
 /**
  * Void KOT report: food the kitchen was sent a ticket for and that was never sold.
@@ -126,7 +127,7 @@ function useVoidKots(range) {
         });
       }
 
-      setLines([...byId.values()].map((r) => ({ ...r, cost: round(r.cost), day: r.at ? isoDay(r.at) : '' })));
+      setLines([...byId.values()].map((r) => ({ ...r, cost: round(r.cost), day: r.at ? tradingDayKey(r.at) : '' })));
       setError(null);
     } catch (err) {
       console.error('Error loading void KOTs:', err);

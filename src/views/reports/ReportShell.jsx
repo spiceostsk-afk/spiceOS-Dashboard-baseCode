@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Calendar, Download, ChevronUp, ChevronDown, BarChart3 } from 'lucide-react';
 import { REPORT_PERIODS, isoDay } from '../../hooks/useSalesReports';
 import { fmtDate } from '../../lib/dates';
+import { tradingDayKey } from '../../lib/businessDay';
 
 /**
  * The frame every report shares: a period selector, headline figures, a
@@ -18,7 +19,7 @@ export const num = (n) => new Intl.NumberFormat('en-IN').format(Number(n) || 0);
 
 /* ------------------------------------------------------------ period picker */
 export function ReportPeriod({ period, setPeriod, customRange, setCustomRange, range }) {
-  const maxDay = isoDay(new Date());
+  const maxDay = tradingDayKey(new Date());
   const label = fmtDate(range.from) === fmtDate(range.to)
     ? fmtDate(range.from)
     : `${fmtDate(range.from)} – ${fmtDate(range.to)}`;

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Printer } from 'lucide-react';
+import { TICKET_CSS, esc, printHtml } from '../../lib/print';
 
 const SEED_ORDERS = [
   {
@@ -47,20 +48,16 @@ export default function OnlineOrdersTab() {
   const handleReady = (o) => setStatus(o.id, 'Out for delivery', 'tone-blue', 'print');
 
   const handlePrint = (o) => {
-    const win = window.open('', '_blank');
-    if (!win) { alert('Please allow pop-ups to print the ticket.'); return; }
-    win.document.write(`<!DOCTYPE html><html><head><title>${o.id}</title>
-      <style>body{font-family:'Courier New',monospace;width:280px;margin:0 auto;padding:12px;font-size:13px}
-      h2{text-align:center;margin:0 0 2px;font-size:17px}.sub{text-align:center;font-size:11px;color:#555;margin-bottom:8px}
-      hr{border:none;border-top:1px dashed #333;margin:6px 0}</style></head><body>
-      <h2>${o.source.toUpperCase()}</h2><div class="sub">Online order ticket</div><hr/>
-      <div><strong>Order:</strong> ${o.id}</div>
-      <div><strong>Customer:</strong> ${o.customer}</div>
-      <div><strong>Phone:</strong> ${o.phone}</div><hr/>
-      <div>${o.items}</div><hr/>
-      <div><strong>Total:</strong> ${o.amount}</div>
-      <script>window.print();window.close();<\/script></body></html>`);
-    win.document.close();
+    printHtml(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(o.id)}</title>
+      <style>${TICKET_CSS}
+      body{font-size:13px}h2{text-align:center;margin:0 0 2px;font-size:17px}.sub{text-align:center;font-size:11px;margin-bottom:6px}</style></head><body>
+      <h2>${esc(o.source).toUpperCase()}</h2><div class="sub">Online order ticket</div><hr/>
+      <div><strong>Order:</strong> ${esc(o.id)}</div>
+      <div><strong>Customer:</strong> ${esc(o.customer)}</div>
+      <div><strong>Phone:</strong> ${esc(o.phone)}</div><hr/>
+      <div>${esc(o.items)}</div><hr/>
+      <div><strong>Total:</strong> ${esc(o.amount)}</div>
+      </body></html>`);
   };
 
   return (

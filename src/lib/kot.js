@@ -1,4 +1,5 @@
 import { fmtDateTime } from './dates';
+import { TICKET_CSS, esc, printHtml } from './print';
 
 /**
  * Kitchen order tickets, shared by the order screen and Billing.
@@ -42,10 +43,6 @@ export function writeKotSent(sessionId, ids) {
   }
 }
 
-const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => (
-  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
-));
-
 /**
  * The ticket itself. Carries what to cook, never money.
  *
@@ -57,18 +54,16 @@ export function kotTicketHtml({ tableNumber, token = null, billId, guests, items
     .map((i) => `<tr><td class="qty">${esc(i.qty)}</td><td>${esc(i.name)}</td></tr>`)
     .join('');
 
-  return `<!DOCTYPE html><html><head><title>KOT - ${esc(billId)}</title>
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>KOT - ${esc(billId)}</title>
   <style>
-    body { font-family: 'Courier New', monospace; width: 280px; margin: 0 auto; padding: 0.75rem; font-size: 13px; }
-    h2 { text-align: center; font-size: 18px; margin: 0 0 2px 0; letter-spacing: 2px; }
-    .sub { text-align: center; font-size: 11px; color: #555; margin: 0 0 8px 0; }
-    hr { border: none; border-top: 1px dashed #333; margin: 6px 0; }
-    table { width: 100%; border-collapse: collapse; font-size: 14px; }
-    td { padding: 5px 0; vertical-align: top; }
-    .qty { width: 34px; font-weight: bold; font-size: 16px; }
-    .meta { font-size: 12px; }
-    .token { text-align: center; font-size: 17px; font-weight: bold; border: 2px solid #000; padding: 5px 0; margin-bottom: 6px; }
-    @media print { body { margin: 0; padding: 0.5rem; } @page { margin: 0; } }
+    ${TICKET_CSS}
+    body { font-size: 13px; }
+    h2 { text-align: center; font-size: 20px; margin: 0 0 2px 0; letter-spacing: 2px; }
+    .sub { text-align: center; font-size: 12px; margin: 0 0 6px 0; }
+    td { padding: 4px 0; font-size: 15px; font-weight: bold; }
+    .qty { width: 12mm; font-size: 17px; }
+    .meta { font-size: 13px; }
+    .token { text-align: center; font-size: 18px; font-weight: bold; border: 2px solid #000; padding: 4px 0; margin-bottom: 6px; }
   </style></head><body>
   <h2>KOT</h2>
   <div class="sub">${esc(subtitle)}</div>
@@ -84,14 +79,10 @@ export function kotTicketHtml({ tableNumber, token = null, billId, guests, items
   <table>${rows}</table>
   <hr/>
   <div class="sub">${items.length} line${items.length === 1 ? '' : 's'}</div>
-  <script>window.print();window.close();</script>
   </body></html>`;
 }
 
-/** Writes a ticket into a window opened earlier, or reports that it could not. */
-export function writeTicket(win, html) {
-  if (!win || win.closed) return false;
-  win.document.write(html);
-  win.document.close();
-  return true;
+/** Sends a ticket to the printer. Resolves true when it reached the dialog. */
+export function printTicket(html) {
+  return printHtml(html);
 }

@@ -2,7 +2,8 @@ import React, { useMemo, useState } from 'react';
 import { AlertTriangle, ChevronDown, ChevronRight, X } from 'lucide-react';
 import { useReportPeriod, useSalesData } from '../../hooks/useSalesReports';
 import { ReportPage, ReportTable, money, num } from './ReportShell';
-import { fmtDate, fmtTime, isoDay } from '../../lib/dates';
+import { fmtDate, fmtTime } from '../../lib/dates';
+import { tradingDayKey } from '../../lib/businessDay';
 
 /**
  * How the money arrived: cash, card, UPI, and the aggregators.
@@ -158,7 +159,7 @@ function ModeByDay({ row, onClose }) {
   const days = useMemo(() => {
     const map = new Map();
     row.list.forEach((b) => {
-      const key = b.at ? isoDay(b.at) : 'unknown';
+      const key = b.at ? tradingDayKey(b.at) : 'unknown';
       if (!map.has(key)) map.set(key, { key, bills: [], amount: 0 });
       const d = map.get(key);
       d.bills.push(b);

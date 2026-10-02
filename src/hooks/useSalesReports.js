@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { dayOpens, dayCloses, tradingToday } from '../lib/businessDay';
 
 /**
  * The sales reports, all reading the same period.
@@ -10,8 +11,9 @@ import { supabase } from '../lib/supabase';
  * here starts the same way — otherwise two reports over the same dates would
  * quietly disagree.
  *
- * Boundaries are LOCAL days. A sale at 11pm belongs to that evening's trade,
- * not to tomorrow.
+ * Boundaries are the restaurant's TRADING days (lib/businessDay.js). A sale at
+ * 11pm — or at 1am, when the day ends at 3am — belongs to that evening's
+ * trade, not to tomorrow.
  */
 
 export const REPORT_PERIODS = [
@@ -25,13 +27,13 @@ export const REPORT_PERIODS = [
   { key: 'custom', label: 'Custom range' },
 ];
 
-const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
-const endOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+const startOfDay = dayOpens;
+const endOfDay = dayCloses;
 
 export const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 export function resolveReportPeriod(period, custom) {
-  const now = new Date();
+  const now = tradingToday();
   switch (period) {
     case 'yesterday': {
       const y = new Date(now); y.setDate(now.getDate() - 1);
@@ -48,10 +50,10 @@ export function resolveReportPeriod(period, custom) {
       return { from: startOfDay(start), to: endOfDay(now) };
     }
     case 'this_month':
-      return { from: new Date(now.getFullYear(), now.getMonth(), 1), to: endOfDay(now) };
+      return { from: startOfDay(new Date(now.getFullYear(), now.getMonth(), 1)), to: endOfDay(now) };
     case 'last_month':
       return {
-        from: new Date(now.getFullYear(), now.getMonth() - 1, 1),
+        from: startOfDay(new Date(now.getFullYear(), now.getMonth() - 1, 1)),
         to: endOfDay(new Date(now.getFullYear(), now.getMonth(), 0)),
       };
     case 'custom': {
@@ -71,7 +73,7 @@ export function resolveReportPeriod(period, custom) {
 export function useReportPeriod(initial = 'today') {
   const [period, setPeriod] = useState(initial);
   const [customRange, setCustomRange] = useState(() => {
-    const t = new Date();
+    const t = tradingToday();
     const weekAgo = new Date(t);
     weekAgo.setDate(t.getDate() - 6);
     return { from: isoDay(weekAgo), to: isoDay(t) };

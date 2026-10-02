@@ -23,6 +23,7 @@ export default function Dashboard() {
     liveOrders,
     alerts,
     loading,
+    refreshing,
     error,
     refresh,
     period,
@@ -80,9 +81,9 @@ export default function Dashboard() {
           rangeLabel={rangeLabel}
         />
         <div className="spacer" />
-        <button className="btn btn--ghost" onClick={refresh} disabled={loading}>
-          <RefreshCw size={14} className={loading ? 'spin' : ''} />
-          {loading ? 'Refreshing…' : 'Refresh data'}
+        <button className="btn btn--ghost" onClick={refresh} disabled={loading || refreshing}>
+          <RefreshCw size={14} className={loading || refreshing ? 'spin' : ''} />
+          {loading || refreshing ? 'Refreshing…' : 'Refresh data'}
         </button>
       </div>
 

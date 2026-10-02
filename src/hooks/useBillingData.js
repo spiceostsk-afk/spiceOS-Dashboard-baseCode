@@ -12,7 +12,8 @@ import {
 } from '../lib/calculations';
 import { useTaxRate } from './useTaxRate';
 import { fmtDateTime } from '../lib/dates';
-import { readKotSent, writeKotSent, kotTicketHtml, writeTicket } from '../lib/kot';
+import { readKotSent, writeKotSent, kotTicketHtml, printTicket } from '../lib/kot';
+import { TICKET_CSS, esc, printHtml, loadReceiptProfile } from '../lib/print';
 import {
   nextTakeawayToken, pickTakeawayCounter, expandTakeawayRows, isPackingCounter, tokenOf,
 } from '../lib/takeaway';
@@ -185,6 +186,29 @@ function writeAreaLock(areaId) {
   }
 }
 
+/** The sessions the floor shows: open, waiting on payment, and held. */
+const FLOOR_SESSION_STATUSES = [SESSION_STATUS.active, SESSION_STATUS.billing, SESSION_STATUS.hold];
+
+/** How far back Running Orders lists settled bills for reprinting. */
+const RECENT_COMPLETED_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The menu is re-saved for offline use at most this often. Module-level so
+ * leaving Billing for the menu and coming back does not fetch it again.
+ */
+const MENU_CACHE_EVERY_MS = 5 * 60 * 1000;
+let lastMenuCacheAt = 0;
+
+/** The most recently settled of a table's sessions, for reprinting. */
+function latestCompleted(sessions) {
+  let latest = null;
+  for (const s of sessions || []) {
+    if (s.session_status !== SESSION_STATUS.completed) continue;
+    if (!latest || String(s.ended_at || '') > String(latest.ended_at || '')) latest = s;
+  }
+  return latest || undefined;
+}
+
 function processTablesWithSessions(tablesData) {
   if (!tablesData) return [];
   return expandTakeawayRows(tablesData.map((table) => ({
@@ -195,9 +219,7 @@ function processTablesWithSessions(tablesData) {
     held_session: (table.customer_sessions || []).find(
       (s) => s.session_status === SESSION_STATUS.hold
     ),
-    completed_session: (table.customer_sessions || []).find(
-      (s) => s.session_status === SESSION_STATUS.completed
-    ),
+    completed_session: latestCompleted(table.customer_sessions),
   })), { isOpen: isOpenSession, isHeld: isHeldSession });
 }
 
@@ -372,26 +394,34 @@ export function useBillingData() {
     setLockedArea(null);
   }, []);
 
-  // silent: a background refresh (a realtime event) keeps what is on screen
-  // instead of flashing the loading state over it.
-  const fetchWorkspaceData = useCallback(async ({ silent = false } = {}) => {
-    if (!silent) setState((prev) => ({ ...prev, loadingWorkspace: true, workspaceError: null }));
+  // A refresh after the first load never puts the floor back into its
+  // loading state: the grid and the open bill stay on screen and are swapped
+  // for the new data when it lands. Blanking them on every realtime event and
+  // every action is what made the till flicker and feel slow in a rush.
+  const fetchWorkspaceData = useCallback(async () => {
+    setState((prev) => (prev.tables.length > 0 || prev.loadingWorkspace
+      ? { ...prev, workspaceError: null }
+      : { ...prev, loadingWorkspace: true, workspaceError: null }));
     try {
       if (isOnline) {
         const sectionsPromise = supabase.from('restaurant_sections').select('*').order('section_name');
+        // Only the sessions the floor can show: open and held ones, and bills
+        // settled in the last day for Running Orders' reprint list. Without
+        // the filter every table carried its whole history, and the list grew
+        // with every meal ever served.
+        const recentCutoff = new Date(Date.now() - RECENT_COMPLETED_MS).toISOString();
         const tablesPromise = supabase
           .from('restaurant_tables')
           .select('*, customer_sessions(id, customer_name, guest_count, started_at, session_status, ended_at, metadata)')
+          .or(
+            `session_status.in.(${FLOOR_SESSION_STATUSES.join(',')}),ended_at.gte."${recentCutoff}"`,
+            { referencedTable: 'customer_sessions' },
+          )
           .order('table_number');
 
-        const sectionsData = await cacheFromSupabase('sections', sectionsPromise);
-        const tablesResult = await cacheFromSupabase('tables', tablesPromise);
-
-        const menuCategoriesPromise = supabase.from('menu_categories').select('*').order('category_name');
-        const menuItemsPromise = supabase.from('menu_items').select('*').eq('is_available', true);
-        await Promise.all([
-          cacheFromSupabase('menu_categories', menuCategoriesPromise),
-          cacheFromSupabase('menu_items', menuItemsPromise),
+        const [sectionsData, tablesResult] = await Promise.all([
+          cacheFromSupabase('sections', sectionsPromise),
+          cacheFromSupabase('tables', tablesPromise),
         ]);
 
         const tablesData = tablesResult || [];
@@ -403,6 +433,17 @@ export function useBillingData() {
           tables: processTablesWithSessions(tablesData),
           loadingWorkspace: false,
         }));
+
+        // The menu is saved here for offline ordering, not shown here, so the
+        // floor does not wait for it — and a realtime refresh, which only
+        // means a table or an order changed, does not download it again.
+        if (Date.now() - lastMenuCacheAt > MENU_CACHE_EVERY_MS) {
+          lastMenuCacheAt = Date.now();
+          Promise.all([
+            cacheFromSupabase('menu_categories', supabase.from('menu_categories').select('*').order('category_name')),
+            cacheFromSupabase('menu_items', supabase.from('menu_items').select('*').eq('is_available', true)),
+          ]).catch(() => { lastMenuCacheAt = 0; });
+        }
       } else {
         const cachedTables = await loadLocalTables();
         const cachedSections = (await db.getAll('sections')) || [];
@@ -463,14 +504,16 @@ export function useBillingData() {
         fetchedOnline = !error;
 
         if (sessionData) {
-          await db.put('sessions', sessionData);
-          await db.putMany('orders', sessionData.orders || []);
+          // The offline copy is written alongside, not before, the bill
+          // appearing — the cashier should not wait on the device's disk.
           const orderItems = (sessionData.orders || []).flatMap((o) =>
             (o.order_items || []).map((oi) => ({ ...oi, orderId: o.id }))
           );
-          if (orderItems.length > 0) {
-            await db.putMany('order_items', orderItems);
-          }
+          Promise.all([
+            db.put('sessions', sessionData),
+            db.putMany('orders', sessionData.orders || []),
+            orderItems.length > 0 ? db.putMany('order_items', orderItems) : null,
+          ]).catch(() => { /* the bill is on screen; the offline copy is best effort */ });
         }
       }
       if (!fetchedOnline) {
@@ -696,13 +739,21 @@ export function useBillingData() {
         p_paid: paid,
       });
 
+      // Why the server refused the bill, when it did — said out loud below.
+      let billProblem = null;
+
       const writeBill = async (paid) => {
         const { error: billError } = await supabase.rpc('record_bill', billParams(paid));
         // Lost connection: let the caller save the whole settle locally.
         if (billError && isNetworkError(billError)) throw billError;
         // A bill the server rejects must not strand a paid table on the floor;
-        // the settle itself is what the staff are waiting on.
-        if (billError) console.error('Could not record the bill:', billError);
+        // the settle itself is what the staff are waiting on. But it is never
+        // silent: a console-only error once lost every bill's payment mode
+        // for days before anyone noticed.
+        if (billError) {
+          console.error('Could not record the bill:', billError);
+          billProblem = billError.message || 'unknown error';
+        }
       };
 
       // Supabase reports failures in the result rather than throwing; without
@@ -814,17 +865,23 @@ export function useBillingData() {
           // leave its orders at 'preparing' for ever, so the dashboard went on
           // counting them as live and reported the table as open and unbilled
           // long after it had been paid and cleared.
-          await must(supabase
-            .from('orders')
-            .update({ order_status: ORDER_STATUS.completed })
-            .eq('session_id', sessionId)
-            .neq('order_status', ORDER_STATUS.cancelled));
-          // A packing counter has nothing to clear: other takeaways are open on it.
-          if (!isPackingCounter(sessionState.session?.restaurant_tables)) {
-            await must(supabase
+          //
+          // The orders and the table do not depend on each other, so they go
+          // together — one wait at the till instead of two.
+          const clearsTable = !isPackingCounter(sessionState.session?.restaurant_tables);
+          await Promise.all([
+            must(supabase
+              .from('orders')
+              .update({ order_status: ORDER_STATUS.completed })
+              .eq('session_id', sessionId)
+              .neq('order_status', ORDER_STATUS.cancelled)),
+            // A packing counter has nothing to clear: other takeaways are open on it.
+            clearsTable && must(supabase
               .from('restaurant_tables')
               .update({ status: TABLE_STATUS.cleaning })
-              .eq('id', sessionState.session?.table_id));
+              .eq('id', sessionState.session?.table_id)),
+          ]);
+          if (clearsTable) {
             scheduleTableCleanup(sessionState.session?.table_id, TABLE_CLEANUP_DELAY_MS);
           }
         } else {
@@ -848,7 +905,11 @@ export function useBillingData() {
       // The customer's copy, printed off the same figures that were just
       // recorded. A part payment prints nothing: the bill is not final yet.
       if (isFullyPaid) printRef.current?.('bill');
-      alert(isFullyPaid ? 'Payment marked as successful!' : `Partial payment of ${FORMAT_CURRENCY.format(uiState.amountPaid || curTotal)} recorded.`);
+      alert((isFullyPaid ? 'Payment marked as successful!' : `Partial payment of ${FORMAT_CURRENCY.format(uiState.amountPaid || curTotal)} recorded.`)
+        + (billProblem
+          ? `\n\nWarning: the table is settled, but its payment record was not saved (${billProblem}). `
+            + 'Set the payment mode for this bill from Orders, and tell support.'
+          : ''));
       setSearchParams({ tab: state.activeTab });
       await fetchWorkspaceData();
     } catch (err) {
@@ -1251,84 +1312,96 @@ export function useBillingData() {
     const discountAmount = calcDiscountAmount(subtotal, uiState.discountType, uiState.discountValue);
     const afterDiscount = subtotal - discountAmount;
     const serviceCharge = calcServiceCharge(afterDiscount, uiState.showServiceCharge ? uiState.serviceChargePercent : 0);
-    const taxableAmount = afterDiscount + serviceCharge;
-    const cgst = calcCgst(taxableAmount, taxRate);
-    const sgst = calcSgst(taxableAmount, taxRate);
+    // The same arithmetic as the screen and the recorded bill: GST on the
+    // discounted subtotal, service charge on top untaxed. The print used to
+    // tax the service charge too, so the paper total disagreed with both.
+    const cgst = calcCgst(afterDiscount, taxRate);
+    const sgst = calcSgst(afterDiscount, taxRate);
     const halfPct = formatRatePct(taxRate / 2);
-    const total = taxableAmount + cgst + sgst;
+    const total = calcTotal(afterDiscount, 0, serviceCharge, taxRate);
 
     const formatCurrency = (v) => FORMAT_CURRENCY ? FORMAT_CURRENCY.format(v || 0) : '₹' + (v || 0).toFixed(2);
 
-    setTimeout(() => {
-      const win = window.open('', '_blank');
-      if (!win) { window.print(); return; }
+    // A kitchen ticket carries what to cook, never money.
+    if (isKot) {
+      printTicket(kotTicketHtml({
+        tableNumber,
+        token,
+        billId,
+        guests: sess.guest_count,
+        items,
+        subtitle: isNewRound ? `Kitchen Order Ticket · Round ${roundNo}` : 'REPRINT — full table',
+      }));
+      return;
+    }
 
-      // A kitchen ticket carries what to cook, never money.
-      if (isKot) {
-        writeTicket(win, kotTicketHtml({
-          tableNumber,
-          token,
-          billId,
-          guests: sess.guest_count,
-          items,
-          subtitle: isNewRound ? `Kitchen Order Ticket · Round ${roundNo}` : 'REPRINT — full table',
-        }));
-        return;
-      }
+    (async () => {
+      const shop = await loadReceiptProfile();
 
-      let itemRows = '';
-      for (const item of groupBillLines(items)) {
-        itemRows += `<tr><td>${item.name}</td><td class="center">${item.qty}</td><td class="right">${formatCurrency(item.price)}</td><td class="right">${formatCurrency(item.price * item.qty)}</td></tr>`;
-      }
+      const itemRows = groupBillLines(items).map((item) => `<tr>
+          <td class="item">${esc(item.name)}</td>
+          <td class="qty">${esc(item.qty)}</td>
+          <td class="amt">${formatCurrency(item.price)}</td>
+          <td class="amt">${formatCurrency(item.price * item.qty)}</td>
+        </tr>`).join('');
 
-      win.document.write(`<!DOCTYPE html><html><head><title>Invoice - ${billId}</title>
+      const headerLines = [
+        shop.address && `<div class="sub">${esc(shop.address).replace(/\n/g, '<br/>')}</div>`,
+        shop.phone && `<div class="sub">Ph: ${esc(shop.phone)}</div>`,
+        shop.gstin && `<div class="sub">GSTIN: ${esc(shop.gstin)}</div>`,
+      ].filter(Boolean).join('');
+
+      const taxRows = shop.showGst
+        ? `<tr><td>CGST (${halfPct}%)</td><td class="amt">${formatCurrency(cgst)}</td></tr>
+          <tr><td>SGST (${halfPct}%)</td><td class="amt">${formatCurrency(sgst)}</td></tr>`
+        : `<tr><td>GST (${formatRatePct(taxRate)}%)</td><td class="amt">${formatCurrency(cgst + sgst)}</td></tr>`;
+
+      printHtml(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Bill ${esc(billId)}</title>
       <style>
-        body { font-family: 'Courier New', monospace; width: 280px; margin: 0 auto; padding: 0.75rem; font-size: 12px; }
-        h2 { text-align: center; font-size: 16px; margin: 0 0 2px 0; }
-        .sub { text-align: center; font-size: 10px; color: #555; margin: 0 0 8px 0; }
-        hr { border: none; border-top: 1px dashed #333; margin: 6px 0; }
-        table { width: 100%; border-collapse: collapse; font-size: 11px; }
-        th { text-align: left; font-size: 10px; text-transform: uppercase; border-bottom: 1px solid #333; padding: 3px 0; }
-        td { padding: 2px 0; }
-        .right { text-align: right; }
-        .center { text-align: center; }
-        .total-row td { font-weight: bold; padding-top: 4px; border-top: 1px dashed #333; }
-        .grand-total td { font-size: 14px; font-weight: bold; border-top: 2px solid #333; padding-top: 4px; }
-        .footer { text-align: center; font-size: 10px; color: #555; margin-top: 12px; }
-        .gst-row td { font-size: 10px; color: #555; }
-        .token { text-align: center; font-size: 15px; font-weight: bold; border: 1px solid #333; padding: 4px 0; margin-bottom: 6px; }
-        @media print { body { margin: 0; padding: 0.5rem; } @page { margin: 0; } }
+        ${TICKET_CSS}
+        h1 { text-align: center; font-size: 17px; margin: 0 0 2px 0; text-transform: uppercase; }
+        .sub { text-align: center; font-size: 11px; }
+        .title { text-align: center; font-weight: bold; font-size: 13px; margin: 4px 0; }
+        .meta { font-size: 11.5px; }
+        .meta b { font-weight: bold; }
+        .items th { font-size: 10.5px; text-transform: uppercase; border-bottom: 1px solid #000; padding: 2px 0; text-align: right; }
+        .items th:first-child { text-align: left; }
+        .items td { padding: 2px 0; font-size: 11.5px; }
+        .item { word-break: break-word; padding-right: 2px; }
+        .qty { text-align: center; width: 8mm; }
+        .amt { text-align: right; white-space: nowrap; }
+        .sums td { padding: 1px 0; font-size: 12px; }
+        .grand td { font-size: 15px; font-weight: bold; border-top: 1px solid #000; border-bottom: 1px solid #000; padding: 4px 0; }
+        .token { text-align: center; font-size: 15px; font-weight: bold; border: 1px solid #000; padding: 3px 0; margin-bottom: 5px; }
+        .footer { text-align: center; font-size: 11.5px; margin-top: 8px; }
       </style></head><body>
-      <h2>SPICE OS</h2>
-      <div class="sub">123 Downtown St, Metro | Tel: +91 90812 01234</div>
+      ${shop.name ? `<h1>${esc(shop.name)}</h1>` : ''}
+      ${headerLines}
       <hr/>
+      <div class="title">${shop.gstin ? 'TAX INVOICE' : 'BILL'}</div>
       ${token != null
-        ? `<div class="token">TAKEAWAY · TOKEN ${token}</div>
-      <div><strong>Bill #:</strong> ${billId} &nbsp; <strong>Counter:</strong> ${tableNumber}</div>
-      <div><strong>Customer:</strong> ${sess.customer_name || 'Walk-in'}${sess.phone_number ? ` &nbsp; <strong>Ph:</strong> ${sess.phone_number}` : ''}</div>`
-        : `<div><strong>Bill #:</strong> ${billId} &nbsp; <strong>Table:</strong> T-${tableNumber}</div>
-      <div><strong>Customer:</strong> ${sess.customer_name || 'Walk-in'} &nbsp; <strong>Guests:</strong> ${sess.guest_count || '—'}</div>`}
-      <div><strong>Date:</strong> ${fmtDateTime(new Date())}</div>
+        ? `<div class="token">TAKEAWAY · TOKEN ${esc(token)}</div>
+      <div class="meta"><b>Bill #:</b> ${esc(billId)} &nbsp; <b>Counter:</b> ${esc(tableNumber)}</div>
+      <div class="meta"><b>Customer:</b> ${esc(sess.customer_name || 'Walk-in')}${sess.phone_number ? ` &nbsp; <b>Ph:</b> ${esc(sess.phone_number)}` : ''}</div>`
+        : `<div class="meta"><b>Bill #:</b> ${esc(billId)} &nbsp; <b>Table:</b> T-${esc(tableNumber)}</div>
+      <div class="meta"><b>Customer:</b> ${esc(sess.customer_name || 'Walk-in')} &nbsp; <b>Guests:</b> ${esc(sess.guest_count || '—')}</div>`}
+      <div class="meta"><b>Date:</b> ${fmtDateTime(new Date())}</div>
       <hr/>
-      <table>
-        <tr><th>Item</th><th class="center">Qty</th><th class="right">Rate</th><th class="right">Total</th></tr>
+      <table class="items">
+        <tr><th>Item</th><th class="qty">Qty</th><th>Rate</th><th>Amount</th></tr>
         ${itemRows}
       </table>
       <hr/>
-      <table>
-        <tr><td>Subtotal</td><td class="right">${formatCurrency(subtotal)}</td></tr>
-        ${discountAmount > 0 ? `<tr><td>Discount${uiState.discountType === 'percentage' ? ` (${uiState.discountValue}%)` : ''}</td><td class="right">-${formatCurrency(discountAmount)}</td></tr>` : ''}
-        ${uiState.showServiceCharge && serviceCharge > 0 ? `<tr><td>Service Charge (${uiState.serviceChargePercent}%)</td><td class="right">${formatCurrency(serviceCharge)}</td></tr>` : ''}
-        <tr class="gst-row"><td>CGST (${halfPct}%)</td><td class="right">${formatCurrency(cgst)}</td></tr>
-        <tr class="gst-row"><td>SGST (${halfPct}%)</td><td class="right">${formatCurrency(sgst)}</td></tr>
-        <tr class="grand-total"><td>Grand Total</td><td class="right">${formatCurrency(total)}</td></tr>
+      <table class="sums">
+        <tr><td>Subtotal</td><td class="amt">${formatCurrency(subtotal)}</td></tr>
+        ${discountAmount > 0 ? `<tr><td>Discount${uiState.discountType === 'percentage' ? ` (${esc(uiState.discountValue)}%)` : ''}</td><td class="amt">-${formatCurrency(discountAmount)}</td></tr>` : ''}
+        ${uiState.showServiceCharge && serviceCharge > 0 ? `<tr><td>Service charge (${esc(uiState.serviceChargePercent)}%)</td><td class="amt">${formatCurrency(serviceCharge)}</td></tr>` : ''}
+        ${taxRows}
+        <tr class="grand"><td>GRAND TOTAL</td><td class="amt">${formatCurrency(total)}</td></tr>
       </table>
-      <hr/>
-      <div class="footer">Thank You! Visit Again</div>
-      <script>window.print();window.close();</script>
+      <div class="footer">${esc(shop.footer)}</div>
       </body></html>`);
-      win.document.close();
-    }, 100);
+    })();
   }, [sessionState.session, sessionState.items, uiState.discountType, uiState.discountValue, uiState.showServiceCharge, uiState.serviceChargePercent, taxRate]);
 
   printRef.current = handlePrint;
@@ -1563,19 +1636,7 @@ export function useBillingData() {
 
   useEffect(() => {
     fetchWorkspaceData();
-    if (!isOnline) return;
-
-    const tableSubscription = supabase
-      .channel('tables-realtime-billing')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'restaurant_tables' }, () => {
-        fetchWorkspaceData();
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(tableSubscription);
-    };
-  }, [fetchWorkspaceData, isOnline]);
+  }, [fetchWorkspaceData]);
 
   /**
    * Orders placed from the diner's phone (QR menu) land on the session like
@@ -1583,8 +1644,10 @@ export function useBillingData() {
    * line now refreshes the floor and the open bill, so the cashier sees the
    * diner's items arrive and only has to print and settle.
    *
-   * RLS scopes what realtime delivers to this restaurant. Bursts (an order and
-   * its lines arrive together) are folded into one refresh.
+   * RLS scopes what realtime delivers to this restaurant. One settle writes
+   * the session, its orders, the bill and the table within a moment of each
+   * other, so a burst is folded into a single refresh; a table changing on its
+   * own (freed, cleaned) touches only the floor, not the open bill.
    */
   const refreshRef = useRef({ fetchWorkspaceData, fetchSessionData });
   refreshRef.current = { fetchWorkspaceData, fetchSessionData };
@@ -1592,18 +1655,24 @@ export function useBillingData() {
   useEffect(() => {
     if (!isOnline) return undefined;
     let timer = null;
-    const refresh = () => {
+    let withSession = false;
+    const schedule = (sessionToo) => {
+      withSession = withSession || sessionToo;
       clearTimeout(timer);
       timer = setTimeout(() => {
-        refreshRef.current.fetchWorkspaceData({ silent: true });
-        refreshRef.current.fetchSessionData({ silent: true });
-      }, 400);
+        refreshRef.current.fetchWorkspaceData();
+        if (withSession) refreshRef.current.fetchSessionData({ silent: true });
+        withSession = false;
+      }, 300);
     };
+    const onFloor = () => schedule(false);
+    const onOrder = () => schedule(true);
     const channel = supabase
-      .channel('orders-realtime-billing')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_sessions' }, refresh)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, refresh)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, refresh)
+      .channel('billing-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'restaurant_tables' }, onFloor)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_sessions' }, onOrder)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, onOrder)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, onOrder)
       .subscribe();
     return () => {
       clearTimeout(timer);
@@ -1615,9 +1684,20 @@ export function useBillingData() {
     fetchSessionData();
   }, [sessionId, fetchSessionData]);
 
+  // The restaurant's name and address for the bill, read before anyone
+  // presses Print so the first bill of the shift does not wait for it.
+  useEffect(() => {
+    loadReceiptProfile();
+  }, []);
+
+  // After queued offline changes reach the server. Not on mount — the effect
+  // above has already loaded the floor, and loading it twice doubled the wait.
+  useEffect(() => {
+    if (isOnline && lastSyncResult) fetchWorkspaceData();
+  }, [lastSyncResult]);
+
   useEffect(() => {
     if (!isOnline) return;
-    fetchWorkspaceData();
     if (!sessionId || !sessionId.startsWith('temp_')) return;
     // The local record is renamed once synced, so looking it up by the temp
     // id found nothing; the id map knows where it went.

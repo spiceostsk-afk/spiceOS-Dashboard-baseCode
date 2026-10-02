@@ -1,22 +1,26 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import * as db from '../lib/db';
-import { fmtDayShort, fmtWeekday } from '../lib/dates';
+import { fmtDayShort, fmtWeekday, isoDay } from '../lib/dates';
+import { dayOpens, tradingDate, tradingDayKey, tradingToday } from '../lib/businessDay';
 
 const FORMAT_CURRENCY = new Intl.NumberFormat('en-IN', {
   style: 'currency', currency: 'INR', minimumFractionDigits: 2,
 });
 
+// Trading days (lib/businessDay.js): "today" opens when the restaurant's day
+// does, which may be 3am rather than midnight.
 function getPeriodRange(period) {
   const now = new Date();
+  const today = tradingToday();
   let start;
   if (period === 'today') {
-    start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    start = dayOpens(today);
   } else if (period === 'week') {
-    const dayOfWeek = now.getDay();
-    start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek);
+    const dayOfWeek = today.getDay();
+    start = dayOpens(new Date(today.getFullYear(), today.getMonth(), today.getDate() - dayOfWeek));
   } else if (period === 'month') {
-    start = new Date(now.getFullYear(), now.getMonth(), 1);
+    start = dayOpens(new Date(today.getFullYear(), today.getMonth(), 1));
   } else {
     start = new Date(0);
   }
@@ -61,16 +65,20 @@ function buildDailyBreakdown(orders, period) {
   const diffDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
   const maxDays = Math.min(diffDays, 31);
 
+  const first = tradingDate(start);
   for (let i = 0; i < maxDays; i++) {
-    const d = new Date(start);
-    d.setDate(start.getDate() + i);
-    const key = d.toISOString().slice(0, 10);
+    const d = new Date(first);
+    d.setDate(first.getDate() + i);
+    // d is already a trading date, so its own calendar date is the key. This
+    // read the UTC date before, which filed every order before 5:30am IST
+    // under the previous day's bar.
+    const key = isoDay(d);
     daysMap[key] = { label: `${fmtWeekday(d)} ${fmtDayShort(d)}`, total: 0 };
   }
 
   for (const o of orders || []) {
     if (!o.created_at) continue;
-    const key = o.created_at.slice(0, 10);
+    const key = tradingDayKey(o.created_at);
     if (daysMap[key]) {
       daysMap[key].total += Number(o.total || 0);
     }

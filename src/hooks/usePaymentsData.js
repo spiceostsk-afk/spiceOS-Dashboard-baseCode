@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { dayOpens, tradingToday } from '../lib/businessDay';
 
 const FORMAT_CURRENCY = new Intl.NumberFormat('en-IN', {
   style: 'currency', currency: 'INR', minimumFractionDigits: 2,
@@ -21,15 +22,16 @@ function calcSummary(payments) {
 
 function filterByDateRange(payments, range) {
   if (!payments || range === 'all') return payments;
-  const now = new Date();
+  // From the opening of the trading day, which may be 3am rather than midnight.
+  const today = tradingToday();
   let start;
   if (range === 'today') {
-    start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    start = dayOpens(today);
   } else if (range === 'week') {
-    const dayOfWeek = now.getDay();
-    start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek);
+    const dayOfWeek = today.getDay();
+    start = dayOpens(new Date(today.getFullYear(), today.getMonth(), today.getDate() - dayOfWeek));
   } else if (range === 'month') {
-    start = new Date(now.getFullYear(), now.getMonth(), 1);
+    start = dayOpens(new Date(today.getFullYear(), today.getMonth(), 1));
   } else {
     return payments;
   }
