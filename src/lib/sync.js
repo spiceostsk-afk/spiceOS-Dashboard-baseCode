@@ -142,8 +142,23 @@ async function runDelete(entry, data) {
   if (error) throw error;
 }
 
+/**
+ * A complimentary bill as a server without migrate_complimentary_bills.sql can
+ * take it: a 100% percentage discount, no reason. Still ₹0 charged on a bill
+ * with value, which the Complimentary Report picks up either way.
+ */
+export function compFallback(params) {
+  const rest = { ...params, p_discount_type: 'percentage' };
+  delete rest.p_comp_reason;
+  return rest;
+}
+
 async function runRpc(entry, params) {
   let { error } = await supabase.rpc(entry.fn, params);
+  if (error && entry.fn === 'record_bill' && params.p_discount_type === 'complimentary') {
+    params = compFallback(params);
+    ({ error } = await supabase.rpc(entry.fn, params));
+  }
   // record_bill without the p_paid_at migration: PostgREST can't find a
   // function taking that argument. Send the bill anyway, stamped at sync time,
   // rather than park a paid bill over a missing timestamp.

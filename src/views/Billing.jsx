@@ -179,6 +179,7 @@ export default function Billing() {
     setEditingQuantities,
     setDiscountType,
     setDiscountValue,
+    setCompReason,
     setServiceChargePercent,
     toggleServiceCharge,
     setSplitPayments,
@@ -445,6 +446,7 @@ export default function Billing() {
           loadingAction={uiState.loadingAction}
           discountType={uiState.discountType}
           discountValue={uiState.discountValue}
+          compReason={uiState.compReason}
           showServiceCharge={uiState.showServiceCharge}
           serviceChargePercent={uiState.serviceChargePercent}
           splitPayments={uiState.splitPayments}
@@ -468,6 +470,7 @@ export default function Billing() {
           onAddManualItem={handleAddManualItem}
           onSetDiscountType={setDiscountType}
           onSetDiscountValue={setDiscountValue}
+          onSetCompReason={setCompReason}
           onToggleServiceCharge={toggleServiceCharge}
           onSetServiceChargePercent={setServiceChargePercent}
           onUpdateSplitPayment={onUpdateSplitPayment}

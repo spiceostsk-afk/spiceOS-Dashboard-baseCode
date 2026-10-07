@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  discountLabel,
   calcSubtotal,
   calcDiscountAmount,
   calcServiceCharge,
@@ -68,6 +69,23 @@ describe('calcDiscountAmount', () => {
   it('ignores negative discount values', () => {
     expect(calcDiscountAmount(1000, 'percentage', -10)).toBe(0);
     expect(calcDiscountAmount(1000, 'flat', -50)).toBe(0);
+  });
+});
+
+describe('complimentary', () => {
+  it('takes the whole subtotal off, whatever value is set', () => {
+    expect(calcDiscountAmount(480, 'complimentary', 0)).toBe(480);
+    expect(calcDiscountAmount(480, 'complimentary', 10)).toBe(480);
+  });
+
+  it('leaves nothing to tax or charge service on', () => {
+    const after = 480 - calcDiscountAmount(480, 'complimentary', 0);
+    expect(calcTotal(after, 0, calcServiceCharge(after, 10))).toBe(0);
+  });
+
+  it('labels the line with who it was for', () => {
+    expect(discountLabel('complimentary', 0, 'Owner')).toBe('Complimentary (Owner)');
+    expect(discountLabel('percentage', 15)).toBe('Discount (15%)');
   });
 });
 

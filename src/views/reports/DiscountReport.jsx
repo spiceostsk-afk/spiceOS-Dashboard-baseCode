@@ -28,7 +28,7 @@ const round = (n, dp = 2) => {
   return Math.round((Number(n) || 0) * f) / f;
 };
 
-const TYPE_LABEL = { percentage: 'Percentage', flat: 'Flat amount' };
+const TYPE_LABEL = { percentage: 'Percentage', flat: 'Flat amount', complimentary: 'Complimentary' };
 
 const GROUPINGS = [
   { key: 'bill', label: 'Every discounted bill' },

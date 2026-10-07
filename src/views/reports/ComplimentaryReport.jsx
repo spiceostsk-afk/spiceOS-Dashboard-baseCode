@@ -8,15 +8,13 @@ import { tradingDayKey } from '../../lib/businessDay';
 /**
  * Complimentary Report — food that left the kitchen and was never charged for.
  *
- * There is no "complimentary" button on the till, so this cannot read a flag.
- * It reads the thing staff actually do instead: settle the table for nothing.
- * A bill counts as complimentary when food worth something was served and the
- * guest was charged nothing — either the whole subtotal was discounted away,
- * or the bill was settled at zero.
+ * A bill counts when the till marked it Complimentary (discount_type, with who
+ * it was for in comp_reason), or — for bills from before that option, or sent
+ * before migrate_complimentary_bills.sql ran — when food worth something was
+ * served and nothing was charged.
  *
  * That definition is stated on the screen rather than buried here, because a
  * report whose rule the reader cannot see is a report they cannot argue with.
- * If comps are ever given a mark of their own, this is the one place to change.
  */
 
 
@@ -36,9 +34,13 @@ const FREE_EPSILON = 1;
 
 const GROUPINGS = [
   { key: 'bill', label: 'Every complimentary bill' },
+  { key: 'reason', label: 'Given to' },
   { key: 'item', label: 'Dish given away' },
   { key: 'day', label: 'Day' },
 ];
+
+// Zero-charge bills that were never marked — their reason was not recorded.
+const UNMARKED = 'Not recorded';
 
 export default function ComplimentaryReport() {
   const periodProps = useReportPeriod('this_month');
@@ -50,6 +52,8 @@ export default function ComplimentaryReport() {
 
     return (bills || [])
       .filter((b) => {
+        if (b.payment_status && b.payment_status !== 'paid') return false;
+        if (b.discount_type === 'complimentary') return true;
         const subtotal = Number(b.subtotal) || 0;
         const charged = Number(b.grand_total) || 0;
         // Food had value, and nothing was taken for it.
@@ -74,6 +78,7 @@ export default function ComplimentaryReport() {
           customer: s?.customer_name || 'Walk-in',
           table: s?.restaurant_tables?.table_number || '—',
           mode: b.payment_method || 'other',
+          reason: b.comp_reason || UNMARKED,
           value: round(Number(b.subtotal) || 0),
           items: lines.reduce((n, l) => n + l.qty, 0),
           lines,
@@ -84,6 +89,18 @@ export default function ComplimentaryReport() {
 
   const rows = useMemo(() => {
     if (groupBy === 'bill') return comps;
+
+    if (groupBy === 'reason') {
+      const map = new Map();
+      comps.forEach((c) => {
+        if (!map.has(c.reason)) map.set(c.reason, { id: c.reason, reason: c.reason, bills: 0, items: 0, value: 0 });
+        const r = map.get(c.reason);
+        r.bills += 1;
+        r.items += c.items;
+        r.value += c.value;
+      });
+      return [...map.values()].map((r) => ({ ...r, value: round(r.value) }));
+    }
 
     if (groupBy === 'item') {
       const map = new Map();
@@ -115,7 +132,9 @@ export default function ComplimentaryReport() {
     const paid = (bills || []).filter((b) => b.payment_status === 'paid');
     const grossAll = paid.reduce((s, b) => s + (Number(b.subtotal) || 0), 0);
     const dishes = new Set(comps.flatMap((c) => c.lines.map((l) => l.name)));
+    const owner = comps.filter((c) => c.reason === 'Owner');
     return {
+      ownerValue: round(owner.reduce((s, c) => s + c.value, 0)),
       bills: comps.length,
       items: comps.reduce((n, c) => n + c.items, 0),
       dishes: dishes.size,
@@ -131,6 +150,13 @@ export default function ComplimentaryReport() {
     };
 
     switch (groupBy) {
+      case 'reason':
+        return [
+          { key: 'reason', label: 'Given to' },
+          { key: 'bills', label: 'Bills', align: 'right', total: true },
+          { key: 'items', label: 'Items', align: 'right', total: true },
+          valueCell,
+        ];
       case 'item':
         return [
           { key: 'name', label: 'Dish' },
@@ -151,6 +177,7 @@ export default function ComplimentaryReport() {
           { key: 'at', label: 'Closed', render: (r) => fmtDateTime(r.at) },
           { key: 'table', label: 'Table' },
           { key: 'customer', label: 'Customer' },
+          { key: 'reason', label: 'Given to' },
           { key: 'items', label: 'Items', align: 'right', total: true },
           {
             key: 'lines',
@@ -174,16 +201,17 @@ export default function ComplimentaryReport() {
         { label: 'Items given', value: num(totals.items) },
         { label: 'Distinct dishes', value: num(totals.dishes) },
         { label: 'Value given away', value: money(totals.value), tone: 'var(--color-danger)' },
+        { label: 'Taken by owner', value: money(totals.ownerValue) },
         { label: 'Of all takings', value: `${totals.ofAll}%` },
       ]}
     >
       <div className="cr-note">
         <Info size={14} />
         <span>
-          A bill counts here when food was served and nothing was charged — the
-          whole amount discounted, or settled at zero. The till has no separate
-          complimentary button, so a comp rung up as a normal discount will show
-          in the Discount Report instead.
+          A bill counts here when it was settled as Complimentary at the till
+          (Discount → Complimentary), or when food was served and nothing was
+          charged. Older zero-charge bills show "Not recorded" under Given to.
+          A partial discount is not a comp — it shows in the Discount Report.
         </span>
       </div>
 

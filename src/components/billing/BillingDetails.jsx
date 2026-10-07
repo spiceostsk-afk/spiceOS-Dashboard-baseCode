@@ -5,7 +5,7 @@ import {
   ArrowLeftRight, Split, LayoutGrid, RefreshCw, Coffee, FileText,
 } from 'lucide-react';
 import { fmtDate } from '../../lib/dates';
-import { TAX_RATE, formatRatePct } from '../../lib/calculations';
+import { TAX_RATE, formatRatePct, COMP_REASONS, discountLabel } from '../../lib/calculations';
 
 const FORMAT_CURRENCY = new Intl.NumberFormat('en-IN', {
   style: 'currency', currency: 'INR', minimumFractionDigits: 2,
@@ -134,9 +134,11 @@ function ItemsList({
 
 function Adjustments({
   discountType, discountValue, subtotal, onSetDiscountType, onSetDiscountValue,
+  compReason, onSetCompReason,
   showServiceCharge, serviceChargePercent, onToggleServiceCharge, onSetServiceChargePercent,
   isPaid,
 }) {
+  const isComp = discountType === 'complimentary';
   return (
     <div className="bd-well">
       <div className="bd-adjust-row">
@@ -150,8 +152,20 @@ function Adjustments({
           <option value="none">None</option>
           <option value="percentage">Percentage</option>
           <option value="flat">Flat amount</option>
+          <option value="complimentary">Complimentary (100% off)</option>
         </select>
-        {discountType !== 'none' && (
+        {isComp && (
+          <select
+            value={compReason}
+            onChange={(e) => onSetCompReason(e.target.value)}
+            disabled={isPaid}
+            className="bd-select"
+            aria-label="Complimentary for"
+          >
+            {COMP_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
+          </select>
+        )}
+        {discountType !== 'none' && !isComp && (
           <input
             type="number"
             min="0"
@@ -196,14 +210,14 @@ function Adjustments({
 
 function Totals({
   subtotal, discountAmount, serviceCharge, cgst, sgst, total, taxRate,
-  discountType, discountValue, showServiceCharge, serviceChargePercent,
+  discountType, discountValue, compReason, showServiceCharge, serviceChargePercent,
 }) {
   return (
     <div className="bd-totals tnum">
       <div className="bd-total-row"><span>Subtotal</span><b>{fmt(subtotal)}</b></div>
       {discountAmount > 0 && (
         <div className="bd-total-row">
-          <span>Discount{discountType === 'percentage' ? ` (${discountValue}%)` : ''}</span>
+          <span>{discountLabel(discountType, discountValue, compReason)}</span>
           <b style={{ color: 'var(--color-danger)' }}>−{fmt(discountAmount)}</b>
         </div>
       )}
@@ -219,7 +233,7 @@ function Totals({
 
 /* ---------------------------------------------------------------- invoice */
 
-function InvoicePreview({ session, items, subtotal, discountAmount, serviceCharge, cgst, sgst, total, taxRate, discountType, discountValue, showServiceCharge, serviceChargePercent }) {
+function InvoicePreview({ session, items, subtotal, discountAmount, serviceCharge, cgst, sgst, total, taxRate, discountType, discountValue, compReason, showServiceCharge, serviceChargePercent }) {
   return (
     <div className="bd-receipt">
       <div className="bd-receipt__logo">
@@ -244,7 +258,7 @@ function InvoicePreview({ session, items, subtotal, discountAmount, serviceCharg
         <div className="bd-receipt__row"><span>Subtotal</span><span>{fmt(subtotal)}</span></div>
         {discountAmount > 0 && (
           <div className="bd-receipt__row" style={{ color: 'var(--color-danger)' }}>
-            <span>Discount {discountType === 'percentage' ? `(${discountValue}%)` : ''}</span>
+            <span>{discountLabel(discountType, discountValue, compReason)}</span>
             <span>−{fmt(discountAmount)}</span>
           </div>
         )}
@@ -382,10 +396,10 @@ export default function BillingDetails({
   sessionId, session, items, voidItems = [], loading, error, isPaid,
   subtotal, discountAmount, serviceCharge, cgst, sgst, total, taxRate,
   paymentMethod, isEditingQuantities, loadingAction,
-  discountType, discountValue, showServiceCharge, serviceChargePercent, splitPayments,
+  discountType, discountValue, compReason, showServiceCharge, serviceChargePercent, splitPayments,
   onCloseSession, onNavigateMenu, onEditItem, onUpdateQty, onDeleteItem, onToggleEdit,
   onSelectPayment, onSettle, onPrint, onPrintKot, onReprintKot, onMoveTable, onMergeBill, onSplit, onHold, onVoid,
-  isOnline, onAddManualItem, onSetDiscountType, onSetDiscountValue,
+  isOnline, onAddManualItem, onSetDiscountType, onSetDiscountValue, onSetCompReason,
   onToggleServiceCharge, onSetServiceChargePercent,
   onUpdateSplitPayment, onAddSplitPayment, onRemoveSplitPayment, onSettlePartial,
 }) {
@@ -483,6 +497,8 @@ export default function BillingDetails({
           subtotal={subtotal}
           onSetDiscountType={onSetDiscountType}
           onSetDiscountValue={onSetDiscountValue}
+          compReason={compReason}
+          onSetCompReason={onSetCompReason}
           showServiceCharge={showServiceCharge}
           serviceChargePercent={serviceChargePercent}
           onToggleServiceCharge={onToggleServiceCharge}
@@ -544,6 +560,7 @@ export default function BillingDetails({
         total={total}
         discountType={discountType}
         discountValue={discountValue}
+        compReason={compReason}
         showServiceCharge={showServiceCharge}
         serviceChargePercent={serviceChargePercent}
       />
@@ -614,6 +631,7 @@ export default function BillingDetails({
           total={total}
           discountType={discountType}
           discountValue={discountValue}
+          compReason={compReason}
           showServiceCharge={showServiceCharge}
           serviceChargePercent={serviceChargePercent}
         />

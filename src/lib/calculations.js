@@ -41,11 +41,24 @@ export function calcSubtotal(items) {
   return items.reduce((sum, item) => sum + item.price * item.qty, 0);
 }
 
+// Who a complimentary bill was given to. The first is the default because the
+// common case is the owner taking something off their own menu.
+export const COMP_REASONS = ['Owner', 'Staff meal', 'Guest of the house', 'Other'];
+
 export function calcDiscountAmount(subtotal, discountType, discountValue) {
+  // Complimentary is the whole bill, whatever value happens to be typed.
+  if (discountType === 'complimentary') return subtotal;
   if (!discountValue || discountValue <= 0) return 0;
   if (discountType === 'percentage') return subtotal * (Math.min(discountValue, 100) / 100);
   if (discountType === 'flat') return Math.min(discountValue, subtotal);
   return 0;
+}
+
+/** The words beside the discount line, on screen and on paper. */
+export function discountLabel(discountType, discountValue, compReason) {
+  if (discountType === 'complimentary') return `Complimentary${compReason ? ` (${compReason})` : ''}`;
+  if (discountType === 'percentage') return `Discount (${discountValue}%)`;
+  return 'Discount';
 }
 
 export function calcServiceCharge(subtotal, serviceChargePercent) {

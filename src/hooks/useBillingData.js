@@ -6,7 +6,7 @@ import * as db from '../lib/db';
 import {
   TABLE_CLEANUP_DELAY_MS,
   SESSION_STATUS, TABLE_STATUS, ORDER_STATUS,
-  calcSubtotal, calcDiscountAmount, calcServiceCharge,
+  calcSubtotal, calcDiscountAmount, calcServiceCharge, discountLabel, COMP_REASONS,
   calcTax, calcCgst, calcSgst, calcTotal,
   FORMAT_CURRENCY, formatRatePct,
 } from '../lib/calculations';
@@ -17,7 +17,7 @@ import { TICKET_CSS, esc, printHtml, loadReceiptProfile } from '../lib/print';
 import {
   nextTakeawayToken, pickTakeawayCounter, expandTakeawayRows, isPackingCounter, tokenOf,
 } from '../lib/takeaway';
-import { resolveId, newUuid, hasPendingSync } from '../lib/sync';
+import { resolveId, newUuid, hasPendingSync, compFallback } from '../lib/sync';
 import { groupBillLines, planLineQtyChange } from '../lib/billLines';
 import { isNetworkError, reportNetworkFailure } from '../lib/connectivity';
 
@@ -276,6 +276,7 @@ export function useBillingData() {
     loadingAction: false,
     discountType: 'none',
     discountValue: 0,
+    compReason: COMP_REASONS[0],
     serviceChargePercent: 0,
     showServiceCharge: false,
     splitPayments: [],
@@ -340,6 +341,18 @@ export function useBillingData() {
   const setDiscountValue = useCallback((discountValue) => {
     setUiState((prev) => ({ ...prev, discountValue: Math.max(0, discountValue) }));
   }, []);
+
+  const setCompReason = useCallback((compReason) => {
+    setUiState((prev) => ({ ...prev, compReason }));
+  }, []);
+
+  // A discount belongs to one table. Left in place it followed the cashier to
+  // the next bill — and a complimentary one would zero that bill unnoticed.
+  useEffect(() => {
+    setUiState((prev) => (prev.discountType === 'none' && !prev.discountValue
+      ? prev
+      : { ...prev, discountType: 'none', discountValue: 0, compReason: COMP_REASONS[0] }));
+  }, [sessionId]);
 
   const setServiceChargePercent = useCallback((value) => {
     setUiState((prev) => ({ ...prev, serviceChargePercent: value, showServiceCharge: value > 0 }));
@@ -727,12 +740,14 @@ export function useBillingData() {
        * idempotent on the session, so a partial payment followed by the rest
        * updates one row rather than making two.
        */
+      const isComp = uiState.discountType === 'complimentary';
       const billParams = (paid) => ({
         p_session_id: sessionId,
         p_payment_method: uiState.paymentMethod || 'cash',
         p_subtotal: billSubtotal,
         p_discount_type: uiState.discountType === 'none' ? null : uiState.discountType,
         p_discount_amount: billDiscount,
+        ...(isComp ? { p_comp_reason: uiState.compReason || COMP_REASONS[0] } : {}),
         p_service_charge: billService,
         p_tax: billTax,
         p_total: curTotal,
@@ -743,7 +758,13 @@ export function useBillingData() {
       let billProblem = null;
 
       const writeBill = async (paid) => {
-        const { error: billError } = await supabase.rpc('record_bill', billParams(paid));
+        let { error: billError } = await supabase.rpc('record_bill', billParams(paid));
+        // Before migrate_complimentary_bills.sql runs, the server knows neither
+        // p_comp_reason nor the 'complimentary' type. Record it as a 100%
+        // discount rather than lose the bill — the report still finds it.
+        if (billError && isComp && !isNetworkError(billError)) {
+          ({ error: billError } = await supabase.rpc('record_bill', compFallback(billParams(paid))));
+        }
         // Lost connection: let the caller save the whole settle locally.
         if (billError && isNetworkError(billError)) throw billError;
         // A bill the server rejects must not strand a paid table on the floor;
@@ -783,6 +804,7 @@ export function useBillingData() {
             ...(session.metadata || {}),
             discountType: uiState.discountType,
             discountValue: uiState.discountValue,
+            compReason: isComp ? uiState.compReason : undefined,
             showServiceCharge: uiState.showServiceCharge,
             serviceChargePercent: uiState.serviceChargePercent,
             amountPaid: uiState.amountPaid,
@@ -917,7 +939,7 @@ export function useBillingData() {
     } finally {
       setLoadingAction(false);
     }
-  }, [sessionId, sessionState.session, state.activeTab, isOnline, uiState.splitPayments, uiState.amountPaid, uiState.discountType, uiState.discountValue, uiState.showServiceCharge, uiState.serviceChargePercent, uiState.paymentMethod, sessionState.items, setSearchParams, fetchWorkspaceData, setLoadingAction, taxRate, scheduleTableCleanup]);
+  }, [sessionId, sessionState.session, state.activeTab, isOnline, uiState.splitPayments, uiState.amountPaid, uiState.discountType, uiState.discountValue, uiState.compReason, uiState.showServiceCharge, uiState.serviceChargePercent, uiState.paymentMethod, sessionState.items, setSearchParams, fetchWorkspaceData, setLoadingAction, taxRate, scheduleTableCleanup]);
 
   const handleAddManualItem = useCallback(
     async (name, qty, unitPrice) => {
@@ -1394,7 +1416,7 @@ export function useBillingData() {
       <hr/>
       <table class="sums">
         <tr><td>Subtotal</td><td class="amt">${formatCurrency(subtotal)}</td></tr>
-        ${discountAmount > 0 ? `<tr><td>Discount${uiState.discountType === 'percentage' ? ` (${esc(uiState.discountValue)}%)` : ''}</td><td class="amt">-${formatCurrency(discountAmount)}</td></tr>` : ''}
+        ${discountAmount > 0 ? `<tr><td>${esc(discountLabel(uiState.discountType, uiState.discountValue, uiState.compReason))}</td><td class="amt">-${formatCurrency(discountAmount)}</td></tr>` : ''}
         ${uiState.showServiceCharge && serviceCharge > 0 ? `<tr><td>Service charge (${esc(uiState.serviceChargePercent)}%)</td><td class="amt">${formatCurrency(serviceCharge)}</td></tr>` : ''}
         ${taxRows}
         <tr class="grand"><td>GRAND TOTAL</td><td class="amt">${formatCurrency(total)}</td></tr>
@@ -1402,7 +1424,7 @@ export function useBillingData() {
       <div class="footer">${esc(shop.footer)}</div>
       </body></html>`);
     })();
-  }, [sessionState.session, sessionState.items, uiState.discountType, uiState.discountValue, uiState.showServiceCharge, uiState.serviceChargePercent, taxRate]);
+  }, [sessionState.session, sessionState.items, uiState.discountType, uiState.discountValue, uiState.compReason, uiState.showServiceCharge, uiState.serviceChargePercent, taxRate]);
 
   printRef.current = handlePrint;
 
@@ -1761,6 +1783,7 @@ export function useBillingData() {
     setEditingQuantities,
     setDiscountType,
     setDiscountValue,
+    setCompReason,
     setServiceChargePercent,
     toggleServiceCharge,
     setSplitPayments,

@@ -131,10 +131,12 @@ export function useSalesData(range) {
       // Payment mode lives on the bill, not the order.
       let billRows = [];
       if (ids.length > 0) {
-        const { data: b, error: bErr } = await supabase
-          .from('bills')
-          .select('id, session_id, order_id, grand_total, subtotal, gst_amount, service_charge, discount_type, discount_amount, payment_method, payment_status, paid_at')
-          .in('session_id', ids);
+        const cols = 'id, session_id, order_id, grand_total, subtotal, gst_amount, service_charge, discount_type, discount_amount, payment_method, payment_status, paid_at';
+        const billsWith = (c) => supabase.from('bills').select(c).in('session_id', ids);
+        let { data: b, error: bErr } = await billsWith(`${cols}, comp_reason`);
+        // comp_reason arrives with migrate_complimentary_bills.sql; until then
+        // every report must still load.
+        if (bErr && bErr.code === '42703') ({ data: b, error: bErr } = await billsWith(cols));
         if (bErr) throw bErr;
         billRows = b || [];
       }
