@@ -21,13 +21,13 @@ import { tradingDayKey } from '../../lib/businessDay';
 const LABELS = {
   cash: 'Cash', card: 'Card', upi: 'UPI', qr: 'UPI',
   zomato: 'Zomato', swiggy: 'Swiggy',
-  home_delivery: 'Home delivery', other: 'Other',
+  home_delivery: 'Home delivery', other: 'Other', complimentary: 'Complimentary',
 };
 
 const TONES = {
   Cash: 'tone-green', Card: 'tone-blue', UPI: 'tone-blue',
   Zomato: 'tone-red', Swiggy: 'tone-amber',
-  'Home delivery': 'tone-neutral', Other: 'tone-neutral',
+  'Home delivery': 'tone-neutral', Other: 'tone-neutral', Complimentary: 'tone-neutral',
 };
 
 export default function PaymentModeReport() {

@@ -32,6 +32,7 @@ const PAYMENT_MODES = {
   swiggy: { label: 'Swiggy', tone: 'tone-amber' },
   home_delivery: { label: 'Home delivery', tone: 'tone-neutral' },
   other: { label: 'Other', tone: 'tone-neutral' },
+  complimentary: { label: 'Complimentary', tone: 'tone-neutral' },
 };
 
 const modeOf = (method) => PAYMENT_MODES[String(method || '').toLowerCase()]
@@ -90,6 +91,7 @@ const EDITABLE_MODES = [
   { key: 'swiggy', label: 'Swiggy' },
   { key: 'home_delivery', label: 'Home delivery' },
   { key: 'other', label: 'Other' },
+  { key: 'complimentary', label: 'Complimentary' },
 ];
 
 /**

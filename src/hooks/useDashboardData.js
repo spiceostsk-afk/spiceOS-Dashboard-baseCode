@@ -162,11 +162,11 @@ function buildDailyTrend(orders, from, to) {
 const CHANNEL_LABELS = {
   cash: 'Cash', card: 'Card', upi: 'UPI', qr: 'UPI',
   zomato: 'Zomato', swiggy: 'Swiggy',
-  home_delivery: 'Home delivery', other: 'Other',
+  home_delivery: 'Home delivery', other: 'Other', complimentary: 'Complimentary',
 };
 
 /** The order the client reads them in, so the row never moves under them. */
-const CHANNEL_ORDER = ['Zomato', 'Swiggy', 'Cash', 'UPI', 'Card', 'Home delivery', 'Other'];
+const CHANNEL_ORDER = ['Zomato', 'Swiggy', 'Cash', 'UPI', 'Card', 'Home delivery', 'Other', 'Complimentary'];
 
 export function buildChannelSplit(bills) {
   const byMode = new Map();

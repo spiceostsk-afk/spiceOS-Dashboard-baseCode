@@ -322,8 +322,16 @@ export function useBillingData() {
     }));
   }, []);
 
+  // The Complimentary tile is both the mode and the discount: choosing it
+  // zeroes the bill, and choosing any other mode afterwards puts the charge back.
   const setPaymentMethod = useCallback((method) => {
-    setUiState((prev) => ({ ...prev, paymentMethod: method }));
+    setUiState((prev) => {
+      if (method === 'complimentary') {
+        return { ...prev, paymentMethod: method, discountType: 'complimentary', discountValue: 0 };
+      }
+      const wasComp = prev.discountType === 'complimentary';
+      return { ...prev, paymentMethod: method, ...(wasComp ? { discountType: 'none', discountValue: 0 } : {}) };
+    });
   }, []);
 
   const setEditingQuantities = useCallback((editing) => {
@@ -351,7 +359,13 @@ export function useBillingData() {
   useEffect(() => {
     setUiState((prev) => (prev.discountType === 'none' && !prev.discountValue
       ? prev
-      : { ...prev, discountType: 'none', discountValue: 0, compReason: COMP_REASONS[0] }));
+      : {
+        ...prev,
+        discountType: 'none',
+        discountValue: 0,
+        compReason: COMP_REASONS[0],
+        paymentMethod: prev.paymentMethod === 'complimentary' ? 'card' : prev.paymentMethod,
+      }));
   }, [sessionId]);
 
   const setServiceChargePercent = useCallback((value) => {

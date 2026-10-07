@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   Printer, Edit3, CreditCard, Banknote, QrCode, X, Minus, Plus, Trash2, Check,
-  Bike, Truck, Utensils,
+  Bike, Truck, Utensils, Gift,
   ArrowLeftRight, Split, LayoutGrid, RefreshCw, Coffee, FileText,
 } from 'lucide-react';
 import { fmtDate } from '../../lib/dates';
@@ -134,51 +134,40 @@ function ItemsList({
 
 function Adjustments({
   discountType, discountValue, subtotal, onSetDiscountType, onSetDiscountValue,
-  compReason, onSetCompReason,
   showServiceCharge, serviceChargePercent, onToggleServiceCharge, onSetServiceChargePercent,
   isPaid,
 }) {
   const isComp = discountType === 'complimentary';
   return (
     <div className="bd-well">
-      <div className="bd-adjust-row">
-        <div className="bd-adjust-label">Discount</div>
-        <select
-          value={discountType}
-          onChange={(e) => onSetDiscountType(e.target.value)}
-          disabled={isPaid}
-          className="bd-select"
-        >
-          <option value="none">None</option>
-          <option value="percentage">Percentage</option>
-          <option value="flat">Flat amount</option>
-          <option value="complimentary">Complimentary (100% off)</option>
-        </select>
-        {isComp && (
+      {!isComp && (
+        <div className="bd-adjust-row">
+          <div className="bd-adjust-label">Discount</div>
           <select
-            value={compReason}
-            onChange={(e) => onSetCompReason(e.target.value)}
+            value={discountType}
+            onChange={(e) => onSetDiscountType(e.target.value)}
             disabled={isPaid}
             className="bd-select"
-            aria-label="Complimentary for"
           >
-            {COMP_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
+            <option value="none">None</option>
+            <option value="percentage">Percentage</option>
+            <option value="flat">Flat amount</option>
           </select>
-        )}
-        {discountType !== 'none' && !isComp && (
-          <input
-            type="number"
-            min="0"
-            max={discountType === 'percentage' ? 100 : subtotal}
-            step={discountType === 'percentage' ? '1' : '0.01'}
-            value={discountValue || ''}
-            onChange={(e) => onSetDiscountValue(parseFloat(e.target.value) || 0)}
-            placeholder={discountType === 'percentage' ? '%' : '₹'}
-            disabled={isPaid}
-            className="bd-num"
-          />
-        )}
-      </div>
+          {discountType !== 'none' && (
+            <input
+              type="number"
+              min="0"
+              max={discountType === 'percentage' ? 100 : subtotal}
+              step={discountType === 'percentage' ? '1' : '0.01'}
+              value={discountValue || ''}
+              onChange={(e) => onSetDiscountValue(parseFloat(e.target.value) || 0)}
+              placeholder={discountType === 'percentage' ? '%' : '₹'}
+              disabled={isPaid}
+              className="bd-num"
+            />
+          )}
+        </div>
+      )}
 
       <div className="bd-adjust-row">
         <div className="bd-adjust-label">Service charge</div>
@@ -340,7 +329,7 @@ function SplitPaymentBlock({ splitPayments, total, isPaid, onUpdateSplitPayment,
 
 /* -------------------------------------------------------------- settlement */
 
-function PaymentBlock({ paymentMethod, total, isPaid, itemsEmpty, loadingAction, onSelectPayment, onSettle, onPrint }) {
+function PaymentBlock({ paymentMethod, total, isPaid, itemsEmpty, loadingAction, onSelectPayment, onSettle, onPrint, compReason, onSetCompReason }) {
   /**
    * How the money arrived. The aggregators are payment modes rather than
    * payment types — Zomato settles the bill on the customer's behalf — so
@@ -355,7 +344,11 @@ function PaymentBlock({ paymentMethod, total, isPaid, itemsEmpty, loadingAction,
     { key: 'swiggy', label: 'Swiggy', Icon: Bike },
     { key: 'home_delivery', label: 'Home delivery', Icon: Truck },
     { key: 'other', label: 'Other', Icon: Utensils },
+    // Not a way of paying but a way of not paying: the bill goes to ₹0 and is
+    // recorded as complimentary, with who it was for (see useBillingData).
+    { key: 'complimentary', label: 'Complimentary', Icon: Gift },
   ];
+  const isComp = paymentMethod === 'complimentary';
 
   return (
     <div className="bd-pay">
@@ -372,6 +365,23 @@ function PaymentBlock({ paymentMethod, total, isPaid, itemsEmpty, loadingAction,
           </button>
         ))}
       </div>
+
+      {isComp && (
+        <div className="bd-adjust-row bd-comp-row">
+          <div className="bd-adjust-label">
+            Given to <span className="bd-comp-note">· 100% off</span>
+          </div>
+          <select
+            value={compReason}
+            onChange={(e) => onSetCompReason(e.target.value)}
+            disabled={isPaid}
+            className="bd-select"
+            aria-label="Complimentary for"
+          >
+            {COMP_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
+          </select>
+        </div>
+      )}
 
       <div className="bd-pay__row">
         <button
@@ -497,8 +507,6 @@ export default function BillingDetails({
           subtotal={subtotal}
           onSetDiscountType={onSetDiscountType}
           onSetDiscountValue={onSetDiscountValue}
-          compReason={compReason}
-          onSetCompReason={onSetCompReason}
           showServiceCharge={showServiceCharge}
           serviceChargePercent={serviceChargePercent}
           onToggleServiceCharge={onToggleServiceCharge}
@@ -608,6 +616,8 @@ export default function BillingDetails({
 
       <PaymentBlock
         paymentMethod={paymentMethod}
+        compReason={compReason}
+        onSetCompReason={onSetCompReason}
         total={total}
         isPaid={isPaid}
         itemsEmpty={items.length === 0}
@@ -706,6 +716,8 @@ function BillingStyles() {
       .bd-adjust-row { display: flex; align-items: center; gap: 10px; }
       .bd-adjust-row + .bd-adjust-row { margin-top: 10px; }
       .bd-adjust-label { flex: 1; font-size: 13.5px; font-weight: 600; }
+      .bd-comp-note { color: var(--color-danger); font-weight: 600; }
+      .bd-comp-row { margin-top: 10px; }
 
       .bd-select, .bd-num, .bd-text {
         height: 36px;

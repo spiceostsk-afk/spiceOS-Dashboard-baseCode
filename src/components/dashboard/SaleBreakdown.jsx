@@ -13,6 +13,7 @@ const TONES = {
   Card: '#6366F1',
   'Home delivery': '#7C7F87',
   Other: '#9CA0A8',
+  Complimentary: '#C4C7CD',
 };
 
 const ITEM_ROWS = 12;
