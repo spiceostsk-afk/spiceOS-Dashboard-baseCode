@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { X, ArrowRight } from 'lucide-react';
 import SearchSelect from '../SearchSelect';
 import { fmtDate } from '../../lib/dates';
+import { supabase } from '../../lib/supabase';
+import { isNetworkError } from '../../lib/connectivity';
 
 function Modal({ onClose, title, width, children }) {
   return (
@@ -399,6 +401,71 @@ export function VoidBillModal({ voidReason, loadingAction, onClose, onSetReason,
           Void bill
         </button>
       </div>
+    </Modal>
+  );
+}
+
+/**
+ * A complimentary bill gives the food away, so it needs the owner's login
+ * password. The database checks it (verify_owner_password) against the hash
+ * sign-in uses, without signing anyone in or out. That needs the server, so it
+ * can't be approved offline.
+ */
+export function CompPasswordModal({ onClose, onApproved }) {
+  const [password, setPassword] = useState('');
+  const [checking, setChecking] = useState(false);
+  const [error, setError] = useState(null);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!password || checking) return;
+    setChecking(true);
+    setError(null);
+    try {
+      const { data, error: rpcError } = await supabase.rpc('verify_owner_password', { p_password: password });
+      if (rpcError) throw rpcError;
+      if (data === true) {
+        onApproved();
+        return;
+      }
+      setError("That isn't the owner's password.");
+      setPassword('');
+    } catch (err) {
+      setError(isNetworkError(err)
+        ? "No connection. The owner's password can only be checked online."
+        : `Could not check the password: ${err.message}`);
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  return (
+    <Modal onClose={onClose} title="Owner approval needed">
+      <form onSubmit={submit}>
+        <div className="field">
+          <label>Owner's password</label>
+          <input
+            type="password"
+            autoComplete="off"
+            autoFocus
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Owner's login password"
+          />
+          <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 6 }}>
+            A complimentary bill is recorded at ₹0. Ask the owner to enter their password.
+          </div>
+          {error && (
+            <div role="alert" style={{ fontSize: 13, color: 'var(--color-danger)', marginTop: 8 }}>{error}</div>
+          )}
+        </div>
+        <div className="modal__actions">
+          <button type="button" className="btn btn--ghost" onClick={onClose}>Cancel</button>
+          <button type="submit" className="btn btn--primary" disabled={!password || checking}>
+            {checking ? 'Checking…' : 'Approve'}
+          </button>
+        </div>
+      </form>
     </Modal>
   );
 }

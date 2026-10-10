@@ -5,6 +5,7 @@ import {
 import { useOrdersData } from '../hooks/useOrdersData';
 import { useOrderAdmin } from '../hooks/useOrderAdmin';
 import { EditOrderModal, VoidOrderModal, DeleteOrderModal } from './OrderAdminModals';
+import { CompPasswordModal } from '../components/billing/Modals';
 import { fmtDate, fmtDateTime, fmtDateWithWeekday, fmtTime } from '../lib/dates';
 import { groupBillLines } from '../lib/billLines';
 import { tradingDayKey } from '../lib/businessDay';
@@ -102,13 +103,21 @@ function PaymentEditor({ order, admin, onSaved }) {
   const current = order.paymentMethod === 'upi' ? 'qr' : (order.paymentMethod || '');
   const [mode, setMode] = useState(current);
   const [error, setError] = useState(null);
+  const [askPassword, setAskPassword] = useState(false);
   const dirty = mode && mode !== current;
 
-  const save = async () => {
+  const commit = async () => {
     setError(null);
     const res = await admin.setPaymentMethod(order.id, mode);
     if (!res.success) setError(res.error);
     else onSaved?.(EDITABLE_MODES.find((m) => m.key === mode)?.label || mode);
+  };
+
+  // Turning a paid bill complimentary zeroes it, the same as at the till, so
+  // it needs the owner's password here too.
+  const save = () => {
+    if (mode === 'complimentary') setAskPassword(true);
+    else commit();
   };
 
   return (
@@ -122,6 +131,15 @@ function PaymentEditor({ order, admin, onSaved }) {
         Save
       </button>
       {error && <span className="oh-pay__err">{error}</span>}
+      {askPassword && (
+        <CompPasswordModal
+          onClose={() => setAskPassword(false)}
+          onApproved={() => {
+            setAskPassword(false);
+            commit();
+          }}
+        />
+      )}
     </div>
   );
 }

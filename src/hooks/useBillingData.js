@@ -76,7 +76,13 @@ async function packingCounterIds(tableIds, { online }) {
   return new Set(tables.filter((t) => tableIds.includes(t.id) && isPackingCounter(t)).map((t) => t.id));
 }
 
-async function closeSessionsForTables(allTableIds, { online }) {
+/**
+ * `startedBefore` limits the close to sessions opened before that moment. The
+ * post-settle cleanup passes the settle time: without it, a guest seated on the
+ * table inside the cleanup delay had their brand-new session closed under them,
+ * leaving the table occupied with nothing open behind it.
+ */
+async function closeSessionsForTables(allTableIds, { online, startedBefore = null }) {
   if (!allTableIds || allTableIds.length === 0) return;
   const skip = await packingCounterIds(allTableIds, { online });
   const tableIds = allTableIds.filter((id) => !skip.has(id));
@@ -84,11 +90,13 @@ async function closeSessionsForTables(allTableIds, { online }) {
   const ended_at = new Date().toISOString();
 
   if (online) {
-    const { error } = await supabase
+    let query = supabase
       .from('customer_sessions')
       .update({ session_status: SESSION_STATUS.completed, ended_at })
       .in('table_id', tableIds)
       .in('session_status', OPEN_SESSION_STATUSES);
+    if (startedBefore) query = query.lt('started_at', startedBefore);
+    const { error } = await query;
     if (error) throw error;
     return;
   }
@@ -97,6 +105,7 @@ async function closeSessionsForTables(allTableIds, { online }) {
   for (const session of sessions) {
     if (!tableIds.includes(session.table_id)) continue;
     if (!OPEN_SESSION_STATUSES.includes(session.session_status)) continue;
+    if (startedBefore && !(session.started_at < startedBefore)) continue;
     await db.put('sessions', { ...session, session_status: SESSION_STATUS.completed, ended_at });
     await db.enqueueSync({
       action: 'update',
@@ -285,7 +294,9 @@ export function useBillingData() {
     holdNote: '',
   });
 
-  const cleanupTimerRef = useRef(null);
+  // One pending cleanup per table: a single shared timer meant settling a
+  // second table within the delay cancelled the first table's cleanup.
+  const cleanupTimersRef = useRef(new Map());
 
   const [modalState, setModalState] = useState({
     showAssignModal: false,
@@ -594,6 +605,13 @@ export function useBillingData() {
         // A takeaway files under a packing counter without taking it.
         const occupies = !isPackingCounter(table);
 
+        // Seated during a just-settled table's cleanup delay: that cleanup is
+        // for the previous guest and must not touch this one.
+        if (occupies && cleanupTimersRef.current.has(table.id)) {
+          clearTimeout(cleanupTimersRef.current.get(table.id));
+          cleanupTimersRef.current.delete(table.id);
+        }
+
         const openLocally = async () => {
           await db.put('sessions', { id: newSessionId, ...sessionData });
           await db.enqueueSync({
@@ -672,18 +690,36 @@ export function useBillingData() {
     }
   }, [state.tables, isOnline, setLoadingAction]);
 
+  const cancelTableCleanup = useCallback((tableId) => {
+    const timers = cleanupTimersRef.current;
+    if (timers.has(tableId)) {
+      clearTimeout(timers.get(tableId));
+      timers.delete(tableId);
+    }
+  }, []);
+
   const scheduleTableCleanup = useCallback(
     (tableId, delayMs) => {
-      if (cleanupTimerRef.current) clearTimeout(cleanupTimerRef.current);
-      cleanupTimerRef.current = setTimeout(async () => {
+      if (!tableId) return;
+      // Only what was on the table when it was settled is cleaned up. A guest
+      // seated during the delay (07-Oct G2: 61 s after the settle) keeps the
+      // table and their session.
+      const settledAt = new Date().toISOString();
+      cancelTableCleanup(tableId);
+      cleanupTimersRef.current.set(tableId, setTimeout(async () => {
+        cleanupTimersRef.current.delete(tableId);
         try {
           const online = navigator.onLine;
           if (online) {
-            await supabase.from('restaurant_tables').update({ status: TABLE_STATUS.available }).eq('id', tableId);
+            // Still 'cleaning' means nobody has been seated since the settle.
+            await supabase.from('restaurant_tables')
+              .update({ status: TABLE_STATUS.available })
+              .eq('id', tableId)
+              .eq('status', TABLE_STATUS.cleaning);
           } else {
             const tables = await db.getAll('tables');
             const target = tables.find((t) => t.id === tableId);
-            if (target) {
+            if (target && target.status === TABLE_STATUS.cleaning) {
               await db.put('tables', { ...target, status: TABLE_STATUS.available });
               await db.enqueueSync({
                 action: 'update', table: 'restaurant_tables',
@@ -693,19 +729,21 @@ export function useBillingData() {
           }
           // Belt-and-braces: the settle path already completed the session, but
           // the table must never go available with a live session behind it.
-          await closeSessionsForTables([tableId], { online });
+          await closeSessionsForTables([tableId], { online, startedBefore: settledAt });
           await fetchWorkspaceData();
         } catch (err) {
           // auto-cleanup failed silently; Free All button handles leftovers
         }
-      }, delayMs);
+      }, delayMs));
     },
-    [fetchWorkspaceData]
+    [fetchWorkspaceData, cancelTableCleanup]
   );
 
   useEffect(() => {
+    const timers = cleanupTimersRef.current;
     return () => {
-      if (cleanupTimerRef.current) clearTimeout(cleanupTimerRef.current);
+      timers.forEach((t) => clearTimeout(t));
+      timers.clear();
     };
   }, []);
 

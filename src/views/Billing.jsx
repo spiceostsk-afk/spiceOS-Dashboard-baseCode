@@ -18,6 +18,7 @@ import {
   EditItemModal,
   VoidBillModal,
   ReprintBillModal,
+  CompPasswordModal,
 } from '../components/billing/Modals';
 import { fmtDate, fmtTime } from '../lib/dates';
 import { dayOpens, tradingToday } from '../lib/businessDay';
@@ -219,7 +220,18 @@ export default function Billing() {
   } = useBillingData();
 
   const [showVoidModal, setShowVoidModal] = useState(false);
+  const [showCompPassword, setShowCompPassword] = useState(false);
   const [reprintSession, setReprintSession] = useState(null);
+
+  // Complimentary zeroes the bill, so it waits for the owner's password.
+  // Every other mode applies at once.
+  const onSelectPayment = useCallback((method) => {
+    if (method === 'complimentary' && uiState.paymentMethod !== 'complimentary') {
+      setShowCompPassword(true);
+      return;
+    }
+    setPaymentMethod(method);
+  }, [uiState.paymentMethod, setPaymentMethod]);
   const [showShiftModal, setShowShiftModal] = useState(false);
 
   const onTableClick = useCallback(
@@ -456,7 +468,7 @@ export default function Billing() {
           onUpdateQty={onUpdateQty}
           onDeleteItem={onDeleteItem}
           onToggleEdit={() => setEditingQuantities(!uiState.isEditingQuantities)}
-          onSelectPayment={setPaymentMethod}
+          onSelectPayment={onSelectPayment}
           onSettle={handleMarkAsPaid}
           onPrint={() => handlePrint('bill')}
           onPrintKot={() => handlePrint('kot')}
@@ -575,6 +587,16 @@ export default function Billing() {
           onClose={() => setShowVoidModal(false)}
           onSetReason={setVoidReason}
           onConfirm={onConfirmVoid}
+        />
+      )}
+
+      {showCompPassword && (
+        <CompPasswordModal
+          onClose={() => setShowCompPassword(false)}
+          onApproved={() => {
+            setShowCompPassword(false);
+            setPaymentMethod('complimentary');
+          }}
         />
       )}
 
