@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useOutlet } from '../context/OutletContext';
+import { dayOpens, dayCloses } from '../lib/businessDay';
 
 /**
  * The entries behind one number on the Stock Summary.
@@ -88,12 +89,16 @@ export function useMovementDetail(cell, range) {
       if (!range.allOutlets && outletId) q = q.eq('outlet_id', outletId);
 
       // Opening is everything before the range started; every other column is
-      // what happened inside it.
+      // what happened inside it. Business days, as the report counts them: a
+      // 1am order belongs to the night before.
+      const [fy, fm, fd] = range.from.split('-').map(Number);
+      const [ty, tm, td] = range.to.split('-').map(Number);
+      const opens = dayOpens(new Date(fy, fm - 1, fd)).toISOString();
+      const closes = dayCloses(new Date(ty, tm - 1, td)).toISOString();
       if (spec.before) {
-        q = q.lt('created_at', `${range.from}T00:00:00`);
+        q = q.lt('created_at', opens);
       } else {
-        q = q.gte('created_at', `${range.from}T00:00:00`)
-          .lte('created_at', `${range.to}T23:59:59.999`);
+        q = q.gte('created_at', opens).lte('created_at', closes);
       }
 
       if (spec.types) q = q.in('movement_type', spec.types);

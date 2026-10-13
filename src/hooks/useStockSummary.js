@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useOutlet } from '../context/OutletContext';
+import { tradingDayKey } from '../lib/businessDay';
 
 /**
  * The Stock Summary report.
@@ -11,7 +12,8 @@ import { useOutlet } from '../context/OutletContext';
  * See db/migrate_inventory_stock.sql for the definitions each column carries.
  */
 
-const today = () => new Date().toISOString().slice(0, 10);
+// The business day, so a report opened at 1am still shows tonight.
+const today = () => tradingDayKey(new Date());
 
 export function useStockSummary() {
   const { outletId } = useOutlet();

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useOutlet } from '../context/OutletContext';
+import { tradingDayKey } from '../lib/businessDay';
 
 /**
  * The count sheet behind both Closing Stock and Available Stock.
@@ -32,7 +33,7 @@ export function useStockCount(type = 'closing') {
   const [rows, setRows] = useState([]);
   const [categories, setCategories] = useState([]);
   const [cycle, setCycle] = useState('daily');
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => tradingDayKey(new Date()));
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
