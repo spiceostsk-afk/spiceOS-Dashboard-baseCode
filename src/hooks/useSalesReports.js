@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { selectInChunks } from '../lib/inChunks';
 import { dayOpens, dayCloses, tradingToday } from '../lib/businessDay';
 
 /**
@@ -132,7 +133,8 @@ export function useSalesData(range) {
       let billRows = [];
       if (ids.length > 0) {
         const cols = 'id, session_id, order_id, grand_total, subtotal, gst_amount, service_charge, discount_type, discount_amount, payment_method, payment_status, paid_at';
-        const billsWith = (c) => supabase.from('bills').select(c).in('session_id', ids);
+        const billsWith = (c) => selectInChunks(ids, (slice) =>
+          supabase.from('bills').select(c).in('session_id', slice));
         let { data: b, error: bErr } = await billsWith(`${cols}, comp_reason`);
         // comp_reason arrives with migrate_complimentary_bills.sql; until then
         // every report must still load.

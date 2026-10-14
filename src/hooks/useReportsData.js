@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { selectInChunks } from '../lib/inChunks';
 import * as db from '../lib/db';
 import { fmtDayShort, fmtWeekday, isoDay } from '../lib/dates';
 import { dayOpens, tradingDate, tradingDayKey, tradingToday } from '../lib/businessDay';
@@ -138,7 +139,7 @@ export function useReportsData() {
 
       if (sessionsList.length > 0) {
         const sessionIds = sessionsList.map((s) => s.id);
-        const { data: ordersData, error: ordersError } = await supabase
+        const { data: ordersData, error: ordersError } = await selectInChunks(sessionIds, (slice) => supabase
           .from('orders')
           .select(`
             id, total, tax, subtotal, created_at,
@@ -147,7 +148,7 @@ export function useReportsData() {
               menu_items(item_name)
             )
           `)
-          .in('session_id', sessionIds);
+          .in('session_id', slice));
 
         if (ordersError) throw ordersError;
         allOrders = ordersData || [];

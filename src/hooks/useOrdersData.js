@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { selectInChunks } from '../lib/inChunks';
 import * as db from '../lib/db';
 import { kotTicketHtml, printTicket } from '../lib/kot';
 import { dayOpens, dayCloses, tradingToday } from '../lib/businessDay';
@@ -88,10 +89,10 @@ export function useOrdersData() {
       const sessionIds = (data || []).map((s) => s.id);
       const billBySession = new Map();
       if (sessionIds.length > 0) {
-        const { data: billRows, error: billError } = await supabase
+        const { data: billRows, error: billError } = await selectInChunks(sessionIds, (slice) => supabase
           .from('bills')
           .select('session_id, payment_method, payment_status, grand_total, paid_at')
-          .in('session_id', sessionIds);
+          .in('session_id', slice));
         // A bill that will not load must not blank the whole screen — the
         // history is still readable without knowing the tender.
         if (billError) console.error('Could not load payment modes:', billError);

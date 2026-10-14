@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { selectInChunks } from '../lib/inChunks';
 import { dayOpens, tradingToday } from '../lib/businessDay';
 
 const FORMAT_CURRENCY = new Intl.NumberFormat('en-IN', {
@@ -75,10 +76,10 @@ export function usePaymentsData() {
       if (enriched.length > 0) {
         const sessionIds = enriched.map((s) => s.id);
         try {
-          const { data: ordersData } = await supabase
+          const { data: ordersData } = await selectInChunks(sessionIds, (slice) => supabase
             .from('orders')
             .select('session_id, total')
-            .in('session_id', sessionIds);
+            .in('session_id', slice));
           const orderMap = {};
           for (const o of ordersData || []) {
             if (!orderMap[o.session_id]) orderMap[o.session_id] = [];

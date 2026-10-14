@@ -2,6 +2,7 @@ import React, { useCallback, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LayoutGrid, Activity, Globe, Sliders, X, RefreshCw, ShoppingBag } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { selectInChunks } from '../lib/inChunks';
 import { useBillingData } from '../hooks/useBillingData';
 import TablesWorkspace from '../components/billing/TablesWorkspace';
 import RunningOrdersTab from '../components/billing/RunningOrdersTab';
@@ -53,8 +54,8 @@ function EndShiftModal({ onClose }) {
 
         if (list.length > 0) {
           const ids = list.map((s) => s.id);
-          const { data: orders } = await supabase
-            .from('orders').select('session_id, total').in('session_id', ids);
+          const { data: orders } = await selectInChunks(ids, (slice) => supabase
+            .from('orders').select('session_id, total').in('session_id', slice));
           const orderMap = {};
           for (const o of orders || []) {
             if (!orderMap[o.session_id]) orderMap[o.session_id] = [];
