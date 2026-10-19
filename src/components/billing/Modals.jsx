@@ -378,7 +378,14 @@ export function EditItemModal({ item, qty, loadingAction, onClose, onSetQty, onD
   );
 }
 
+/**
+ * Voiding must say what happened to the food. Cooked food stays used (Void
+ * KOT). Food never cooked, or moved to another bill such as the basement's,
+ * goes back to stock — otherwise it is deducted again when that bill is rung.
+ * No default: a wrong guess either way misstates the day's consumption.
+ */
 export function VoidBillModal({ voidReason, loadingAction, onClose, onSetReason, onConfirm }) {
+  const [returnStock, setReturnStock] = useState(null);
   return (
     <Modal onClose={onClose} title="Void bill">
       <div className="field">
@@ -391,12 +398,25 @@ export function VoidBillModal({ voidReason, loadingAction, onClose, onSetReason,
           style={{ resize: 'vertical' }}
         />
       </div>
+      <div className="field">
+        <label>Was this food cooked?</label>
+        <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontWeight: 400 }}>
+          <input type="radio" name="void-stock" checked={returnStock === false}
+            onChange={() => setReturnStock(false)} />
+          <span>Yes, it was cooked — ingredients stay used</span>
+        </label>
+        <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontWeight: 400 }}>
+          <input type="radio" name="void-stock" checked={returnStock === true}
+            onChange={() => setReturnStock(true)} />
+          <span>No, not cooked, or billed on another table (e.g. basement bill) — return ingredients to stock</span>
+        </label>
+      </div>
       <div className="modal__actions">
         <button className="btn btn--ghost" onClick={onClose}>Cancel</button>
         <button
           className="btn btn--danger"
-          onClick={onConfirm}
-          disabled={!voidReason.trim() || loadingAction}
+          onClick={() => onConfirm(returnStock)}
+          disabled={!voidReason.trim() || returnStock === null || loadingAction}
         >
           Void bill
         </button>

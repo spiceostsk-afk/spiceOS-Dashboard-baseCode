@@ -312,8 +312,8 @@ export default function Billing() {
     setShowVoidModal(true);
   }, []);
 
-  const onConfirmVoid = useCallback(() => {
-    handleVoidBill();
+  const onConfirmVoid = useCallback((returnStock) => {
+    handleVoidBill({ returnStock });
     setShowVoidModal(false);
   }, [handleVoidBill]);
 

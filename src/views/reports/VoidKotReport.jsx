@@ -29,7 +29,7 @@ const round = (n, dp = 2) => {
   return Math.round((Number(n) || 0) * f) / f;
 };
 
-const LINE_FIELDS = 'id, quantity, item_price, total_price, is_cancelled, cancel_reason, cancelled_at, menu_items ( item_name )';
+const LINE_FIELDS = 'id, quantity, item_price, total_price, is_cancelled, cancel_reason, cancelled_at, stock_returned, menu_items ( item_name )';
 
 const GROUPINGS = [
   { key: 'line', label: 'Every void line' },
@@ -80,6 +80,8 @@ function useVoidKots(range) {
           value: round(oi.total_price ?? (Number(oi.item_price) * Number(oi.quantity))),
           cost: 0,
           ...extra,
+          // Not cooked: its ingredients went back, so it cost nothing.
+          kind: oi.stock_returned ? `${extra.kind} · stock returned` : extra.kind,
         });
       };
 

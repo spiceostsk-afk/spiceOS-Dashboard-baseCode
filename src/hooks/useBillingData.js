@@ -48,6 +48,20 @@ function flattenVoidItems(sessionData) {
   return flattenLines(sessionData).filter((i) => i.cancelled);
 }
 
+/**
+ * A voided KOT item was usually cooked, and then its ingredients stay used.
+ * One punched by mistake and voided straight away never reached the pan, so
+ * it goes back to stock (16 Oct: two Fish Fry double-tapped on G8 were
+ * deducted as 10 pieces of fish nobody cooked).
+ */
+function askVoidStockReturn() {
+  return !window.confirm(
+    'Was this item already cooked?\n\n'
+    + 'OK = Yes, cooked: its ingredients stay used.\n'
+    + 'Cancel = No, not cooked: its ingredients go back to stock.',
+  );
+}
+
 // Which lines have already gone to the kitchen lives in lib/kot.js, shared
 // with the order screen that prints the first round.
 
@@ -1060,9 +1074,13 @@ export function useBillingData() {
             const reason = opts.voidReason ?? window.prompt('This item has gone to the kitchen. Reason for Void KOT:');
             if (reason === null) return;           // backed out — change nothing
             if (!reason.trim()) throw new Error('A reason is needed to void a KOT item.');
+            const returnStock = opts.returnStock ?? askVoidStockReturn();
             const { error } = await supabase
               .from('order_items')
-              .update({ is_cancelled: true, cancel_reason: reason.trim(), cancelled_at: new Date().toISOString() })
+              .update({
+                is_cancelled: true, cancel_reason: reason.trim(), cancelled_at: new Date().toISOString(),
+                stock_returned: returnStock,
+              })
               .eq('id', itemId);
             if (error) throw error;
           } else if (newQty <= 0) {
@@ -1124,6 +1142,7 @@ export function useBillingData() {
 
     const sent = readKotSent(sessionId);
     let voidReason;
+    let returnStock;
     if (isOnline && changes.some((c) => c.qty <= 0 && sent.has(String(c.id)))) {
       voidReason = window.prompt('This item has gone to the kitchen. Reason for Void KOT:');
       if (voidReason === null) return;
@@ -1132,11 +1151,12 @@ export function useBillingData() {
         return;
       }
       voidReason = voidReason.trim();
+      returnStock = askVoidStockReturn();
     }
 
     let working = sessionState.items;
     for (const c of changes) {
-      await handleUpdateItemQty(c.id, c.orderId, c.qty, { items: working, voidReason });
+      await handleUpdateItemQty(c.id, c.orderId, c.qty, { items: working, voidReason, returnStock });
       working = c.qty <= 0
         ? working.filter((i) => i.id !== c.id)
         : working.map((i) => (i.id === c.id ? { ...i, qty: c.qty } : i));
@@ -1562,18 +1582,25 @@ export function useBillingData() {
     }
   }, [sessionId, isOnline, setSearchParams, fetchWorkspaceData, setLoadingAction]);
 
-  const handleVoidBill = useCallback(async () => {
+  const handleVoidBill = useCallback(async ({ returnStock = false } = {}) => {
     if (!uiState.voidReason.trim()) {
       alert('Please enter a reason for voiding this bill.');
       return;
     }
     setLoadingAction(true);
+    const metadata = {
+      ...(sessionState.session?.metadata || {}),
+      voidReason: uiState.voidReason,
+      stockReturned: returnStock,
+    };
+    // Every line on the table, billable or already voided, holds stock.
+    const lineIds = [...(sessionState.items || []), ...(sessionState.voidItems || [])].map((i) => i.id);
     try {
       if (isOnline) {
         const { error: voidError } = await supabase.from('customer_sessions').update({
           session_status: SESSION_STATUS.void,
           ended_at: new Date().toISOString(),
-          metadata: { ...(sessionState.session?.metadata || {}), voidReason: uiState.voidReason },
+          metadata,
         }).eq('id', sessionId);
         // Surface a refused write instead of carrying on as if it worked. The
         // status used to be rejected by a check constraint, so voiding did
@@ -1588,6 +1615,17 @@ export function useBillingData() {
           .eq('session_id', sessionId)
           .neq('order_status', ORDER_STATUS.cancelled);
 
+        // Not cooked, or moving to another bill (the basement's): hand the
+        // ingredients back, or that bill deducts them a second time. The
+        // database posts the return when stock_returned turns true.
+        if (returnStock && lineIds.length > 0) {
+          const { error: returnError } = await supabase
+            .from('order_items')
+            .update({ stock_returned: true })
+            .in('id', lineIds);
+          if (returnError) throw returnError;
+        }
+
         await supabase.from('restaurant_tables').update({ status: TABLE_STATUS.available }).eq('id', sessionState.session?.table_id);
       } else {
         if (sessionState.session) {
@@ -1595,13 +1633,18 @@ export function useBillingData() {
             ...sessionState.session,
             session_status: SESSION_STATUS.void,
             ended_at: new Date().toISOString(),
-            metadata: { ...sessionState.session.metadata, voidReason: uiState.voidReason },
+            metadata,
           };
           await db.put('sessions', updatedSession);
           await db.enqueueSync({
             action: 'update', table: 'customer_sessions',
-            data: { id: sessionId, session_status: SESSION_STATUS.void, ended_at: new Date().toISOString() },
+            data: { id: sessionId, session_status: SESSION_STATUS.void, ended_at: updatedSession.ended_at, metadata },
           });
+          if (returnStock) {
+            for (const id of lineIds) {
+              await db.enqueueSync({ action: 'update', table: 'order_items', data: { id, stock_returned: true } });
+            }
+          }
           const voidedOrders = (await db.getAll('orders')) || [];
           for (const o of voidedOrders.filter(
             (x) => x.session_id === sessionId && x.order_status !== ORDER_STATUS.cancelled,
@@ -1631,7 +1674,7 @@ export function useBillingData() {
     } finally {
       setLoadingAction(false);
     }
-  }, [sessionId, uiState.voidReason, sessionState.session, state.activeTab, isOnline, setSearchParams, fetchWorkspaceData, setLoadingAction]);
+  }, [sessionId, uiState.voidReason, sessionState.session, sessionState.items, sessionState.voidItems, state.activeTab, isOnline, setSearchParams, fetchWorkspaceData, setLoadingAction]);
 
   const handleFreeAllCleaningTables = useCallback(async () => {
     const cleaningTables = state.tables.filter((t) => t.status === TABLE_STATUS.cleaning);
