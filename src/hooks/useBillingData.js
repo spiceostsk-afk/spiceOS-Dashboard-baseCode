@@ -53,13 +53,24 @@ function flattenVoidItems(sessionData) {
  * One punched by mistake and voided straight away never reached the pan, so
  * it goes back to stock (16 Oct: two Fish Fry double-tapped on G8 were
  * deducted as 10 pieces of fish nobody cooked).
+ *
+ * The cashier types 1 or 2; there is no default. An OK/Cancel box was answered
+ * "OK" out of habit, so mistakes and trials kept their stock (19–20 Oct: 18
+ * lines with reasons like WRONG and TRIAL marked as cooked).
+ * Returns true (return stock), false (cooked) or null (backed out).
  */
 function askVoidStockReturn() {
-  return !window.confirm(
-    'Was this item already cooked?\n\n'
-    + 'OK = Yes, cooked: its ingredients stay used.\n'
-    + 'Cancel = No, not cooked: its ingredients go back to stock.',
-  );
+  for (;;) {
+    const answer = window.prompt(
+      'Was this food cooked? Type 1 or 2:\n\n'
+      + '1 = NOT cooked (wrong item, mistake, double punch) — stock goes back\n'
+      + '2 = Cooked — ingredients stay used',
+    );
+    if (answer === null) return null;
+    if (answer.trim() === '1') return true;
+    if (answer.trim() === '2') return false;
+    alert('Please type 1 (not cooked) or 2 (cooked).');
+  }
 }
 
 // Which lines have already gone to the kitchen lives in lib/kot.js, shared
@@ -1075,6 +1086,7 @@ export function useBillingData() {
             if (reason === null) return;           // backed out — change nothing
             if (!reason.trim()) throw new Error('A reason is needed to void a KOT item.');
             const returnStock = opts.returnStock ?? askVoidStockReturn();
+            if (returnStock === null) return;      // backed out — change nothing
             const { error } = await supabase
               .from('order_items')
               .update({
@@ -1152,6 +1164,7 @@ export function useBillingData() {
       }
       voidReason = voidReason.trim();
       returnStock = askVoidStockReturn();
+      if (returnStock === null) return;
     }
 
     let working = sessionState.items;
