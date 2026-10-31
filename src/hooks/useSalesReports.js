@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { selectInChunks } from '../lib/inChunks';
+import { selectAllPages, selectInChunks } from '../lib/inChunks';
 import { dayOpens, dayCloses, tradingToday } from '../lib/businessDay';
 
 /**
@@ -108,7 +108,7 @@ export function useSalesData(range) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const { data: sess, error: sErr } = await supabase
+      const { data: sess, error: sErr } = await selectAllPages(() => supabase
         .from('customer_sessions')
         .select(`
           id, customer_name, ended_at, session_status,
@@ -124,7 +124,8 @@ export function useSalesData(range) {
         .eq('session_status', 'completed')
         .gte('ended_at', fromIso)
         .lte('ended_at', toIso)
-        .order('ended_at', { ascending: false });
+        .order('ended_at', { ascending: false })
+        .order('id'));
       if (sErr) throw sErr;
 
       const ids = (sess || []).map((s) => s.id);

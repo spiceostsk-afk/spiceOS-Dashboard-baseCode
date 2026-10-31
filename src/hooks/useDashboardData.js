@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { selectAllPages } from '../lib/inChunks';
 import { fmtDayShort, fmtWeekday } from '../lib/dates';
 import {
   dayOpens, dayCloses, tradingDate, tradingDayKey, tradingToday,
@@ -426,17 +427,18 @@ export function useDashboardData() {
         // The payment-mode split. Filtered on paid_at rather than created_at: a
         // bill raised before midnight and settled after belongs to the day the
         // money actually landed.
-        supabase
+        selectAllPages(() => supabase
           .from('bills')
           .select('grand_total, payment_method, payment_status, paid_at')
           .eq('payment_status', 'paid')
           .gte('paid_at', fromIso)
-          .lte('paid_at', toIso),
+          .lte('paid_at', toIso)
+          .order('id')),
 
         // The item-wise split. Reached through the order and its session rather
         // than filtered on the line's own timestamp, so a line added late still
         // counts against the bill it was settled on — and an unsettled one not at all.
-        supabase
+        selectAllPages(() => supabase
           .from('order_items')
           .select(`
             quantity, item_price, total_price, is_cancelled,
@@ -446,7 +448,8 @@ export function useDashboardData() {
           .eq('orders.customer_sessions.session_status', 'completed')
           .gte('orders.customer_sessions.ended_at', fromIso)
           .lte('orders.customer_sessions.ended_at', toIso)
-          .neq('orders.order_status', 'cancelled'),
+          .neq('orders.order_status', 'cancelled')
+          .order('id')),
 
         supabase
           .from('customer_sessions')

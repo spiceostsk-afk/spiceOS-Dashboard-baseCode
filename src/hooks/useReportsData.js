@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
-import { selectInChunks } from '../lib/inChunks';
+import { selectAllPages, selectInChunks } from '../lib/inChunks';
 import * as db from '../lib/db';
 import { fmtDayShort, fmtWeekday, isoDay } from '../lib/dates';
 import { dayOpens, tradingDate, tradingDayKey, tradingToday } from '../lib/businessDay';
@@ -124,13 +124,14 @@ export function useReportsData() {
       const startStr = start.toISOString();
       const endStr = end.toISOString();
 
-      const { data: sessions, error: sessionsError } = await supabase
+      const { data: sessions, error: sessionsError } = await selectAllPages(() => supabase
         .from('customer_sessions')
         .select('id, ended_at')
         .eq('session_status', 'completed')
         .gte('ended_at', startStr)
         .lte('ended_at', endStr)
-        .order('ended_at', { ascending: false });
+        .order('ended_at', { ascending: false })
+        .order('id'));
 
       if (sessionsError) throw sessionsError;
 

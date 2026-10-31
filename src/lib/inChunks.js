@@ -18,3 +18,24 @@ export async function selectInChunks(ids, build) {
   if (failed) return { data: null, error: failed.error };
   return { data: results.flatMap((r) => r.data || []), error: null };
 }
+
+// PostgREST hands back at most 1000 rows per request and says nothing about
+// the rest — a report over three weeks of a busy restaurant just stops at the
+// latest thousand bills. Paging past it costs nothing on a normal day: the
+// second request only goes out when the first one came back full.
+const PAGE = 1000;
+
+/**
+ * Runs `build()` (a Supabase query with a stable `.order(...)`) one page at a
+ * time with `.range()` until a short page comes back, and merges the rows.
+ * Resolves to the same `{ data, error }` shape as a single query.
+ */
+export async function selectAllPages(build) {
+  const rows = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await build().range(from, from + PAGE - 1);
+    if (error) return { data: null, error };
+    rows.push(...(data || []));
+    if (!data || data.length < PAGE) return { data: rows, error: null };
+  }
+}
