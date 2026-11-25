@@ -49,7 +49,7 @@ export function writeKotSent(sessionId, ids) {
  * items: [{ qty, name }]
  * subtitle: "Kitchen Order Ticket · Round 2", "REPRINT — full table", …
  */
-export function kotTicketHtml({ tableNumber, token = null, billId, guests, items, subtitle }) {
+export function kotTicketHtml({ tableNumber, token = null, billId, guests, waiter, items, subtitle }) {
   const rows = items
     .map((i) => `<tr><td class="qty">${esc(i.qty)}</td><td>${esc(i.name)}</td></tr>`)
     .join('');
@@ -73,7 +73,7 @@ export function kotTicketHtml({ tableNumber, token = null, billId, guests, items
     ? `<div class="token">TAKEAWAY · TOKEN ${esc(token)}</div>
   <div class="meta"><strong>Counter:</strong> ${esc(tableNumber || '—')} &nbsp; <strong>Bill #:</strong> ${esc(billId)}</div>`
     : `<div class="meta"><strong>Table:</strong> T-${esc(tableNumber || '—')} &nbsp; <strong>Bill #:</strong> ${esc(billId)}</div>
-  <div class="meta"><strong>Guests:</strong> ${esc(guests || '—')}</div>`}
+  <div class="meta"><strong>Waiter:</strong> ${esc(waiter || '—')} &nbsp; <strong>Guests:</strong> ${esc(guests || '—')}</div>`}
   <div class="meta"><strong>Time:</strong> ${fmtDateTime(new Date())}</div>
   <hr/>
   <table>${rows}</table>

@@ -1436,6 +1436,7 @@ export function useBillingData() {
         token,
         billId,
         guests: sess.guest_count,
+        waiter: sess.customer_name,
         items,
         subtitle: isNewRound ? `Kitchen Order Ticket · Round ${roundNo}` : 'REPRINT — full table',
       }));
@@ -1491,7 +1492,7 @@ export function useBillingData() {
       <div class="meta"><b>Bill #:</b> ${esc(billId)} &nbsp; <b>Counter:</b> ${esc(tableNumber)}</div>
       <div class="meta"><b>Customer:</b> ${esc(sess.customer_name || 'Walk-in')}${sess.phone_number ? ` &nbsp; <b>Ph:</b> ${esc(sess.phone_number)}` : ''}</div>`
         : `<div class="meta"><b>Bill #:</b> ${esc(billId)} &nbsp; <b>Table:</b> T-${esc(tableNumber)}</div>
-      <div class="meta"><b>Customer:</b> ${esc(sess.customer_name || 'Walk-in')} &nbsp; <b>Guests:</b> ${esc(sess.guest_count || '—')}</div>`}
+      <div class="meta"><b>Waiter:</b> ${esc(sess.customer_name || '—')} &nbsp; <b>Guests:</b> ${esc(sess.guest_count || '—')}</div>`}
       <div class="meta"><b>Date:</b> ${fmtDateTime(new Date())}</div>
       <hr/>
       <table class="items">

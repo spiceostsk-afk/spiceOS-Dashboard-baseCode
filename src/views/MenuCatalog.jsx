@@ -425,6 +425,7 @@ const MenuCatalog = () => {
             token: tokenOf(cachedSession),
             billId: validSessionId.slice(0, 4).toUpperCase(),
             guests: cachedSession?.guest_count,
+            waiter: cachedSession?.customer_name,
             items: ticketLines,
             subtitle: 'Kitchen Order Ticket · offline',
           }));
@@ -466,7 +467,7 @@ const MenuCatalog = () => {
 
             const [{ data: sess }, { count: rounds }] = await Promise.all([
               supabase.from('customer_sessions')
-                .select('guest_count, metadata, restaurant_tables ( table_number )')
+                .select('guest_count, customer_name, metadata, restaurant_tables ( table_number )')
                 .eq('id', liveSessionId).maybeSingle(),
               supabase.from('orders')
                 .select('id', { count: 'exact', head: true })
@@ -479,6 +480,7 @@ const MenuCatalog = () => {
               token: tokenOf(sess),
               billId: liveSessionId.slice(0, 4).toUpperCase(),
               guests: sess?.guest_count,
+              waiter: sess?.customer_name,
               items: ticketLines,
               subtitle: `Kitchen Order Ticket · Round ${rounds || 1}`,
             }));

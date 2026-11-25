@@ -470,10 +470,10 @@ const Header = () => {
 
               <div className="field-row">
                 <div className="field">
-                  <label>Customer name (optional)</label>
+                  <label>Waiter name (optional)</label>
                   <input
                     type="text"
-                    placeholder="e.g. Rajesh Kumar"
+                    placeholder="Printed on the bill and KOT"
                     value={customerData.name}
                     onChange={(e) => setCustomerData({ ...customerData, name: e.target.value })}
                   />

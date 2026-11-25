@@ -179,6 +179,7 @@ export function useOrdersData() {
       tableNumber: order.tableNumber,
       billId: order.billId,
       guests: order.guests,
+      waiter: order.customerName,
       items,
       subtitle: 'REPRINT — full table',
     }));
